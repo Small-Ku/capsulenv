@@ -1,0 +1,32 @@
+@{
+    # This file is merged over config/capsulenv.psd1.
+    # Copy it to capsulenv.local.psd1; the local file is git-ignored.
+
+    Scoop = @{
+        # Root = 'D:\capsulenv-data\scoop'
+        # ConfigHome = 'D:\capsulenv-data\xdg'
+    }
+
+    Bitwarden = @{
+        StartOnEnter = $false
+    }
+
+    Browsers = @{
+        Firefox = @{
+            AutoRegisterProfile = $false
+            # MakeDefaultProfile = $true
+        }
+        Zen = @{
+            Enabled = $false
+        }
+    }
+
+    Environment = @{
+        PathVariables = @{
+            # CARGO_HOME = 'data\cargo'
+        }
+        Variables = @{
+            # RUSTUP_TOOLCHAIN = 'stable'
+        }
+    }
+}

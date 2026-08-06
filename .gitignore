@@ -1,0 +1,10 @@
+.build/
+.capsulenv/
+data/
+scoop/
+config/capsulenv.local.psd1
+*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
