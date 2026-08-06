@@ -51,6 +51,39 @@ function Start-CapsulenvBitwarden {
     Write-CapsulenvMessage -Level Success -Message 'Bitwarden desktop started from portable Scoop.'
 }
 
+
+function Stop-CapsulenvBitwarden {
+    [CmdletBinding()]
+    param([switch]$Force)
+
+    $processes = @(Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue)
+    if ($processes.Count -eq 0) {
+        return
+    }
+
+    foreach ($process in $processes) {
+        try {
+            [void]$process.CloseMainWindow()
+        } catch {
+            Write-CapsulenvMessage -Level Detail -Message "Unable to request a graceful Bitwarden shutdown: $($_.Exception.Message)"
+        }
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+        Start-Sleep -Milliseconds 200
+        $remaining = @(Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue)
+    } while ($remaining.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline)
+
+    if ($remaining.Count -gt 0) {
+        if (-not $Force) {
+            throw 'Bitwarden desktop is still running. Quit it from the system tray or rerun with a command that permits forced shutdown.'
+        }
+        $remaining | Stop-Process -Force
+        Write-CapsulenvMessage -Level Warning -Message 'Bitwarden desktop was force-stopped so its persisted settings could be updated safely.'
+    }
+}
+
 function Get-CapsulenvSshAgentServiceStatePath {
     $context = Get-CapsulenvContext
     return Join-Path $context.StateRoot 'bitwarden\ssh-agent-service.json'
@@ -263,4 +296,4 @@ function Restore-CapsulenvGitOpenSsh {
     Write-CapsulenvMessage -Level Success -Message 'Git SSH configuration restored.'
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Start-CapsulenvBitwarden, Disable-CapsulenvWindowsSshAgent, Restore-CapsulenvWindowsSshAgent, Test-CapsulenvBitwardenSshAgent, Set-CapsulenvGitOpenSsh, Restore-CapsulenvGitOpenSsh
+##MOD_EXEC## Export-ModuleMember -Function Start-CapsulenvBitwarden, Stop-CapsulenvBitwarden, Disable-CapsulenvWindowsSshAgent, Restore-CapsulenvWindowsSshAgent, Test-CapsulenvBitwardenSshAgent, Set-CapsulenvGitOpenSsh, Restore-CapsulenvGitOpenSsh

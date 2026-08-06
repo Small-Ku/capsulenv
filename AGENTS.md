@@ -10,4 +10,4 @@
 - Add module source to `src/*.ps1` and mark public exports with `##MOD_EXEC## Export-ModuleMember`.
 - `capsulenv.cmd` must remain a thin launcher; environment logic belongs in the PowerShell module.
 - Windows PowerShell 5.1 compatibility is required. Avoid PowerShell 7-only syntax in module sources.
-- Never edit Bitwarden vault internals to enable SSH Agent. Only configure supported environment, service, and Git/OpenSSH integration.
+- Never copy, reserialize, or own Bitwarden vault/app state. A setting integration may patch only source-verified top-level keys, must preserve unrelated JSON byte-for-byte, validate before replacement, and keep an exact per-key restore record.

@@ -22,9 +22,12 @@
         Enabled = $true
         StartOnEnter = $true
         SetSshAuthSock = $true
+        Authorization = 'always'
         ExecutableCandidates = @(
             'scoop\apps\bitwarden\current\Bitwarden.exe'
             'scoop\apps\bitwarden-portable\current\Bitwarden.exe'
+            'scoop-global\apps\bitwarden\current\Bitwarden.exe'
+            'scoop-global\apps\bitwarden-portable\current\Bitwarden.exe'
         )
     }
 

@@ -68,6 +68,11 @@ $required = @(
     'Test-CapsulenvScoopRehydrationRequired',
     'Start-CapsulenvBrowser',
     'Start-CapsulenvBitwarden',
+    'Set-CapsulenvBitwardenDesktopSshAgent',
+    'Restore-CapsulenvBitwardenDesktopSettings',
+    'Get-CapsulenvBitwardenSshAgentStatus',
+    'Invoke-CapsulenvBitwardenSshAgentSetup',
+    'Restore-CapsulenvBitwardenSshAgentSetup',
     'Test-CapsulenvBitwardenSshAgent',
     'Enable-CapsulenvUserEnvironment',
     'Restore-CapsulenvUserEnvironment'
@@ -80,6 +85,51 @@ foreach ($name in $required) {
 
 $config = Get-CapsulenvConfiguration -Refresh
 Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 2) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest `
+    -Condition ([string]$config.Bitwarden.Authorization -eq 'always') `
+    -Message 'Unexpected default Bitwarden SSH authorization behavior.'
+
+$bitwardenJsonRoundTrip = & $module {
+    $source = '{"vault_payload":"keep-me","nested":{"global_desktopSettings_sshAgentEnabled":false},"text":"\"global_desktopSettings_sshAgentEnabled\": false","user_12345678-1234-1234-1234-123456789abc_example":true}'
+    $enabledName = 'global_desktopSettings_sshAgentEnabled'
+    $promptName = 'user_12345678-1234-1234-1234-123456789abc_desktopSettings_sshAgentRememberAuthorizations'
+
+    $patched = Set-CapsulenvJsonPropertyLiteral -JsonText $source -Name $enabledName -Literal 'true'
+    $patched = Set-CapsulenvJsonPropertyLiteral -JsonText $patched -Name $promptName -Literal '"rememberUntilLock"'
+    Assert-CapsulenvJsonObjectText -Text $patched
+
+    $restored = Remove-CapsulenvJsonProperty -JsonText $patched -Name $enabledName
+    $restored = Remove-CapsulenvJsonProperty -JsonText $restored -Name $promptName
+    Assert-CapsulenvJsonObjectText -Text $restored
+
+    [pscustomobject]@{
+        Patched = $patched
+        Restored = $restored
+        TopLevelEnabledExists = (Get-CapsulenvJsonPropertySnapshot -JsonText $restored -Name $enabledName).Exists
+        TopLevelPromptExists = (Get-CapsulenvJsonPropertySnapshot -JsonText $restored -Name $promptName).Exists
+    }
+}
+Assert-CapsulenvTest `
+    -Condition ($bitwardenJsonRoundTrip.Patched.Contains('global_desktopSettings_sshAgentEnabled')) `
+    -Message 'Bitwarden SSH Agent global setting was not inserted.'
+Assert-CapsulenvTest `
+    -Condition ($bitwardenJsonRoundTrip.Patched.Contains('sshAgentRememberAuthorizations')) `
+    -Message 'Bitwarden authorization setting was not inserted.'
+Assert-CapsulenvTest `
+    -Condition (-not $bitwardenJsonRoundTrip.TopLevelEnabledExists) `
+    -Message 'Bitwarden inserted SSH Agent setting was not removed during precise restore.'
+Assert-CapsulenvTest `
+    -Condition (-not $bitwardenJsonRoundTrip.TopLevelPromptExists) `
+    -Message 'Bitwarden inserted authorization setting was not removed during precise restore.'
+Assert-CapsulenvTest `
+    -Condition ($bitwardenJsonRoundTrip.Restored.Contains('"vault_payload":"keep-me"')) `
+    -Message 'Bitwarden setting restore changed unrelated JSON state.'
+Assert-CapsulenvTest `
+    -Condition ($bitwardenJsonRoundTrip.Restored.Contains('"nested":{"global_desktopSettings_sshAgentEnabled":false}')) `
+    -Message 'Bitwarden setting patch touched a nested property with the same name.'
+Assert-CapsulenvTest `
+    -Condition ($bitwardenJsonRoundTrip.Restored.Contains('\"global_desktopSettings_sshAgentEnabled\": false')) `
+    -Message 'Bitwarden setting patch touched key-like text inside a JSON string.'
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-test-{0}" -f [Guid]::NewGuid().ToString('N'))
 try {
@@ -120,6 +170,9 @@ Assert-CapsulenvTest `
 Assert-CapsulenvTest `
     -Condition (-not $config.Scoop.ReplayHooks.ContainsKey('bitwarden')) `
     -Message 'Bitwarden pre_install must not be replayed automatically.'
+Assert-CapsulenvTest `
+    -Condition ($config.Bitwarden.Authorization -in @('always', 'never', 'remember-until-lock')) `
+    -Message 'Bitwarden.Authorization is invalid.'
 Assert-CapsulenvTest `
     -Condition (-not $config.Scoop.ReplayHooks.ContainsKey('zen')) `
     -Message 'Ambiguous app aliases must not receive automatic lifecycle replay.'
@@ -168,6 +221,30 @@ foreach ($requiredText in @('installed_manifest', 'install_info', 'Invoke-HookSc
 Assert-CapsulenvTest `
     -Condition (-not $replayText.Contains('scoop install')) `
     -Message 'Lifecycle replay must not reinstall or download applications.'
+
+$bitwardenSource = [System.IO.File]::ReadAllText(
+    (Join-Path (Join-Path $root 'src') '55-BitwardenSshAgent.ps1')
+)
+foreach ($requiredStateKey in @(
+    'global_desktopSettings_sshAgentEnabled',
+    'desktopSettings_sshAgentRememberAuthorizations'
+)) {
+    Assert-CapsulenvTest `
+        -Condition $bitwardenSource.Contains($requiredStateKey) `
+        -Message "Bitwarden setting patch is missing its scoped state key: $requiredStateKey"
+}
+Assert-CapsulenvTest `
+    -Condition $bitwardenSource.Contains('Assert-CapsulenvJsonObjectText') `
+    -Message 'Bitwarden setting writes must validate JSON before replacement.'
+Assert-CapsulenvTest `
+    -Condition $bitwardenSource.Contains('Get-CapsulenvJsonTopLevelProperties') `
+    -Message 'Bitwarden setting patch must locate only top-level JSON properties.'
+Assert-CapsulenvTest `
+    -Condition $bitwardenSource.Contains('Reset-CapsulenvScoop -Apps') `
+    -Message 'Bitwarden setup must let Scoop rebuild its persist link before patching settings.'
+Assert-CapsulenvTest `
+    -Condition (-not $bitwardenSource.Contains('ConvertTo-Json -Depth 100')) `
+    -Message 'Bitwarden state must not be wholesale reserialized.'
 
 $trackedText = @(
     [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'config') 'capsulenv.psd1')),

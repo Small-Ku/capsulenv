@@ -123,30 +123,73 @@ zen-capsulenv.cmd
 
 ## Bitwarden SSH Agent
 
-Bitwarden 的 `bitwarden-appdata` 由 Scoop manifest `persist`。capsulenv 僅負責 host integration：
+Bitwarden 的 `bitwarden-appdata` 仍完全由 Scoop manifest `persist` 擁有。capsulenv 不複製 app-data，也不重建 vault；但現在可對 Scoop-persisted `data.json` 做**窄範圍設定 patch**，只處理 Bitwarden Desktop 現行使用的兩類 state key：
 
-- session／可選 User scope 的 `SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent`
-- 啟動 Scoop-installed Bitwarden Desktop
-- 可備份後停用 Windows `ssh-agent` service
-- 可備份後令 Git 明確使用 Microsoft OpenSSH
+- `global_desktopSettings_sshAgentEnabled`
+- `user_<account-id>_desktopSettings_sshAgentRememberAuthorizations`
 
-Bitwarden Desktop 內的 **Enable SSH agent** 仍由 Bitwarden persisted settings 保存；capsulenv 不改寫 vault/application internals。
+設定前會關閉 Bitwarden，記錄這些 key 原本存在與否及其原始 literal，驗證修改前後都是 JSON object，再以同目錄暫存檔替換。還原時只還原／移除上述 key，不會用舊 `data.json` 覆蓋之後新增的 vault 或其他 application state。
+
+以 elevated terminal 執行完整設定：
+
+```bat
+capsulenv.cmd bitwarden setup
+```
+
+預設授權策略是 `always`。亦可指定：
+
+```bat
+capsulenv.cmd bitwarden setup never
+capsulenv.cmd bitwarden setup remember-until-lock
+```
+
+完整 setup 會：
+
+1. 關閉 Bitwarden，並對實際 Scoop app 執行原生 `scoop reset <app>`，先重建 `current` 與 `persist` link。
+2. 在 Bitwarden persisted settings 啟用 SSH Agent。
+3. 對已出現在 `data.json` 的所有帳戶套用授權策略；未登入過時，Bitwarden 的預設值仍是 `always`。
+4. 設定 capsulenv session 的 `SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent`。
+5. 備份後令 Git 使用 Windows 內建 Microsoft OpenSSH。
+6. 若目前 terminal 已 elevated，備份後停用 Windows `ssh-agent` service。
+7. 重新啟動 Scoop-installed Bitwarden。
+
+可略過個別 host integration：
+
+```bat
+capsulenv.cmd bitwarden setup --skip-service
+capsulenv.cmd bitwarden setup --skip-git
+capsulenv.cmd bitwarden setup always --no-start
+```
+
+檢查與測試：
+
+```bat
+capsulenv.cmd bitwarden status
+capsulenv.cmd bitwarden agent-test
+```
+
+一鍵精確還原 capsulenv 改動：
+
+```bat
+capsulenv.cmd bitwarden restore
+```
+
+若 setup 當時未 elevated，service 不會被改動；若 restore 時未 elevated，desktop/Git 設定仍會還原，而 service backup 會保留，待以下命令在 elevated terminal 執行：
+
+```bat
+capsulenv.cmd bitwarden restore-windows-agent
+```
+
+低階分拆命令仍保留：
 
 ```bat
 capsulenv.cmd bitwarden start
 capsulenv.cmd bitwarden disable-windows-agent
 capsulenv.cmd bitwarden configure-git
-capsulenv.cmd bitwarden agent-test
-```
-
-還原：
-
-```bat
-capsulenv.cmd bitwarden restore-windows-agent
 capsulenv.cmd bitwarden restore-git
 ```
 
-停用／還原 Windows service 需要 elevated terminal。
+這個 app-setting patch 依賴 Bitwarden Desktop 目前的公開原始碼 state key，而不是官方穩定 CLI contract；未知 JSON schema、重複 key 或無法驗證的檔案會直接拒絕修改。
 
 ## Session 與 User environment
 

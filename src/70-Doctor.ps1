@@ -68,6 +68,23 @@ function Invoke-CapsulenvDoctor {
             -Importance Optional `
             -Detail $(if ($bitwarden) { $bitwarden } else { 'Not found' })))
 
+        if ($bitwarden) {
+            try {
+                $bitwardenStatus = Get-CapsulenvBitwardenSshAgentStatus
+                $results.Add((New-CapsulenvCheckResult `
+                    -Name 'Bitwarden SSH Agent setting' `
+                    -Passed ([bool]$bitwardenStatus.DesktopSettingEnabled) `
+                    -Importance Optional `
+                    -Detail ("Enabled={0}; Authorization={1}" -f $bitwardenStatus.DesktopSettingEnabled, $bitwardenStatus.Authorization)))
+            } catch {
+                $results.Add((New-CapsulenvCheckResult `
+                    -Name 'Bitwarden SSH Agent setting' `
+                    -Passed $false `
+                    -Importance Optional `
+                    -Detail $_.Exception.Message))
+            }
+        }
+
         if (Test-CapsulenvWindows) {
             $service = Get-Service -Name 'ssh-agent' -ErrorAction SilentlyContinue
             $serviceInfo = if ($service) { Get-CimInstance Win32_Service -Filter "Name='ssh-agent'" -ErrorAction SilentlyContinue } else { $null }

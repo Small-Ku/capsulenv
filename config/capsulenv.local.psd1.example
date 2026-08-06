@@ -20,6 +20,8 @@
 
     Bitwarden = @{
         StartOnEnter = $false
+        # always | never | remember-until-lock
+        Authorization = 'always'
     }
 
     Browsers = @{

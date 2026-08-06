@@ -68,6 +68,17 @@ function Assert-CapsulenvConfiguration {
             }
         }
     }
+    if (
+        -not $Configuration.Bitwarden.ContainsKey('Authorization') -or
+        ([string]$Configuration.Bitwarden.Authorization) -notin @(
+            'always',
+            'never',
+            'remember-until-lock'
+        )
+    ) {
+        throw 'Bitwarden.Authorization must be always, never, or remember-until-lock.'
+    }
+
     foreach ($name in @('PathVariables', 'Variables')) {
         if (
             -not $Configuration.Environment.ContainsKey($name) -or
