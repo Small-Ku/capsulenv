@@ -2,7 +2,7 @@
 
 `capsulenv` 是一個可搬移的 Windows Scoop 啟動與修復層。它不自行建立另一套 `data/`、Bitwarden app-data、Firefox profile 或 Zen profile；資料所有權仍交回 Scoop manifest 的 `persist`、`pre_install` 與 `post_install`。搬移後，capsulenv 只會對明確 allow-list 中的 Scoop-persisted UTF text 設定做舊 root → 新 root 修復。
 
-每次由 `capsulenv.cmd` 啟動時，`Merge-ModuleScripts.ps1` 會 deterministic merge `src/*.ps1`，生成 `.build/Capsulenv/Capsulenv.psm1`。`shell` 會開啟繼承 portable Scoop environment 的子 PowerShell。
+開發 checkout 會由 `Merge-ModuleScripts.ps1` deterministic merge `src/*.ps1`；安裝版則直接載入預先生成的 `modules\Capsulenv`。`shell` 會開啟繼承 portable Scoop environment 的子 PowerShell。
 
 ## 所有權模型
 
@@ -12,6 +12,11 @@ capsulenv/
 ├─ src/                              capsulenv orchestration only
 ├─ scripts/scoop-capsulenv-replay.ps1
 ├─ config/
+├─ modules/Capsulenv/                installed/prebuilt merged module
+├─ cache/                            portable download/compile caches
+├─ tool-data/                        toolchains and global tool state
+├─ project-cache/                    linked per-project build caches
+├─ workspace/                        recommended portable source workspace
 ├─ scoop/                            complete portable Scoop root
 │  ├─ apps/
 │  ├─ buckets/
@@ -19,11 +24,67 @@ capsulenv/
 │  ├─ shims/
 │  └─ cache/
 ├─ scoop-global/                     optional Scoop-owned global root
-├─ .capsulenv/                       relocation marker and reversible backups
-└─ .build/                           generated module
+├─ .capsulenv/                       relocation state, link registry, reversible backups
+├─ .build/                           development-only generated module
+└─ .capsulenv-runtime.json           installed runtime metadata
 ```
 
 capsulenv 同時設定 `SCOOP` 與 `SCOOP_GLOBAL`，避免 `reset *` 意外枚舉主機的 `%ProgramData%\scoop`。兩個 root 都仍由 Scoop 本體管理。
+
+## Portable tool storage
+
+開發工具自己的 cache、toolchain 與 global-tool data 會透過官方環境變數放在 capsule 內，而不是使用主機 `%LOCALAPPDATA%` 或 user home：
+
+```text
+cache/
+├─ uv/
+├─ uv-python/
+├─ pixi/
+├─ sccache/
+└─ ccache/
+tool-data/
+├─ uv/python/
+├─ uv/tools/
+├─ pixi/
+├─ rustup/
+└─ cargo/
+project-cache/
+└─ <stable-project-id>/
+```
+
+預設管理 `UV_CACHE_DIR`、`UV_PYTHON_CACHE_DIR`、`UV_PYTHON_INSTALL_DIR`、`UV_PYTHON_BIN_DIR`、`UV_TOOL_DIR`、`UV_TOOL_BIN_DIR`、`PIXI_HOME`、`PIXI_CACHE_DIR`、`RUSTUP_HOME`、`CARGO_HOME`、`SCCACHE_DIR`、`CCACHE_DIR` 與 `CCACHE_TEMPDIR`。`bin/` 同時作為 uv-managed Python 與 uv tool executable 目錄；Cargo/Pixi global bin 亦加入 capsule session 的 `PATH`。Scoop 自己的下載 cache 已位於 `scoop/cache`，不重複 redirect，並只由 Scoop 按需要建立。 `tool-data/` 可能包含 Cargo registry credentials 或其他工具登入狀態，與 Scoop persist 一樣應視為私人 portable data；已預設 git-ignore，不應直接公開整個 runtime。
+
+設定環境變數不會代替安裝工具；工具仍由 portable Scoop 管理。Scoop 自己的 package download cache 會顯示為 `SCOOP_CACHE`。`cache/` 與 `project-cache/` 是可重建資料；`tool-data/` 則含 rustup toolchains、Cargo/uv/Pixi global tools 等，不應當成純 cache 隨意刪除。這些內容亦不適合由多部電腦同時寫入同一個同步資料夾。capsulenv 不會預設設定 `RUSTC_WRAPPER=sccache`，以免尚未安裝 sccache 時令 Cargo 失敗；需要時可在 local config 的 `ToolStorage.Variables` 明確加入。建立及查看 capsulenv-owned storage 位置：
+
+```bat
+capsulenv.cmd cache init
+capsulenv.cmd cache paths
+```
+
+將 Rust 專案現有 `target/` 搬入 capsule，並在原位置建立 directory junction：
+
+```bat
+capsulenv.cmd cache link cargo-target D:\src\project --move
+```
+
+查看或解除：
+
+```bat
+capsulenv.cmd cache status D:\src\project
+capsulenv.cmd cache unlink cargo-target D:\src\project
+capsulenv.cmd cache unlink cargo-target D:\src\project --restore
+```
+
+Windows 不支援 directory hardlink，因此 directory profile 預設使用不需 Administrator 的 junction；`--symlink` 可在 Developer Mode／elevated 環境使用。框架亦支援 `Kind = 'File'` 配合 `LinkType = 'HardLink'` 的自訂 profile。專案 ID 對 capsule 內的 source path 使用相對路徑計算，所以把 repository 放在 `workspace/` 後，整個 capsule與 source 一起搬移仍會找到同一份 project cache。capsule 外的專案則以 absolute path 識別；專案本身搬位後會形成新的 cache ID。File hardlink 只適合位於同一 volume 的明確檔案 profile，建立後會用 Windows file identity 驗證，而不是只比較檔名。
+
+建立 link 時會在 `.capsulenv/project-cache-links.json` 登記 capsule-relative project reference、link type 與最後一次 target。Junction／absolute symlink 搬移後仍可能保存舊 target，因此 `shell`、`init` 會自動嘗試重接；也可手動執行：
+
+```bat
+capsulenv.cmd cache repair
+capsulenv.cmd cache repair --strict
+```
+
+修復器只會替換「目前 stale target 精確等於 registry 記錄的上一個 target」的 reparse point；普通目錄、普通檔案或指向其他位置的 link 一律拒絕改動。外部 project 暫時不在時會保留記錄並跳過，之後可再修復。
 
 若 portable `scoop-global/apps` 內已有應用程式，完整 `rehydrate` 必須在 elevated terminal 執行。Scoop 對非 elevated global reset 只會略過 app；capsulenv 會在 reset 前拒絕繼續，避免 links 尚未重建便錯誤保存新的 relocation fingerprint。
 
@@ -50,6 +111,23 @@ set CAPSULENV_BOOTSTRAP_SCOOP_ROOT=D:\portable\scoop
 set CAPSULENV_BOOTSTRAP_SCOOP_GLOBAL_ROOT=D:\portable\scoop-global
 capsulenv.cmd doctor
 ```
+
+
+## Build 與安裝
+
+開發 repo 可直接執行 `capsulenv.cmd`，每次按需要重新 merge module。正式 portable 環境可先生成只含 runtime 的目錄：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv
+```
+
+或把已 merge 的 module、batch launchers、設定、runtime scripts 與文件安裝／更新到指定位置：
+
+```bat
+install.cmd D:\Portable\capsulenv
+```
+
+安裝目的地不可位於 source repository 內；source-local staging 應使用 `Build-Capsulenv.ps1`。安裝器只更新 `.capsulenv-install.json` 列出的 managed files，保留 `scoop/`、`scoop-global/`、`cache/`、`tool-data/`、`project-cache/`、`workspace/`、`.capsulenv/`、local config 與其他未知檔案。更新失敗時會把已動過的 managed files 交易式還原。正常安裝版直接 import `modules\Capsulenv\Capsulenv.psd1`，不需要攜帶 `src/` 或 merge script。詳見 `docs/INSTALL.md`。
 
 ## 開始使用
 
@@ -274,7 +352,7 @@ capsulenv.cmd enable-user
 capsulenv.cmd restore-user
 ```
 
-首次 `enable-user` 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`SSH_AUTH_SOCK` 及自訂 variables；restore 會還原「原值」或「原本不存在」。
+首次 `enable-user` 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`SSH_AUTH_SOCK`、tool cache/home variables 及自訂 variables；restore 會還原「原值」或「原本不存在」。升級或搬位後可用 `capsulenv.cmd enable-user --force` 延伸舊 backup 並重套新值，既有 backup entries 不會被覆寫。
 
 ## 驗證
 
@@ -284,4 +362,4 @@ capsulenv.cmd restore-user
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-測試會合併模組、用 PowerShell AST 解析所有 scripts，檢查 exports、schema、environment plan、relocation replacement boundary、transactional persisted-file repair 與 lifecycle ownership；不會執行真實 `scoop reset`、hooks、browser、service 或 Git global changes。
+測試會合併模組、用 PowerShell AST 解析所有 scripts，檢查 exports、schema、environment plan、relocation replacement boundary、tool-storage plan、project-link contracts、prebuilt runtime、transactional installer、persisted-file repair 與 lifecycle ownership；不會執行真實 `scoop reset`、hooks、browser、service 或 Git global changes。

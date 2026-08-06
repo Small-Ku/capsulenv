@@ -90,3 +90,24 @@ capsulenv.cmd rehydrate
 capsulenv.cmd repair-persist --last --dry-run
 capsulenv.cmd repair-persist --last firefox
 ```
+
+## v0.6.0
+
+v0.6.0 將配置 schema 升至 4，新增 `ToolStorage`。uv、Pixi、rustup/Cargo、sccache、ccache 的 cache/home 會透過各自環境變數解析到 capsule 內；Scoop download cache 仍由 `scoop\cache` 原生擁有。`enable-user` 的原始環境備份亦會涵蓋這些變數。
+
+若已在舊版執行過 `enable-user`，使用以下命令延伸原 backup 並套用新工具變數；原本已備份的值不會被覆寫：
+
+```bat
+capsulenv.cmd enable-user --force
+```
+
+新增 `cache link` profile framework。預設 `cargo-target` 可把 repository 的 `target\` 搬入 `project-cache\<project-id>\` 並在原位置建立 junction。Directory profile 不接受 hardlink；file hardlink 會以 Windows volume/file identity 驗證。推薦把 portable source 放在 `workspace\`，讓 project ID 在整個 capsule 搬移後保持穩定。
+
+受管 link 會記錄在 `.capsulenv/project-cache-links.json`。由於 Windows junction／absolute symlink 保存 absolute target，整個 capsule 搬位後 `shell`／`init` 會只對 registry 可驗證的 stale target 自動重接；普通 path 與不相符的 link 不會被替換。可手動檢查：
+
+```bat
+capsulenv.cmd cache repair
+capsulenv.cmd cache repair --strict
+```
+
+另外新增 `Build-Capsulenv.ps1`、`Install-Capsulenv.ps1` 與 `install.cmd`。安裝版直接載入 `modules\Capsulenv` 中的 deterministic merged module；更新只管理 `.capsulenv-install.json` 列出的 runtime files，保留 Scoop、cache、tool data、workspace、local config 與未知檔案，失敗時回滾已修改的 managed files。

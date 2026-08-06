@@ -116,7 +116,14 @@ $required = @(
     'Restore-CapsulenvBitwardenSshAgentSetup',
     'Test-CapsulenvBitwardenSshAgent',
     'Enable-CapsulenvUserEnvironment',
-    'Restore-CapsulenvUserEnvironment'
+    'Restore-CapsulenvUserEnvironment',
+    'Initialize-CapsulenvToolStorage',
+    'New-CapsulenvProjectCacheLink',
+    'Remove-CapsulenvProjectCacheLink',
+    'Get-CapsulenvToolStorageStatus',
+    'Get-CapsulenvProjectCacheStatus',
+    'Repair-CapsulenvProjectCacheLinks',
+    'Get-CapsulenvManagedProjectCacheLinks'
 )
 foreach ($name in $required) {
     Assert-CapsulenvTest `
@@ -125,7 +132,7 @@ foreach ($name in $required) {
 }
 
 $config = Get-CapsulenvConfiguration -Refresh
-Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 3) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 4) -Message 'Unexpected configuration schema.'
 Assert-CapsulenvTest `
     -Condition ([string]$config.Bitwarden.Authorization -eq 'always') `
     -Message 'Unexpected default Bitwarden SSH authorization behavior.'
@@ -381,6 +388,66 @@ Assert-CapsulenvTest `
     -Condition (-not $plan.Variables.Contains('BITWARDEN_APPDATA_DIR')) `
     -Message 'BITWARDEN_APPDATA_DIR should be owned by the Scoop package.'
 
+foreach ($toolVariable in @(
+    'UV_CACHE_DIR',
+    'UV_PYTHON_CACHE_DIR',
+    'UV_PYTHON_INSTALL_DIR',
+    'UV_PYTHON_BIN_DIR',
+    'UV_TOOL_DIR',
+    'UV_TOOL_BIN_DIR',
+    'PIXI_HOME',
+    'PIXI_CACHE_DIR',
+    'RUSTUP_HOME',
+    'CARGO_HOME',
+    'SCCACHE_DIR',
+    'CCACHE_DIR',
+    'CCACHE_TEMPDIR'
+)) {
+    Assert-CapsulenvTest `
+        -Condition ($plan.Variables.Contains($toolVariable) -and [System.IO.Path]::IsPathRooted([string]$plan.Variables[$toolVariable])) `
+        -Message "Portable tool variable was not resolved inside the capsule: $toolVariable"
+}
+$toolStorageStatus = @(Get-CapsulenvToolStorageStatus)
+Assert-CapsulenvTest `
+    -Condition ($null -ne ($toolStorageStatus | Where-Object { $_.Name -eq 'SCOOP_CACHE' })) `
+    -Message 'Scoop-owned package cache is missing from the tool-storage plan.'
+$toolStoragePlan = & $module { Get-CapsulenvToolStoragePlan }
+$scoopCacheStatus = $toolStorageStatus | Where-Object { $_.Name -eq 'SCOOP_CACHE' } | Select-Object -First 1
+Assert-CapsulenvTest `
+    -Condition ($toolStoragePlan.Directories -notcontains $scoopCacheStatus.Value) `
+    -Message 'capsulenv must report but not create the Scoop-owned package cache.'
+Assert-CapsulenvTest `
+    -Condition $config.ToolStorage.ProjectLinks.ContainsKey('cargo-target') `
+    -Message 'The default cargo-target project cache profile is missing.'
+$capsuleProjectStatus = @(Get-CapsulenvProjectCacheStatus -ProjectPath $root)
+$capsuleProjectStatusAgain = @(Get-CapsulenvProjectCacheStatus -ProjectPath $root)
+Assert-CapsulenvTest `
+    -Condition ($capsuleProjectStatus.Count -eq 1 -and $capsuleProjectStatus[0].ProjectId -eq $capsuleProjectStatusAgain[0].ProjectId) `
+    -Message 'Capsule-relative project cache identity was not stable.'
+
+$projectCacheSource = @(
+    [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '35-ToolStorage.ps1')),
+    [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '36-ProjectCacheRegistry.ps1'))
+) -join "`n"
+foreach ($requiredProjectCacheBehavior in @(
+    'project-cache-links.json',
+    'LastStorePath',
+    'Repair-CapsulenvProjectCacheLinks',
+    'Get-CapsulenvReparseTarget',
+    'Refusing to replace an unrecognized project link',
+    'NativeFileIdentity'
+)) {
+    Assert-CapsulenvTest `
+        -Condition $projectCacheSource.Contains($requiredProjectCacheBehavior) `
+        -Message "Project-cache relocation safety is missing: $requiredProjectCacheBehavior"
+}
+Assert-CapsulenvTest `
+    -Condition $projectCacheSource.Contains('Windows does not support directory hard links') `
+    -Message 'Directory hard links must remain rejected.'
+Assert-CapsulenvTest `
+    -Condition ($projectCacheSource.IndexOf('$target = Get-CapsulenvReparseTarget') -lt $projectCacheSource.IndexOf('Test-CapsulenvHardLinkMatch')) `
+    -Message 'File symlinks must be detected before hard-link file identity checks.'
+
 $mergedPath = & $module {
     Merge-CapsulenvPath -ExistingPath 'C:\Tools;C:\Else' -Prepend @('c:\tools\', 'C:\New')
 }
@@ -456,6 +523,68 @@ foreach ($forbidden in @('data\browsers', 'data\bitwarden', 'ProfileDir', 'Cache
     Assert-CapsulenvTest `
         -Condition (-not $trackedText.Contains($forbidden)) `
         -Message "Parallel app-data ownership remains in tracked configuration/code: $forbidden"
+}
+
+$distributionRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-distribution-test-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    $runtimeRoot = Join-Path $distributionRoot 'runtime'
+    $runtime = & (Join-Path (Join-Path $root 'scripts') 'Build-Capsulenv.ps1') -OutputPath $runtimeRoot
+    Assert-CapsulenvTest `
+        -Condition (Test-Path -LiteralPath $runtime.ModulePath -PathType Leaf) `
+        -Message 'Runtime build did not include the prebuilt module manifest.'
+    Assert-CapsulenvTest `
+        -Condition (Test-Path -LiteralPath (Join-Path $runtimeRoot 'modules\Capsulenv\Capsulenv.psm1') -PathType Leaf) `
+        -Message 'Runtime build did not include the merged PowerShell module.'
+    Assert-CapsulenvTest `
+        -Condition (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot 'src'))) `
+        -Message 'Minimal runtime unexpectedly included development source.'
+    Assert-CapsulenvTest `
+        -Condition (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot 'Merge-ModuleScripts.ps1'))) `
+        -Message 'Minimal runtime unexpectedly included the module compiler.'
+
+    $builderSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Build-Capsulenv.ps1'))
+    Assert-CapsulenvTest `
+        -Condition $builderSource.Contains('Source-local build output must remain under the dist directory') `
+        -Message 'Runtime builder does not protect source directories from destructive output paths.'
+
+    & (Join-Path $runtimeRoot 'scripts\Invoke-Capsulenv.ps1') help
+
+    $installRoot = Join-Path $distributionRoot 'installed'
+    $installed = & (Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1') -Destination $installRoot
+    Assert-CapsulenvTest `
+        -Condition (Test-Path -LiteralPath $installed.Launcher -PathType Leaf) `
+        -Message 'Installer did not deploy the batch launcher.'
+    Assert-CapsulenvTest `
+        -Condition (Test-Path -LiteralPath (Join-Path $installRoot 'modules\Capsulenv\Capsulenv.psd1') -PathType Leaf) `
+        -Message 'Installer did not deploy the prebuilt module.'
+    foreach ($mutableDirectory in @('scoop', 'scoop-global', 'cache', 'tool-data', 'project-cache', 'workspace', '.capsulenv')) {
+        Assert-CapsulenvTest `
+            -Condition (Test-Path -LiteralPath (Join-Path $installRoot $mutableDirectory) -PathType Container) `
+            -Message "Installer did not create mutable directory: $mutableDirectory"
+    }
+    $sentinel = Join-Path (Join-Path $installRoot 'workspace') 'keep.txt'
+    'preserve' | Set-Content -LiteralPath $sentinel -Encoding UTF8
+    & (Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1') -Destination $installRoot | Out-Null
+    Assert-CapsulenvTest `
+        -Condition ((Get-Content -LiteralPath $sentinel -Raw).Trim() -eq 'preserve') `
+        -Message 'Installer update changed mutable workspace data.'
+
+    $installerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
+    foreach ($requiredInstallerBehavior in @(
+        'rollbackRecords',
+        'Copy-CapsulenvInstallFile',
+        '.capsulenv-install.json',
+        'ManagedFiles',
+        'Install destination must not be inside the source repository'
+    )) {
+        Assert-CapsulenvTest `
+            -Condition $installerSource.Contains($requiredInstallerBehavior) `
+            -Message "Installer is missing transactional/ownership behavior: $requiredInstallerBehavior"
+    }
+} finally {
+    if (Test-Path -LiteralPath $distributionRoot) {
+        Remove-Item -LiteralPath $distributionRoot -Recurse -Force
+    }
 }
 
 Invoke-Capsulenv help
