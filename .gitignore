@@ -2,6 +2,7 @@
 .capsulenv/
 data/
 scoop/
+scoop-global/
 config/capsulenv.local.psd1
 *.log
 *.tmp

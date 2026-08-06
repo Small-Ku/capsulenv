@@ -1,27 +1,42 @@
 # capsulenv
 
-`capsulenv` 把原本單一 `portable-scoop.ps1` 擴展為可模組化、可還原的 Windows portable development capsule。
+`capsulenv` 是一個可搬移的 Windows Scoop 啟動與修復層。它不再自行管理 `data/`、Bitwarden app-data、Firefox profile 或 Zen profile；這些一律交回 Scoop manifest 的 `persist`、`pre_install` 與 `post_install`。
 
-每次由 `capsulenv.cmd` 啟動時，會先以 `Merge-ModuleScripts.ps1` 合併 `src/*.ps1`，生成 `.build/Capsulenv/Capsulenv.psm1`，再載入模組。執行 `shell` 時會開啟一個繼承 portable 環境的子 PowerShell，因此 `SCOOP`、`XDG_CONFIG_HOME`、`PATH`、Bitwarden app-data 與 SSH socket 在該 shell 內均有效。Scoop config 亦會透過 repo-local `XDG_CONFIG_HOME=data/xdg` 隔離，不會回寫使用者家目錄。
+每次由 `capsulenv.cmd` 啟動時，`Merge-ModuleScripts.ps1` 會 deterministic merge `src/*.ps1`，生成 `.build/Capsulenv/Capsulenv.psm1`。`shell` 會開啟繼承 portable Scoop environment 的子 PowerShell。
 
-## 目錄
+## 所有權模型
 
 ```text
-capsulenv.cmd                  Batch 入口
-Merge-ModuleScripts.ps1       Deterministic module builder
-Capsulenv.psd1                Source module manifest
-src/                           PowerShell module sources
-config/capsulenv.psd1         Tracked defaults
-config/capsulenv.local.psd1   Local override; git-ignored
-scoop/                         Portable Scoop root; git-ignored
-data/                          Portable app/profile data and XDG config; git-ignored
-.capsulenv/                    Reversible-operation backups; git-ignored
-.build/                        Generated module; git-ignored
+capsulenv/
+├─ capsulenv.cmd
+├─ src/                              capsulenv orchestration only
+├─ scripts/scoop-capsulenv-replay.ps1
+├─ config/
+├─ scoop/                            complete portable Scoop root
+│  ├─ apps/
+│  ├─ buckets/
+│  ├─ persist/                       manifest-declared persisted app data/profiles
+│  ├─ shims/
+│  └─ cache/
+├─ scoop-global/                     optional Scoop-owned global root
+├─ .capsulenv/                       relocation marker and reversible backups
+└─ .build/                           generated module
 ```
+
+capsulenv 同時設定 `SCOOP` 與 `SCOOP_GLOBAL`，避免 `reset *` 意外枚舉主機的 `%ProgramData%\scoop`。兩個 root 都仍由 Scoop 本體管理。
+
+Scoop 原生 `reset` 會重建 app 的 `current` junction、shims、shortcuts、environment entries 與 `persist` links。它不會重跑 manifest 的 `pre_install` / `post_install`，所以 capsulenv 的 rehydrate 流程為：
+
+1. 執行 `scoop reset *`。
+2. 從 portable local／global root 中每個已安裝版本自己的 `manifest.json` 與 `install.json` 讀取 lifecycle。
+3. 只重放 `config/capsulenv.psd1` 明確列出的 hooks。
+4. 成功後記錄目前 root、computer 與 user；同一位置不會每次開 shell 都重跑。
+
+預設只重放 Firefox／Zen 類 manifest 的 `post_install`，用來重新註冊 Scoop profile。`pre_install` 預設完全不重放，因為不少 manifest 會在其中 rename installer、搬檔或做一次性 migration，第二次執行並不安全。
 
 ## 開始使用
 
-把既有 portable Scoop 目錄放在 repo 根目錄的 `scoop/`，然後執行：
+把完整 portable Scoop root 放在 repo 的 `scoop/`：
 
 ```bat
 capsulenv.cmd doctor
@@ -29,75 +44,73 @@ capsulenv.cmd init
 capsulenv.cmd shell
 ```
 
-若只想執行一個 command：
+`init` 會立即做一次完整 rehydrate。日後整個 repo 被搬到另一個 path、另一部電腦或另一個 Windows user 時，首次 `shell` 會自動再做一次。
+
+只執行一個 command：
 
 ```bat
 capsulenv.cmd run scoop status
 capsulenv.cmd run git status
 ```
 
-`init` 預設不搬動既有 browser profile。需要複製現有預設 profile 時：
+## Scoop lifecycle
+
+完整重建 links 並重放設定中的安全 hooks：
 
 ```bat
-capsulenv.cmd init copy
+capsulenv.cmd rehydrate
 ```
 
-`move` 會移動原 profile，風險較高，必須先完全關閉 browser：
+只做原生 Scoop reset：
 
 ```bat
-capsulenv.cmd init move
+capsulenv.cmd reset
+capsulenv.cmd reset firefox zen-browser
 ```
 
-## Session 與 User 環境
-
-`capsulenv.cmd shell` 只影響新開的子 shell。若確實要把 `SCOOP`、`XDG_CONFIG_HOME`、`PATH`、`BITWARDEN_APPDATA_DIR`、`SSH_AUTH_SOCK` 等寫到 User environment：
+明確重跑某個 installed manifest hook：
 
 ```bat
-capsulenv.cmd enable-user
-capsulenv.cmd restore-user
+capsulenv.cmd hooks post_install firefox zen-browser
+capsulenv.cmd hooks pre_install some-app
 ```
 
-首次 `enable-user` 會把所有即將改動的 User values 精確備份到 `.capsulenv/user-environment-backup.json`。後續 restore 會恢復原值，而不是猜測或只移除 path fragment。
+第二個指令屬高風險顯式操作。capsulenv 不會自行判斷任意 `pre_install` 是否冪等。
 
-## Bitwarden SSH Agent
-
-capsulenv 會：
-
-1. 把 Bitwarden desktop app-data 指向 `data/bitwarden`。
-2. 在 capsule session 設定 `SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent`。
-3. 可選擇停用與 Bitwarden 競爭同一 Windows named pipe 的原生 `ssh-agent` service。
-4. 可選擇令 Git 明確使用 Microsoft OpenSSH。
-
-Bitwarden desktop 內的 **Settings → Enable SSH agent** 仍須由使用者啟用；capsulenv 不會直接改寫 vault/application internal state。
+需要暫時略過 hook，只修復 Scoop links：
 
 ```bat
-capsulenv.cmd bitwarden start
-capsulenv.cmd bitwarden disable-windows-agent
-capsulenv.cmd bitwarden agent-test
-capsulenv.cmd bitwarden configure-git
+capsulenv.cmd rehydrate --skip-hooks
 ```
 
-停用 Windows service 與改動 global Git config 都會先備份，並可還原：
+### 調整自動重放清單
 
-```bat
-capsulenv.cmd bitwarden restore-windows-agent
-capsulenv.cmd bitwarden restore-git
+複製 local config：
+
+```powershell
+Copy-Item config\capsulenv.local.psd1.example config\capsulenv.local.psd1
 ```
 
-停用/還原 Windows service 需要 elevated terminal。
+例如：
 
-## Firefox 與 Zen Browser profiles
-
-Profile data 分別放在：
-
-```text
-data/browsers/firefox/profile
-data/browsers/zen/profile
+```powershell
+@{
+    Scoop = @{
+        ReplayHooks = @{
+            firefox = @('post_install')
+            'zen-browser' = @('post_install')
+        }
+    }
+}
 ```
 
-cache 被導向各自的 `cache/`。`init` 會在 Firefox/Zen 的 `profiles.ini` 註冊名為 `capsulenv` 的 absolute profile，修改前先把原檔保存在 `.capsulenv/browsers/...`。預設不改變一般 Firefox/Zen 啟動所用的 default profile；capsulenv launcher 會明確傳入 portable profile。
+`Scoop.ReplayHooks` 會整個取代預設 allow-list，因此設為 `@{}` 即可停用所有自動 hook；其他 nested hashtable 仍會 recursive merge。
 
-Browser launcher 同時使用 Mozilla 的 `--profile <path>`，因此不依賴 installation-specific default profile：
+## Firefox 與 Zen Browser
+
+capsulenv 不建立、複製、搬動或改寫 browser profile。官方／所選 Scoop manifest 應透過 `persist` 保存 profile，並在 `post_install` 中註冊它。
+
+啟動器只找出 Scoop-installed executable 並正常啟動：
 
 ```bat
 capsulenv.cmd firefox
@@ -106,28 +119,47 @@ firefox-capsulenv.cmd
 zen-capsulenv.cmd
 ```
 
-重新註冊或還原：
+若 profile registration 因搬移而失效，執行 `rehydrate`；不要另建 capsulenv profile store。
+
+## Bitwarden SSH Agent
+
+Bitwarden 的 `bitwarden-appdata` 由 Scoop manifest `persist`。capsulenv 僅負責 host integration：
+
+- session／可選 User scope 的 `SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent`
+- 啟動 Scoop-installed Bitwarden Desktop
+- 可備份後停用 Windows `ssh-agent` service
+- 可備份後令 Git 明確使用 Microsoft OpenSSH
+
+Bitwarden Desktop 內的 **Enable SSH agent** 仍由 Bitwarden persisted settings 保存；capsulenv 不改寫 vault/application internals。
 
 ```bat
-capsulenv.cmd browser configure firefox copy
-capsulenv.cmd browser restore firefox
-capsulenv.cmd browser configure zen none
-capsulenv.cmd browser restore zen
+capsulenv.cmd bitwarden start
+capsulenv.cmd bitwarden disable-windows-agent
+capsulenv.cmd bitwarden configure-git
+capsulenv.cmd bitwarden agent-test
 ```
 
-還原會恢復 `profiles.ini` / `installs.ini`，並移除 capsulenv 在 `user.js` 寫入的 managed block。`copy` 建立的 portable profile data 會保留；`move` 搬入的 profile 則會連同後續更新移回原位置。
+還原：
 
-`MakeDefaultProfile` 與 `RegisterInstallDefaults` 均預設為 `$false`，避免 capsulenv 改變一般 browser 啟動或鎖定同一產品的所有 installation。明確啟用後，才會調整 `profiles.ini` default 或既有 `installs.ini` sections。
-
-## 本機設定
-
-複製範例後修改：
-
-```powershell
-Copy-Item config\capsulenv.local.psd1.example config\capsulenv.local.psd1
+```bat
+capsulenv.cmd bitwarden restore-windows-agent
+capsulenv.cmd bitwarden restore-git
 ```
 
-Local config 會 recursively merge over tracked defaults，array/scalar 則整項取代。`Environment.PathVariables` 的相對路徑會以 repo root 解算；`Environment.Variables` 則保留為一般字串值。
+停用／還原 Windows service 需要 elevated terminal。
+
+## Session 與 User environment
+
+正常 `shell` environment 只影響新開的 child PowerShell。惟首次 relocation rehydrate 會執行原生 `scoop reset`；若某些 manifests 宣告 `env_add_path`／`env_set`，Scoop 會按其原生語意重新套用相應 User environment entries。
+
+需要讓新開的其他 terminal 也固定使用此 Scoop root 時：
+
+```bat
+capsulenv.cmd enable-user
+capsulenv.cmd restore-user
+```
+
+首次 `enable-user` 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`SSH_AUTH_SOCK` 及自訂 variables；restore 會還原「原值」或「原本不存在」。
 
 ## 驗證
 
@@ -137,4 +169,4 @@ Local config 會 recursively merge over tracked defaults，array/scalar 則整�
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-測試會重新合併 module、載入 manifest、檢查 exports、config 與 CLI help，不會修改 User environment、Git config、Windows service 或真實 browser profiles。
+測試會合併模組、用 PowerShell AST 解析所有 scripts、檢查 exports、schema、environment plan 與 lifecycle ownership，不會執行 `scoop reset`、hooks、browser、service 或 Git global changes。

@@ -17,8 +17,6 @@ function Initialize-CapsulenvBitwarden {
         return
     }
 
-    $appData = New-CapsulenvDirectory -Path $configuration.Bitwarden.AppDataDir
-    [Environment]::SetEnvironmentVariable('BITWARDEN_APPDATA_DIR', $appData, 'Process')
     if ($configuration.Bitwarden.SetSshAuthSock) {
         [Environment]::SetEnvironmentVariable('SSH_AUTH_SOCK', '\\.\pipe\openssh-ssh-agent', 'Process')
     }
@@ -39,7 +37,7 @@ function Start-CapsulenvBitwarden {
 
     $existing = Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue
     if ($existing) {
-        Write-CapsulenvMessage -Level Detail -Message 'Bitwarden desktop is already running; its existing app-data location cannot be changed for this process.'
+        Write-CapsulenvMessage -Level Detail -Message 'Bitwarden desktop is already running.'
         return
     }
 
@@ -50,7 +48,7 @@ function Start-CapsulenvBitwarden {
     }
 
     [void](Start-Process -FilePath $executable -WorkingDirectory (Split-Path -Parent $executable))
-    Write-CapsulenvMessage -Level Success -Message 'Bitwarden desktop started with portable app-data.'
+    Write-CapsulenvMessage -Level Success -Message 'Bitwarden desktop started from portable Scoop.'
 }
 
 function Get-CapsulenvSshAgentServiceStatePath {

@@ -16,10 +16,11 @@ function Initialize-CapsulenvContext {
     }
 
     $resolvedRoot = [System.IO.Path]::GetFullPath($Root)
+    $configRoot = Join-Path $resolvedRoot 'config'
     $script:CapsulenvContext = [pscustomobject]@{
         Root = $resolvedRoot
-        ConfigPath = Join-Path $resolvedRoot 'config\capsulenv.psd1'
-        LocalConfigPath = Join-Path $resolvedRoot 'config\capsulenv.local.psd1'
+        ConfigPath = Join-Path $configRoot 'capsulenv.psd1'
+        LocalConfigPath = Join-Path $configRoot 'capsulenv.local.psd1'
         StateRoot = Join-Path $resolvedRoot '.capsulenv'
         BuildRoot = Join-Path $resolvedRoot '.build'
     }

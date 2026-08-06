@@ -6,28 +6,33 @@ function Show-CapsulenvHelp {
 capsulenv commands
 
   capsulenv.cmd shell
-      Open a child PowerShell with the portable environment active.
+      Open a child PowerShell with the portable Scoop environment active.
+      On a new host/path, rehydrate Scoop once before opening the shell.
 
   capsulenv.cmd run <command> [arguments...]
       Run one command inside the portable environment.
 
-  capsulenv.cmd init [none|copy|move]
-      Create state/data directories and register enabled browser profiles.
-      Browser migration is disabled unless copy or move is explicitly supplied.
+  capsulenv.cmd init [--skip-hooks]
+  capsulenv.cmd rehydrate [--skip-hooks]
+      Run native `scoop reset *`, then replay configured safe lifecycle hooks.
+      Scoop itself owns persist data and application profiles.
+
+  capsulenv.cmd hooks <pre_install|post_install> <app> [app...]
+      Explicitly replay one installed-manifest hook. pre_install is opt-in
+      because many manifests implement it as a one-shot transformation.
+
+  capsulenv.cmd reset [app...]
+      Run native Scoop reset without lifecycle replay. Defaults to all apps.
 
   capsulenv.cmd enable-user
   capsulenv.cmd restore-user
-      Persist or restore User environment variables using an exact backup.
+      Persist or restore SCOOP/PATH/SSH_AUTH_SOCK using an exact backup.
 
   capsulenv.cmd doctor
-  capsulenv.cmd reset-shims
 
   capsulenv.cmd firefox [arguments...]
   capsulenv.cmd zen [arguments...]
-      Start the browser with its capsulenv profile using --profile.
-
-  capsulenv.cmd browser configure <firefox|zen> [none|copy|move]
-  capsulenv.cmd browser restore <firefox|zen>
+      Start the Scoop-installed browser. Its manifest/persist store owns the profile.
 
   capsulenv.cmd bitwarden start
   capsulenv.cmd bitwarden agent-test
@@ -36,39 +41,6 @@ capsulenv commands
   capsulenv.cmd bitwarden configure-git
   capsulenv.cmd bitwarden restore-git
 '@ | Write-Host
-}
-
-function Invoke-CapsulenvBrowserCommand {
-    param([string[]]$Arguments)
-
-    if ($Arguments.Count -lt 2) {
-        throw 'Usage: browser <configure|restore|start> <firefox|zen> [none|copy|move]'
-    }
-    $action = $Arguments[0].ToLowerInvariant()
-    $browser = switch ($Arguments[1].ToLowerInvariant()) {
-        'firefox' { 'Firefox' }
-        'zen' { 'Zen' }
-        default { throw "Unknown browser: $($Arguments[1])" }
-    }
-
-    switch ($action) {
-        'configure' {
-            $migration = if ($Arguments.Count -ge 3) { $Arguments[2] } else { 'None' }
-            $definition = Get-CapsulenvBrowserDefinition -Browser $browser
-            Register-CapsulenvBrowserProfile `
-                -Browser $browser `
-                -Migrate $migration `
-                -InstallDefault:$definition.RegisterInstallDefaults
-        }
-        'restore' {
-            Restore-CapsulenvBrowserProfile -Browser $browser
-        }
-        'start' {
-            $remaining = if ($Arguments.Count -gt 2) { @($Arguments[2..($Arguments.Count - 1)]) } else { @() }
-            Start-CapsulenvBrowser -Browser $browser -Arguments $remaining
-        }
-        default { throw "Unknown browser action: $action" }
-    }
 }
 
 function Invoke-CapsulenvBitwardenCommand {
@@ -102,21 +74,39 @@ function Invoke-Capsulenv {
     switch ($command) {
         'shell' { Invoke-CapsulenvChildShell }
         'run' {
-            if ($remaining.Count -lt 1) { throw 'Usage: run <command> [arguments...]' }
+            if ($remaining.Count -lt 1) {
+                throw 'Usage: run <command> [arguments...]'
+            }
             $externalArguments = if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
             Invoke-CapsulenvExternalCommand -Command $remaining[0] -Arguments $externalArguments
         }
         'init' {
-            $migration = if ($remaining.Count -gt 0) { $remaining[0] } else { 'None' }
-            Initialize-Capsulenv -MigrateBrowserProfiles $migration
+            Initialize-Capsulenv -SkipHooks:($remaining -contains '--skip-hooks')
+        }
+        'rehydrate' {
+            Invoke-CapsulenvScoopRehydrate -SkipHooks:($remaining -contains '--skip-hooks')
+        }
+        'hooks' {
+            if ($remaining.Count -lt 2) {
+                throw 'Usage: hooks <pre_install|post_install> <app> [app...]'
+            }
+            $apps = @($remaining[1..($remaining.Count - 1)])
+            Invoke-CapsulenvScoopHookReplay -Hook $remaining[0] -Apps $apps
+        }
+        'reset' {
+            [void](Set-CapsulenvSessionEnvironment)
+            $apps = if ($remaining.Count -gt 0) { $remaining } else { @('*') }
+            [void](Reset-CapsulenvScoop -Apps $apps)
+        }
+        'reset-shims' {
+            [void](Set-CapsulenvSessionEnvironment)
+            [void](Reset-CapsulenvScoop)
         }
         'enable-user' { Enable-CapsulenvUserEnvironment }
         'restore-user' { Restore-CapsulenvUserEnvironment }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
-        'reset-shims' { [void](Set-CapsulenvSessionEnvironment); [void](Reset-CapsulenvScoopShims) }
         'firefox' { Start-CapsulenvBrowser -Browser Firefox -Arguments $remaining }
         'zen' { Start-CapsulenvBrowser -Browser Zen -Arguments $remaining }
-        'browser' { Invoke-CapsulenvBrowserCommand -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }
         'help' { Show-CapsulenvHelp }
         '--help' { Show-CapsulenvHelp }

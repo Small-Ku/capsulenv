@@ -1,10 +1,15 @@
 @{
-    SchemaVersion = 1
+    SchemaVersion = 2
 
     Scoop = @{
         Root = 'scoop'
-        ConfigHome = 'data\xdg'
-        ResetShimsOnEnter = $true
+        GlobalRoot = 'scoop-global'
+        RehydrateOnRelocation = $true
+        ReplayHooks = @{
+            firefox = @('post_install')
+            'firefox-esr' = @('post_install')
+            'zen-browser' = @('post_install')
+        }
     }
 
     Environment = @{
@@ -15,12 +20,10 @@
 
     Bitwarden = @{
         Enabled = $true
-        AppDataDir = 'data\bitwarden'
         StartOnEnter = $true
         SetSshAuthSock = $true
         ExecutableCandidates = @(
             'scoop\apps\bitwarden\current\Bitwarden.exe'
-            'scoop\apps\bitwarden-portable\current\Bitwarden-Portable.exe'
             'scoop\apps\bitwarden-portable\current\Bitwarden.exe'
         )
     }
@@ -28,15 +31,6 @@
     Browsers = @{
         Firefox = @{
             Enabled = $true
-            AutoRegisterProfile = $true
-            RegisterInstallDefaults = $false
-            MakeDefaultProfile = $false
-            ProfileName = 'capsulenv'
-            ProfileDir = 'data\browsers\firefox\profile'
-            CacheDir = 'data\browsers\firefox\cache'
-            RegistryRoot = '%APPDATA%\Mozilla\Firefox'
-            NewInstance = $true
-            ProcessNames = @('firefox')
             CommandNames = @('firefox.exe')
             ExecutableCandidates = @(
                 'scoop\apps\firefox\current\firefox.exe'
@@ -46,15 +40,6 @@
 
         Zen = @{
             Enabled = $true
-            AutoRegisterProfile = $true
-            RegisterInstallDefaults = $false
-            MakeDefaultProfile = $false
-            ProfileName = 'capsulenv'
-            ProfileDir = 'data\browsers\zen\profile'
-            CacheDir = 'data\browsers\zen\cache'
-            RegistryRoot = '%APPDATA%\zen'
-            NewInstance = $true
-            ProcessNames = @('zen', 'zen-alpha')
             CommandNames = @('zen.exe')
             ExecutableCandidates = @(
                 'scoop\apps\zen-browser\current\zen.exe'

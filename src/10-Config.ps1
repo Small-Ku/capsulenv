@@ -34,12 +34,38 @@ function Assert-CapsulenvConfiguration {
             throw "Configuration section is missing or invalid: $sectionName"
         }
     }
-    foreach ($name in @('Root', 'ConfigHome')) {
-        if (
-            -not $Configuration.Scoop.ContainsKey($name) -or
-            [string]::IsNullOrWhiteSpace([string]$Configuration.Scoop[$name])
-        ) {
-            throw "Scoop configuration value is missing: $name"
+    if (
+        -not $Configuration.Scoop.ContainsKey('Root') -or
+        [string]::IsNullOrWhiteSpace([string]$Configuration.Scoop.Root)
+    ) {
+        throw 'Scoop configuration value is missing: Root'
+    }
+    if (
+        -not $Configuration.Scoop.ContainsKey('GlobalRoot') -or
+        [string]::IsNullOrWhiteSpace([string]$Configuration.Scoop.GlobalRoot)
+    ) {
+        throw 'Scoop configuration value is missing: GlobalRoot'
+    }
+    if (
+        -not $Configuration.Scoop.ContainsKey('RehydrateOnRelocation') -or
+        $Configuration.Scoop.RehydrateOnRelocation -isnot [bool]
+    ) {
+        throw 'Scoop.RehydrateOnRelocation must be a Boolean.'
+    }
+    if (
+        -not $Configuration.Scoop.ContainsKey('ReplayHooks') -or
+        $Configuration.Scoop.ReplayHooks -isnot [hashtable]
+    ) {
+        throw 'Scoop.ReplayHooks must be a hashtable.'
+    }
+    foreach ($app in $Configuration.Scoop.ReplayHooks.Keys) {
+        if ([string]::IsNullOrWhiteSpace([string]$app)) {
+            throw 'Scoop.ReplayHooks contains an empty application name.'
+        }
+        foreach ($hook in @($Configuration.Scoop.ReplayHooks[$app])) {
+            if (([string]$hook) -notin @('pre_install', 'post_install')) {
+                throw "Unsupported Scoop lifecycle hook '$hook' for '$app'."
+            }
         }
     }
     foreach ($name in @('PathVariables', 'Variables')) {
@@ -51,13 +77,7 @@ function Assert-CapsulenvConfiguration {
         }
     }
 
-    $reserved = @(
-        'CAPSULENV_ROOT',
-        'SCOOP',
-        'XDG_CONFIG_HOME',
-        'BITWARDEN_APPDATA_DIR',
-        'SSH_AUTH_SOCK'
-    )
+    $reserved = @('CAPSULENV_ROOT', 'SCOOP', 'SCOOP_GLOBAL', 'SSH_AUTH_SOCK')
     foreach ($name in @($Configuration.Environment.PathVariables.Keys) + @($Configuration.Environment.Variables.Keys)) {
         if ($reserved -contains [string]$name) {
             throw "Environment variable is managed by a dedicated capsulenv setting and cannot be overridden here: $name"
@@ -87,12 +107,22 @@ function Import-CapsulenvConfiguration {
     if (Test-Path -LiteralPath $context.LocalConfigPath -PathType Leaf) {
         $local = Import-PowerShellDataFile -Path $context.LocalConfigPath
         $configuration = Merge-CapsulenvHashtable -Base $configuration -Override $local
+
+        # ReplayHooks is an allow-list and must be replaceable as one unit.
+        # An empty local hashtable therefore disables all automatic hook replay.
+        if (
+            $local.ContainsKey('Scoop') -and
+            $local.Scoop -is [hashtable] -and
+            $local.Scoop.ContainsKey('ReplayHooks')
+        ) {
+            $configuration.Scoop.ReplayHooks = $local.Scoop.ReplayHooks
+        }
     }
 
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 1) {
+    if ([int]$configuration.SchemaVersion -ne 2) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

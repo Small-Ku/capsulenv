@@ -3,8 +3,19 @@
     # Copy it to capsulenv.local.psd1; the local file is git-ignored.
 
     Scoop = @{
-        # Root = 'D:\capsulenv-data\scoop'
-        # ConfigHome = 'D:\capsulenv-data\xdg'
+        # Root = 'D:\portable\scoop'
+        # GlobalRoot = 'D:\portable\scoop-global'
+        # RehydrateOnRelocation = $false
+
+        # Only replay hooks that are safe and needed after relocation.
+        # pre_install is deliberately not enabled by default because many
+        # manifests treat it as a one-shot transformation.
+        # ReplayHooks replaces the default allow-list as one unit.
+        # Use @{} to disable automatic hook replay entirely.
+        # ReplayHooks = @{
+        #     firefox = @('post_install')
+        #     'zen-browser' = @('post_install')
+        # }
     }
 
     Bitwarden = @{
@@ -12,10 +23,6 @@
     }
 
     Browsers = @{
-        Firefox = @{
-            AutoRegisterProfile = $false
-            # MakeDefaultProfile = $true
-        }
         Zen = @{
             Enabled = $false
         }
@@ -23,7 +30,7 @@
 
     Environment = @{
         PathVariables = @{
-            # CARGO_HOME = 'data\cargo'
+            # CARGO_HOME = 'scoop\persist\rustup\.cargo'
         }
         Variables = @{
             # RUSTUP_TOOLCHAIN = 'stable'

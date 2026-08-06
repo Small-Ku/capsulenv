@@ -28,17 +28,37 @@ function Invoke-CapsulenvDoctor {
         -Passed (Test-Path -LiteralPath $scoopRoot -PathType Container) `
         -Detail $scoopRoot))
 
+    $scoopGlobalRoot = Get-CapsulenvScoopGlobalRoot
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Portable Scoop global root' `
+        -Passed (-not [string]::IsNullOrWhiteSpace($scoopGlobalRoot)) `
+        -Detail $scoopGlobalRoot))
+
     $scoopExecutable = Get-CapsulenvScoopExecutable
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Scoop command' `
         -Passed ($null -ne $scoopExecutable) `
         -Detail $(if ($scoopExecutable) { $scoopExecutable } else { 'Not found' })))
 
-    $configHome = Resolve-CapsulenvPath -Path $configuration.Scoop.ConfigHome -AllowMissing
+    $persistRoot = Join-Path $scoopRoot 'persist'
     $results.Add((New-CapsulenvCheckResult `
-        -Name 'Scoop XDG config home' `
-        -Passed ([System.IO.Path]::IsPathRooted($configHome)) `
-        -Detail $configHome))
+        -Name 'Scoop persist store' `
+        -Passed (Test-Path -LiteralPath $persistRoot -PathType Container) `
+        -Importance Optional `
+        -Detail $persistRoot))
+
+    $runner = Get-CapsulenvScoopReplayScriptPath
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Lifecycle replay runner' `
+        -Passed (Test-Path -LiteralPath $runner -PathType Leaf) `
+        -Detail $runner))
+
+    $rehydrationRequired = Test-CapsulenvScoopRehydrationRequired
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Relocation rehydration' `
+        -Passed (-not $rehydrationRequired) `
+        -Importance Optional `
+        -Detail $(if ($rehydrationRequired) { 'Required before normal use' } else { 'Current root and host match the last successful run' })))
 
     if ($configuration.Bitwarden.Enabled) {
         $bitwarden = Get-CapsulenvBitwardenExecutable
@@ -70,19 +90,15 @@ function Invoke-CapsulenvDoctor {
 
     foreach ($browser in @('Firefox', 'Zen')) {
         $definition = Get-CapsulenvBrowserDefinition -Browser $browser
-        if (-not $definition.Enabled) { continue }
+        if (-not $definition.Enabled) {
+            continue
+        }
         $executable = Get-CapsulenvBrowserExecutable -Browser $browser
-        $profile = Get-CapsulenvBrowserProfileRoot -Browser $browser
         $results.Add((New-CapsulenvCheckResult `
             -Name "$browser executable" `
             -Passed ($null -ne $executable) `
             -Importance Optional `
             -Detail $(if ($executable) { $executable } else { 'Not found' })))
-        $results.Add((New-CapsulenvCheckResult `
-            -Name "$browser portable profile" `
-            -Passed (Test-Path -LiteralPath $profile -PathType Container) `
-            -Importance Optional `
-            -Detail $profile))
     }
 
     $results | Format-Table -AutoSize | Out-Host
@@ -98,42 +114,26 @@ function Initialize-CapsulenvIntegrations {
     param()
 
     $configuration = Get-CapsulenvConfiguration
-    [void](New-CapsulenvDirectory -Path $configuration.Scoop.Root)
-    [void](New-CapsulenvDirectory -Path $configuration.Scoop.ConfigHome)
-    if ($configuration.Scoop.ResetShimsOnEnter) {
-        [void](Reset-CapsulenvScoopShims -Quiet)
+    if (
+        $configuration.Scoop.RehydrateOnRelocation -and
+        (Test-CapsulenvScoopRehydrationRequired)
+    ) {
+        Write-CapsulenvMessage -Level Info -Message 'Portable Scoop root or host changed; rehydrating installed apps...'
+        Invoke-CapsulenvScoopRehydrate
     }
     Initialize-CapsulenvBitwarden
 }
 
 function Initialize-Capsulenv {
     [CmdletBinding()]
-    param(
-        [ValidateSet('None', 'Copy', 'Move')]
-        [string]$MigrateBrowserProfiles = 'None',
-        [switch]$Force
-    )
+    param([switch]$SkipHooks)
 
-    $configuration = Get-CapsulenvConfiguration -Refresh
-    $context = Get-CapsulenvContext
-    [void](New-Item -ItemType Directory -Path $context.StateRoot -Force)
+    [void](Get-CapsulenvConfiguration -Refresh)
     [void](Set-CapsulenvSessionEnvironment)
-    [void](New-CapsulenvDirectory -Path $configuration.Scoop.Root)
-    [void](New-CapsulenvDirectory -Path $configuration.Scoop.ConfigHome)
-    [void](Reset-CapsulenvScoopShims -Quiet)
+    Invoke-CapsulenvScoopRehydrate -SkipHooks:$SkipHooks
     Initialize-CapsulenvBitwarden
 
-    foreach ($browser in @('Firefox', 'Zen')) {
-        $definition = Get-CapsulenvBrowserDefinition -Browser $browser
-        if ($definition.Enabled -and $definition.AutoRegisterProfile) {
-            Register-CapsulenvBrowserProfile `
-                -Browser $browser `
-                -Migrate $MigrateBrowserProfiles `
-                -InstallDefault:$definition.RegisterInstallDefaults `
-                -Force:$Force
-        }
-    }
-
+    $context = Get-CapsulenvContext
     Write-CapsulenvMessage -Level Success -Message "capsulenv initialized at $($context.Root)"
 }
 
