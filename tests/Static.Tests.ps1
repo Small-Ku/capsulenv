@@ -105,6 +105,8 @@ $required = @(
     'Invoke-CapsulenvScoopHookReplay',
     'Reset-CapsulenvScoop',
     'Test-CapsulenvScoopRehydrationRequired',
+    'Get-CapsulenvRelocationContext',
+    'Invoke-CapsulenvPersistRelocationRepair',
     'Start-CapsulenvBrowser',
     'Start-CapsulenvBitwarden',
     'Set-CapsulenvBitwardenDesktopSshAgent',
@@ -123,10 +125,40 @@ foreach ($name in $required) {
 }
 
 $config = Get-CapsulenvConfiguration -Refresh
-Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 2) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 3) -Message 'Unexpected configuration schema.'
 Assert-CapsulenvTest `
     -Condition ([string]$config.Bitwarden.Authorization -eq 'always') `
     -Message 'Unexpected default Bitwarden SSH authorization behavior.'
+
+$relocationReplacement = & $module {
+    $context = [pscustomobject]@{
+        HasPathChanges = $true
+        PathMappings = @(
+            [pscustomobject]@{
+                Name = 'Root'
+                OldPath = 'C:\Old Capsule'
+                NewPath = 'D:\New Capsule'
+            }
+        )
+    }
+    $source = 'native=C:\Old Capsule\scoop;slash=C:/Old Capsule/scoop;json="C:\\Old Capsule\\scoop";lookalike=C:\Old Capsule-backup'
+    Convert-CapsulenvRelocatedText -Text $source -RelocationContext $context
+}
+Assert-CapsulenvTest `
+    -Condition ($relocationReplacement.ReplacementCount -eq 3) `
+    -Message "Relocation replacement count was incorrect: $($relocationReplacement.ReplacementCount)"
+Assert-CapsulenvTest `
+    -Condition $relocationReplacement.Text.Contains('D:\New Capsule\scoop') `
+    -Message 'Native Windows path was not relocated.'
+Assert-CapsulenvTest `
+    -Condition $relocationReplacement.Text.Contains('D:/New Capsule/scoop') `
+    -Message 'Forward-slash path was not relocated.'
+Assert-CapsulenvTest `
+    -Condition $relocationReplacement.Text.Contains('D:\\New Capsule\\scoop') `
+    -Message 'JSON-escaped path was not relocated.'
+Assert-CapsulenvTest `
+    -Condition $relocationReplacement.Text.Contains('C:\Old Capsule-backup') `
+    -Message 'Relocation replaced a lookalike path without a path boundary.'
 
 $bitwardenJsonRoundTrip = & $module {
     $source = '{"vault_payload":"keep-me","nested":{"global_desktopSettings_sshAgentEnabled":false},"text":"\"global_desktopSettings_sshAgentEnabled\": false","user_12345678-1234-1234-1234-123456789abc_example":true}'
@@ -175,7 +207,7 @@ try {
     $tempConfigRoot = Join-Path $tempRoot 'config'
     [void](New-Item -ItemType Directory -Path $tempConfigRoot -Force)
     Copy-Item -LiteralPath (Join-Path (Join-Path $root 'config') 'capsulenv.psd1') -Destination $tempConfigRoot
-    '@{ Scoop = @{ ReplayHooks = @{} } }' |
+    '@{ Scoop = @{ ReplayHooks = @{}; RelocationRepairs = @{} } }' |
         Set-Content -LiteralPath (Join-Path $tempConfigRoot 'capsulenv.local.psd1') -Encoding UTF8
 
     $replacementConfig = & $module {
@@ -186,6 +218,9 @@ try {
     Assert-CapsulenvTest `
         -Condition ($replacementConfig.Scoop.ReplayHooks.Count -eq 0) `
         -Message 'Local ReplayHooks must replace the default allow-list as one unit.'
+    Assert-CapsulenvTest `
+        -Condition ($replacementConfig.Scoop.RelocationRepairs.Count -eq 0) `
+        -Message 'Local RelocationRepairs must replace the default allow-list as one unit.'
 
     [void](New-Item -ItemType Directory -Path (Join-Path $tempRoot '.capsulenv') -Force)
     '{}' | Set-Content -LiteralPath (Join-Path (Join-Path $tempRoot '.capsulenv') 'scoop-rehydration.json') -Encoding UTF8
@@ -199,6 +234,67 @@ try {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force
     }
 }
+$repairRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-repair-test-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    $repairConfigRoot = Join-Path $repairRoot 'config'
+    $repairPersistRoot = Join-Path (Join-Path (Join-Path $repairRoot 'scoop') 'persist') 'test-app'
+    [void](New-Item -ItemType Directory -Path $repairConfigRoot -Force)
+    [void](New-Item -ItemType Directory -Path $repairPersistRoot -Force)
+    Copy-Item -LiteralPath (Join-Path (Join-Path $root 'config') 'capsulenv.psd1') -Destination $repairConfigRoot
+    @'
+@{
+    Scoop = @{
+        ReplayHooks = @{}
+        RelocationRepairs = @{
+            'test-app' = @(
+                @{ Path = 'settings.json'; Format = 'json'; MaxBytes = 1048576 }
+            )
+        }
+    }
+}
+'@ | Set-Content -LiteralPath (Join-Path $repairConfigRoot 'capsulenv.local.psd1') -Encoding UTF8
+
+    $oldRoot = $repairRoot + '-old'
+    $settingsPath = Join-Path $repairPersistRoot 'settings.json'
+    $sourceJson = '{"path":"' + ($oldRoot.Replace('\', '\\')) + '\\scoop\\apps","lookalike":"' + ($oldRoot.Replace('\', '\\')) + '-backup"}'
+    [System.IO.File]::WriteAllText($settingsPath, $sourceJson, [System.Text.UTF8Encoding]::new($false))
+
+    $repairResult = & $module {
+        param($TemporaryRoot, $PreviousRoot)
+        [void](Initialize-CapsulenvContext -Root $TemporaryRoot)
+        [void](Get-CapsulenvConfiguration -Refresh)
+        $current = Get-CapsulenvRelocationFingerprint
+        $previous = [ordered]@{
+            Root = $PreviousRoot
+            ScoopRoot = Join-Path $PreviousRoot 'scoop'
+            ScoopGlobalRoot = Join-Path $PreviousRoot 'scoop-global'
+            ComputerName = [Environment]::MachineName
+            User = ('{0}\{1}' -f [Environment]::UserDomainName, [Environment]::UserName)
+        }
+        $context = New-CapsulenvRelocationContext -Previous $previous -Current $current
+        Invoke-CapsulenvPersistRelocationRepair -RelocationContext $context
+    } $repairRoot $oldRoot
+
+    $repairedJson = [System.IO.File]::ReadAllText($settingsPath)
+    Assert-CapsulenvTest `
+        -Condition ($repairResult.FilesChanged -eq 1 -and $repairResult.Replacements -eq 1) `
+        -Message 'Transactional persist repair did not report the expected change.'
+    Assert-CapsulenvTest `
+        -Condition $repairedJson.Contains(($repairRoot.Replace('\', '\\')) + '\\scoop\\apps') `
+        -Message 'Transactional persist repair did not write the current root.'
+    Assert-CapsulenvTest `
+        -Condition $repairedJson.Contains(($oldRoot.Replace('\', '\\')) + '-backup') `
+        -Message 'Transactional persist repair changed a lookalike path.'
+    Assert-CapsulenvTest `
+        -Condition ($null -ne ($repairedJson | ConvertFrom-Json)) `
+        -Message 'Transactional persist repair produced invalid JSON.'
+} finally {
+    & $module { param($OriginalRoot) [void](Initialize-CapsulenvContext -Root $OriginalRoot) } $root
+    if (Test-Path -LiteralPath $repairRoot) {
+        Remove-Item -LiteralPath $repairRoot -Recurse -Force
+    }
+}
+
 $config = Get-CapsulenvConfiguration -Refresh
 Assert-CapsulenvTest `
     -Condition (-not $config.Scoop.ContainsKey('ConfigHome')) `
@@ -209,6 +305,9 @@ Assert-CapsulenvTest `
 Assert-CapsulenvTest `
     -Condition (-not $config.Scoop.ReplayHooks.ContainsKey('bitwarden')) `
     -Message 'Bitwarden pre_install must not be replayed automatically.'
+Assert-CapsulenvTest `
+    -Condition (-not $config.Scoop.RelocationRepairs.ContainsKey('bitwarden')) `
+    -Message 'Bitwarden app state must not receive generic path replacement by default.'
 Assert-CapsulenvTest `
     -Condition ($config.Bitwarden.Authorization -in @('always', 'never', 'remember-until-lock')) `
     -Message 'Bitwarden.Authorization is invalid.'
@@ -260,6 +359,26 @@ foreach ($requiredText in @('installed_manifest', 'install_info', 'Invoke-HookSc
 Assert-CapsulenvTest `
     -Condition (-not $replayText.Contains('scoop install')) `
     -Message 'Lifecycle replay must not reinstall or download applications.'
+
+$relocationSource = @(
+    [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '45-Relocation.ps1')),
+    [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '46-PersistRelocation.ps1'))
+) -join "`n"
+foreach ($requiredRelocationBehavior in @(
+    'RelocationRepairs',
+    'Resolve-CapsulenvPersistRepairPath',
+    'Assert-CapsulenvPersistRepairProcessesStopped',
+    '[System.IO.File]::Replace',
+    'ConvertFrom-Json',
+    'MaxBytes'
+)) {
+    Assert-CapsulenvTest `
+        -Condition $relocationSource.Contains($requiredRelocationBehavior) `
+        -Message "Persist relocation engine is missing required safety behavior: $requiredRelocationBehavior"
+}
+Assert-CapsulenvTest `
+    -Condition (-not $relocationSource.Contains('Get-ChildItem -Recurse')) `
+    -Message 'Persist relocation must not recursively scan unapproved app data.'
 
 $bitwardenSource = [System.IO.File]::ReadAllText(
     (Join-Path (Join-Path $root 'src') '55-BitwardenSshAgent.ps1')

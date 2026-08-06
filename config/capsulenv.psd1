@@ -1,5 +1,5 @@
 @{
-    SchemaVersion = 2
+    SchemaVersion = 3
 
     Scoop = @{
         Root = 'scoop'
@@ -10,6 +10,10 @@
             'firefox-esr' = @('post_install')
             'zen-browser' = @('post_install')
         }
+
+        # App-specific rules are supplied in local configuration or later defaults.
+        RelocationRepairs = @{}
+
     }
 
     Environment = @{

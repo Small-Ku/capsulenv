@@ -58,6 +58,12 @@ function Assert-CapsulenvConfiguration {
     ) {
         throw 'Scoop.ReplayHooks must be a hashtable.'
     }
+    if (
+        -not $Configuration.Scoop.ContainsKey('RelocationRepairs') -or
+        $Configuration.Scoop.RelocationRepairs -isnot [hashtable]
+    ) {
+        throw 'Scoop.RelocationRepairs must be a hashtable.'
+    }
     foreach ($app in $Configuration.Scoop.ReplayHooks.Keys) {
         if ([string]::IsNullOrWhiteSpace([string]$app)) {
             throw 'Scoop.ReplayHooks contains an empty application name.'
@@ -68,6 +74,48 @@ function Assert-CapsulenvConfiguration {
             }
         }
     }
+
+    foreach ($app in $Configuration.Scoop.RelocationRepairs.Keys) {
+        $appName = [string]$app
+        if ([string]::IsNullOrWhiteSpace($appName)) {
+            throw 'Scoop.RelocationRepairs contains an empty application name.'
+        }
+        if ($appName -in @('.', '..') -or $appName.IndexOfAny([char[]]'\/') -ge 0) {
+            throw "Scoop.RelocationRepairs app names must not contain path traversal: $appName"
+        }
+        foreach ($rule in @($Configuration.Scoop.RelocationRepairs[$app])) {
+            if ($rule -isnot [hashtable]) {
+                throw "Scoop.RelocationRepairs rules for '$app' must be hashtables."
+            }
+            if (-not $rule.ContainsKey('Path') -or [string]::IsNullOrWhiteSpace([string]$rule.Path)) {
+                throw "Scoop.RelocationRepairs rule for '$app' is missing Path."
+            }
+            if ([System.IO.Path]::IsPathRooted([string]$rule.Path)) {
+                throw "Scoop.RelocationRepairs path for '$app' must be relative: $($rule.Path)"
+            }
+            $format = if ($rule.ContainsKey('Format')) { [string]$rule.Format } else { 'text' }
+            if ($format -notin @('text', 'json')) {
+                throw "Unsupported Scoop.RelocationRepairs format '$format' for '$app'."
+            }
+            if ($rule.ContainsKey('Required') -and $rule.Required -isnot [bool]) {
+                throw "Scoop.RelocationRepairs.Required must be Boolean for '$app'."
+            }
+            if ($rule.ContainsKey('MaxBytes') -and [int64]$rule.MaxBytes -le 0) {
+                throw "Scoop.RelocationRepairs.MaxBytes must be positive for '$app'."
+            }
+            if ($rule.ContainsKey('Processes')) {
+                foreach ($processName in @($rule.Processes)) {
+                    if ([string]::IsNullOrWhiteSpace([string]$processName)) {
+                        throw "Scoop.RelocationRepairs.Processes contains an empty name for '$app'."
+                    }
+                }
+            }
+            if ([string]$rule.Path -match '[*?\[\]]') {
+                throw "Scoop.RelocationRepairs paths do not support wildcards for '$app': $($rule.Path)"
+            }
+        }
+    }
+
     if (
         -not $Configuration.Bitwarden.ContainsKey('Authorization') -or
         ([string]$Configuration.Bitwarden.Authorization) -notin @(
@@ -119,21 +167,21 @@ function Import-CapsulenvConfiguration {
         $local = Import-PowerShellDataFile -Path $context.LocalConfigPath
         $configuration = Merge-CapsulenvHashtable -Base $configuration -Override $local
 
-        # ReplayHooks is an allow-list and must be replaceable as one unit.
-        # An empty local hashtable therefore disables all automatic hook replay.
-        if (
-            $local.ContainsKey('Scoop') -and
-            $local.Scoop -is [hashtable] -and
-            $local.Scoop.ContainsKey('ReplayHooks')
-        ) {
-            $configuration.Scoop.ReplayHooks = $local.Scoop.ReplayHooks
+        # Scoop repair maps are allow-lists and must be replaceable as one unit.
+        # Empty local hashtables therefore disable their automatic behavior.
+        if ($local.ContainsKey('Scoop') -and $local.Scoop -is [hashtable]) {
+            foreach ($allowListName in @('ReplayHooks', 'RelocationRepairs')) {
+                if ($local.Scoop.ContainsKey($allowListName)) {
+                    $configuration.Scoop[$allowListName] = $local.Scoop[$allowListName]
+                }
+            }
         }
     }
 
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 2) {
+    if ([int]$configuration.SchemaVersion -ne 3) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

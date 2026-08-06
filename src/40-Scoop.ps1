@@ -196,27 +196,127 @@ function Test-CapsulenvScoopRehydrationRequired {
     return $false
 }
 
+function ConvertTo-CapsulenvFingerprintSnapshot {
+    [CmdletBinding()]
+    param($Fingerprint)
+
+    if ($null -eq $Fingerprint) {
+        return $null
+    }
+    $snapshot = [ordered]@{}
+    foreach ($name in @('Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
+        if ($Fingerprint -is [System.Collections.IDictionary]) {
+            if ($Fingerprint.Contains($name)) {
+                $snapshot[$name] = [string]$Fingerprint[$name]
+            }
+            continue
+        }
+        $property = $Fingerprint.PSObject.Properties[$name]
+        if ($null -ne $property) {
+            $snapshot[$name] = [string]$property.Value
+        }
+    }
+    return $snapshot
+}
+
 function Save-CapsulenvRehydrationState {
+    [CmdletBinding()]
+    param(
+        $RelocationContext,
+        $PersistRepairResult
+    )
+
+    $statePath = Get-CapsulenvRehydrationStatePath
+    $stateDirectory = Split-Path -Parent $statePath
+    [void](New-Item -ItemType Directory -Path $stateDirectory -Force)
+    $state = Get-CapsulenvRelocationFingerprint
+    $state['CompletedAtUtc'] = [DateTime]::UtcNow.ToString('o')
+    if ($null -ne $RelocationContext -and $RelocationContext.HasPathChanges) {
+        $state['LastRelocation'] = [ordered]@{
+            Previous = ConvertTo-CapsulenvFingerprintSnapshot -Fingerprint $RelocationContext.Previous
+            Current = ConvertTo-CapsulenvFingerprintSnapshot -Fingerprint $RelocationContext.Current
+            PersistFilesChanged = if ($null -ne $PersistRepairResult) { [int]$PersistRepairResult.FilesChanged } else { 0 }
+            PersistReplacements = if ($null -ne $PersistRepairResult) { [int]$PersistRepairResult.Replacements } else { 0 }
+        }
+    } elseif ($null -ne $RelocationContext -and $null -ne $RelocationContext.Previous) {
+        $lastRelocation = $null
+        if ($RelocationContext.Previous -is [System.Collections.IDictionary]) {
+            if ($RelocationContext.Previous.Contains('LastRelocation')) {
+                $lastRelocation = $RelocationContext.Previous['LastRelocation']
+            }
+        } else {
+            $lastProperty = $RelocationContext.Previous.PSObject.Properties['LastRelocation']
+            if ($null -ne $lastProperty) {
+                $lastRelocation = $lastProperty.Value
+            }
+        }
+        if ($null -ne $lastRelocation) {
+            $state['LastRelocation'] = $lastRelocation
+        }
+    }
+
+    $json = $state | ConvertTo-Json -Depth 8
+    [void]($json | ConvertFrom-Json)
+    $tempPath = Join-Path $stateDirectory ('.capsulenv-rehydration-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
+    [System.IO.File]::WriteAllText($tempPath, $json, [System.Text.UTF8Encoding]::new($true))
+    try {
+        if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+            [System.IO.File]::Replace($tempPath, $statePath, $null, $true)
+        } else {
+            [System.IO.File]::Move($tempPath, $statePath)
+        }
+    } finally {
+        if (Test-Path -LiteralPath $tempPath -PathType Leaf) {
+            Remove-Item -LiteralPath $tempPath -Force
+        }
+    }
+}
+
+function Assert-CapsulenvGlobalScoopResetAccess {
     [CmdletBinding()]
     param()
 
-    $statePath = Get-CapsulenvRehydrationStatePath
-    [void](New-Item -ItemType Directory -Path (Split-Path -Parent $statePath) -Force)
-    $state = Get-CapsulenvRelocationFingerprint
-    $state['CompletedAtUtc'] = [DateTime]::UtcNow.ToString('o')
-    $state | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $statePath -Encoding UTF8
+    $appsRoot = Join-Path (Get-CapsulenvScoopGlobalRoot) 'apps'
+    if (-not (Test-Path -LiteralPath $appsRoot -PathType Container)) {
+        return
+    }
+    $globalApps = @(
+        Get-ChildItem -LiteralPath $appsRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ne 'scoop' } |
+            Select-Object -ExpandProperty Name
+    )
+    if ($globalApps.Count -eq 0 -or (Test-CapsulenvAdministrator)) {
+        return
+    }
+
+    $summary = @($globalApps | Sort-Object | Select-Object -First 8) -join ', '
+    if ($globalApps.Count -gt 8) {
+        $summary += (', ... ({0} total)' -f $globalApps.Count)
+    }
+    throw "Portable Scoop global apps require an elevated terminal for relocation rehydration: $summary"
 }
 
 function Invoke-CapsulenvScoopRehydrate {
     [CmdletBinding()]
-    param([switch]$SkipHooks)
+    param(
+        [switch]$SkipHooks,
+        [switch]$SkipPersistRepairs
+    )
 
+    $relocationContext = Get-CapsulenvRelocationContext
     [void](Set-CapsulenvSessionEnvironment)
+    Assert-CapsulenvGlobalScoopResetAccess
     [void](Reset-CapsulenvScoop)
     if (-not $SkipHooks) {
         Invoke-CapsulenvConfiguredHookReplay
     }
-    Save-CapsulenvRehydrationState
+
+    $repairResult = $null
+    if (-not $SkipPersistRepairs -and $relocationContext.HasPathChanges) {
+        $repairResult = Invoke-CapsulenvPersistRelocationRepair -RelocationContext $relocationContext
+    }
+
+    Save-CapsulenvRehydrationState -RelocationContext $relocationContext -PersistRepairResult $repairResult
     Write-CapsulenvMessage -Level Success -Message 'Portable Scoop rehydration completed.'
 }
 
