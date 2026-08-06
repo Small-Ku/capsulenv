@@ -51,6 +51,18 @@ Assert-CapsulenvTest `
     -Condition (-not $generatedText.Contains('##MOD_EXEC##')) `
     -Message 'Generated module still contains merge markers.'
 
+$environmentSource = [System.IO.File]::ReadAllText(
+    (Join-Path (Join-Path $root 'src') '30-Environment.ps1')
+)
+foreach ($requiredLaunch in @(
+    '& $shellPath -NoLogo -NoExit -ExecutionPolicy Bypass',
+    '& $shellPath -NoLogo -ExecutionPolicy Bypass -Command $Command'
+)) {
+    Assert-CapsulenvTest `
+        -Condition $environmentSource.Contains($requiredLaunch) `
+        -Message "Child PowerShell launch must explicitly use Process-scope ExecutionPolicy Bypass: $requiredLaunch"
+}
+
 $generatedManifestText = [System.IO.File]::ReadAllText($build.ModulePath)
 Assert-CapsulenvTest `
     -Condition (-not $generatedManifestText.Contains('__GENERATED_')) `

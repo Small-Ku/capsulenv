@@ -160,11 +160,11 @@ function Invoke-CapsulenvChildShell {
     $shellPath = (Get-Process -Id $PID).Path
     if ([string]::IsNullOrWhiteSpace($Command)) {
         Write-CapsulenvMessage -Level Success -Message "capsulenv active at $env:CAPSULENV_ROOT"
-        & $shellPath -NoLogo -NoExit
+        & $shellPath -NoLogo -NoExit -ExecutionPolicy Bypass
         return
     }
 
-    & $shellPath -NoLogo -Command $Command
+    & $shellPath -NoLogo -ExecutionPolicy Bypass -Command $Command
     if ($null -ne $LASTEXITCODE) {
         $global:LASTEXITCODE = $LASTEXITCODE
     }
