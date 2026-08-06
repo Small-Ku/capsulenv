@@ -319,6 +319,9 @@ function Invoke-CapsulenvScoopRehydrate {
     }
 
     $toolRelocation = (Get-CapsulenvToolRelocationConfiguration)
+    if (-not $SkipToolRepairs -and $relocationContext.HasPathChanges) {
+        [void](Repair-CapsulenvProjectCacheLinks -Strict:$StrictToolRepairs -Quiet)
+    }
     if (
         -not $SkipToolRepairs -and
         $relocationContext.HasPathChanges -and

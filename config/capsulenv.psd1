@@ -99,6 +99,18 @@
                 RepairManagedPython = $true
                 RepairGlobalTools = $true
             }
+            Pixi = @{
+                Enabled = $true
+
+                # pixi-global.toml can contain version ranges and Pixi does not
+                # keep a documented global lock file. Keep global sync opt-in
+                # unless a local configuration explicitly accepts re-resolution.
+                RepairGlobal = $false
+            }
+            Workspaces = @{
+                Enabled = $true
+                RepairRegistered = $true
+            }
         }
     }
 

@@ -1,3 +1,18 @@
+function Test-CapsulenvPortableToolExecutable {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    try {
+        $probe = Invoke-CapsulenvNativeToolCapture `
+            -Executable $Path `
+            -Arguments @('--version') `
+            -AllowFailure
+        return $probe.ExitCode -eq 0
+    } catch {
+        return $false
+    }
+}
+
 function Get-CapsulenvPortableToolExecutable {
     [CmdletBinding()]
     param(
@@ -7,7 +22,10 @@ function Get-CapsulenvPortableToolExecutable {
 
     foreach ($candidate in $Candidates) {
         $resolved = Resolve-CapsulenvPath -Path $candidate -AllowMissing
-        if (Test-Path -LiteralPath $resolved -PathType Leaf) {
+        if (
+            (Test-Path -LiteralPath $resolved -PathType Leaf) -and
+            (Test-CapsulenvPortableToolExecutable -Path $resolved)
+        ) {
             return $resolved
         }
     }
@@ -21,8 +39,11 @@ function Get-CapsulenvPortableToolExecutable {
         }
         $source = [System.IO.Path]::GetFullPath([string]$command.Source)
         if (
-            [System.StringComparer]::OrdinalIgnoreCase.Equals($source, $root) -or
-            $source.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+            (
+                [System.StringComparer]::OrdinalIgnoreCase.Equals($source, $root) -or
+                $source.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+            ) -and
+            (Test-CapsulenvPortableToolExecutable -Path $source)
         ) {
             return $source
         }
@@ -468,25 +489,56 @@ function Invoke-CapsulenvToolRelocationRepair {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]$RelocationContext,
-        [ValidateSet('uv', 'all')][string]$Tool = 'all',
+        [ValidateSet('uv', 'pixi', 'all')][string]$Tool = 'all',
         [switch]$DryRun,
-        [switch]$Strict
+        [switch]$Strict,
+        [switch]$SkipWorkspaces,
+        [switch]$IncludePixiGlobal
     )
 
     [void](Set-CapsulenvSessionEnvironment)
     $results = New-Object System.Collections.Generic.List[object]
-    try {
-        if ($Tool -in @('uv', 'all')) {
+
+    if ($Tool -in @('uv', 'all')) {
+        try {
             foreach ($result in @(Repair-CapsulenvUvRelocation -RelocationContext $RelocationContext -DryRun:$DryRun)) {
                 $results.Add($result)
             }
+        } catch {
+            if ($Strict) {
+                throw
+            }
+            $results.Add([pscustomobject]@{ Component = 'uv'; Status = 'Failed'; Changed = $false; Detail = $_.Exception.Message })
+            Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
         }
-    } catch {
-        if ($Strict) {
-            throw
+    }
+
+    if ($Tool -in @('pixi', 'all')) {
+        try {
+            foreach ($result in @(Repair-CapsulenvPixiRelocation -DryRun:$DryRun -IncludeGlobal:$IncludePixiGlobal)) {
+                $results.Add($result)
+            }
+        } catch {
+            if ($Strict) {
+                throw
+            }
+            $results.Add([pscustomobject]@{ Component = 'pixi-global'; Status = 'Failed'; Changed = $false; Detail = $_.Exception.Message })
+            Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
         }
-        $results.Add([pscustomobject]@{ Component = $Tool; Status = 'Failed'; Changed = $false; Detail = $_.Exception.Message })
-        Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
+    }
+
+    if (-not $SkipWorkspaces) {
+        try {
+            foreach ($result in @(Repair-CapsulenvRegisteredToolWorkspaces -Tool $Tool -DryRun:$DryRun -Strict:$Strict)) {
+                $results.Add($result)
+            }
+        } catch {
+            if ($Strict) {
+                throw
+            }
+            $results.Add([pscustomobject]@{ Component = 'workspaces'; Status = 'Failed'; Changed = $false; Detail = $_.Exception.Message })
+            Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
+        }
     }
     return @($results)
 }

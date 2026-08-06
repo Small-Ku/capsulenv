@@ -202,6 +202,30 @@ function Assert-CapsulenvConfiguration {
             throw "ToolStorage.Relocation.Uv.$booleanName must be Boolean."
         }
     }
+    foreach ($sectionName in @('Pixi', 'Workspaces')) {
+        if (
+            -not $Configuration.ToolStorage.Relocation.ContainsKey($sectionName) -or
+            $Configuration.ToolStorage.Relocation[$sectionName] -isnot [hashtable]
+        ) {
+            throw "ToolStorage.Relocation.$sectionName must be a hashtable."
+        }
+    }
+    foreach ($booleanName in @('Enabled', 'RepairGlobal')) {
+        if (
+            -not $Configuration.ToolStorage.Relocation.Pixi.ContainsKey($booleanName) -or
+            $Configuration.ToolStorage.Relocation.Pixi[$booleanName] -isnot [bool]
+        ) {
+            throw "ToolStorage.Relocation.Pixi.$booleanName must be Boolean."
+        }
+    }
+    foreach ($booleanName in @('Enabled', 'RepairRegistered')) {
+        if (
+            -not $Configuration.ToolStorage.Relocation.Workspaces.ContainsKey($booleanName) -or
+            $Configuration.ToolStorage.Relocation.Workspaces[$booleanName] -isnot [bool]
+        ) {
+            throw "ToolStorage.Relocation.Workspaces.$booleanName must be Boolean."
+        }
+    }
     foreach ($name in $Configuration.ToolStorage.PathVariables.Keys) {
         if ([string]::IsNullOrWhiteSpace([string]$name) -or ([string]$name).Contains('=')) {
             throw "ToolStorage contains an invalid environment variable name: $name"

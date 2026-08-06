@@ -125,7 +125,12 @@ $required = @(
     'Repair-CapsulenvProjectCacheLinks',
     'Get-CapsulenvManagedProjectCacheLinks',
     'Invoke-CapsulenvToolRelocationRepair',
-    'Repair-CapsulenvUvRelocation'
+    'Repair-CapsulenvUvRelocation',
+    'Repair-CapsulenvPixiRelocation',
+    'Register-CapsulenvToolWorkspace',
+    'Unregister-CapsulenvToolWorkspace',
+    'Get-CapsulenvToolWorkspaces',
+    'Get-CapsulenvToolRelocationStatus'
 )
 foreach ($name in $required) {
     Assert-CapsulenvTest `
@@ -167,6 +172,53 @@ foreach ($requiredUvBehavior in @(
 Assert-CapsulenvTest `
     -Condition (-not $toolRelocationSource.Contains('Set-CapsulenvUvReceiptPinnedVersion')) `
     -Message 'uv relocation must not rewrite the saved requirement to pin a version.'
+
+$pixiRelocationSource = [System.IO.File]::ReadAllText(
+    (Join-Path (Join-Path $root 'src') '39-ToolWorkspaceRelocation.ps1')
+)
+foreach ($requiredPixiBehavior in @(
+    "'--no-progress', 'global', 'sync'",
+    "'--no-progress',",
+    "'reinstall',",
+    "'--all',",
+    "'--locked',",
+    "'--manifest-path', [string]$workspace.ProjectPath"
+)) {
+    Assert-CapsulenvTest `
+        -Condition $pixiRelocationSource.Contains($requiredPixiBehavior) `
+        -Message "Pixi relocation repair is missing required behavior: $requiredPixiBehavior"
+}
+Assert-CapsulenvTest `
+    -Condition $pixiRelocationSource.Contains("Status = 'ManualRequired'") `
+    -Message 'Pixi global sync must remain explicit by default.'
+
+foreach ($requiredUvWorkspaceBehavior in @(
+    "'venv', `$environmentPath",
+    "'--relocatable'",
+    "'UV_PROJECT_ENVIRONMENT'",
+    "'sync',",
+    "'--project', [string]`$Workspace.ProjectPath",
+    "Move-Item -LiteralPath `$environmentPath -Destination `$rollbackPath",
+    "Move-Item -LiteralPath `$rollbackPath -Destination `$environmentPath"
+)) {
+    Assert-CapsulenvTest `
+        -Condition $pixiRelocationSource.Contains($requiredUvWorkspaceBehavior) `
+        -Message "uv workspace relocation is missing required behavior: $requiredUvWorkspaceBehavior"
+}
+
+$workspaceRegistrySource = [System.IO.File]::ReadAllText(
+    (Join-Path (Join-Path $root 'src') '38-ToolWorkspaceRegistry.ps1')
+)
+foreach ($requiredWorkspaceBehavior in @(
+    "'tool-workspaces.json'",
+    "SchemaVersion = 2",
+    "ProjectScope = [string]$reference.Scope",
+    "ProjectReference = [string]$reference.Reference"
+)) {
+    Assert-CapsulenvTest `
+        -Condition $workspaceRegistrySource.Contains($requiredWorkspaceBehavior) `
+        -Message "Tool-workspace registry is missing required behavior: $requiredWorkspaceBehavior"
+}
 
 $relocationReplacement = & $module {
     $context = [pscustomobject]@{

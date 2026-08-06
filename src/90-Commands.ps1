@@ -12,10 +12,11 @@ capsulenv commands
   capsulenv.cmd run <command> [arguments...]
       Run one command inside the portable environment.
 
-  capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs]
-  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs]
+  capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
+  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
       Run native `scoop reset *`, replay configured safe lifecycle hooks,
-      then repair allow-listed persisted text settings after relocation.
+      repair allow-listed persisted text settings, then repair tool-native
+      launchers and registered environments after relocation.
 
   capsulenv.cmd repair-persist [app...] [--dry-run] [--last]
       Repair only explicitly configured persisted files. --last reuses the
@@ -52,9 +53,16 @@ capsulenv commands
       stale after moving the complete capsule.
 
 
-  capsulenv.cmd tools repair uv [--dry-run] [--last] [--strict]
-      Rebuild uv-managed Python installations and replay global tools at their
-      installed versions while preserving the source intent in uv receipts.
+  capsulenv.cmd tools status
+  capsulenv.cmd tools register <uv|pixi> [workspace]
+  capsulenv.cmd tools unregister <uv|pixi> [workspace]
+      Inspect or explicitly register lock-backed workspaces for native repair.
+
+  capsulenv.cmd tools repair [uv|pixi|all] [--dry-run] [--last] [--strict]
+      [--skip-workspaces] [--include-global]
+      Rebuild uv-managed installations and registered uv/Pixi workspace
+      environments. Pixi global sync is opt-in because its manifest may contain
+      version ranges that are re-resolved during sync.
 
   capsulenv.cmd doctor
 
@@ -169,27 +177,71 @@ function Invoke-CapsulenvCacheCommand {
 function Invoke-CapsulenvToolsCommand {
     param([string[]]$Arguments)
 
-    if ($Arguments.Count -lt 1 -or $Arguments[0].ToLowerInvariant() -ne 'repair') {
-        throw 'Usage: tools repair uv [--dry-run] [--last] [--strict]'
+    if ($Arguments.Count -lt 1) {
+        throw 'Usage: tools <status|register|unregister|repair> [...]'
     }
+    $action = $Arguments[0].ToLowerInvariant()
     $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
-    $allowedFlags = @('--dry-run', '--last', '--strict')
-    $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin $allowedFlags })
-    $positionals = @($remaining | Where-Object { $_ -notlike '--*' })
-    if ($unknownFlags.Count -gt 0 -or $positionals.Count -ne 1 -or $positionals[0].ToLowerInvariant() -ne 'uv') {
-        throw 'Usage: tools repair uv [--dry-run] [--last] [--strict]'
+
+    switch ($action) {
+        'status' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: tools status'
+            }
+            Get-CapsulenvToolRelocationStatus | Format-Table -AutoSize
+        }
+        'register' {
+            if ($remaining.Count -lt 1 -or $remaining.Count -gt 2) {
+                throw 'Usage: tools register <uv|pixi> [workspace]'
+            }
+            $tool = $remaining[0].ToLowerInvariant()
+            if ($tool -notin @('uv', 'pixi')) {
+                throw 'Usage: tools register <uv|pixi> [workspace]'
+            }
+            $workspace = if ($remaining.Count -eq 2) { [string]$remaining[1] } else { '.' }
+            Register-CapsulenvToolWorkspace -Tool $tool -ProjectPath $workspace | Format-List
+        }
+        'unregister' {
+            if ($remaining.Count -lt 1 -or $remaining.Count -gt 2) {
+                throw 'Usage: tools unregister <uv|pixi> [workspace]'
+            }
+            $tool = $remaining[0].ToLowerInvariant()
+            if ($tool -notin @('uv', 'pixi')) {
+                throw 'Usage: tools unregister <uv|pixi> [workspace]'
+            }
+            $workspace = if ($remaining.Count -eq 2) { [string]$remaining[1] } else { '.' }
+            Unregister-CapsulenvToolWorkspace -Tool $tool -ProjectPath $workspace | Format-List
+        }
+        'repair' {
+            $allowedFlags = @('--dry-run', '--last', '--strict', '--skip-workspaces', '--include-global')
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin $allowedFlags })
+            $positionals = @($remaining | Where-Object { $_ -notlike '--*' })
+            if ($unknownFlags.Count -gt 0 -or $positionals.Count -gt 1) {
+                throw 'Usage: tools repair [uv|pixi|all] [--dry-run] [--last] [--strict] [--skip-workspaces] [--include-global]'
+            }
+            $tool = if ($positionals.Count -eq 1) { $positionals[0].ToLowerInvariant() } else { 'all' }
+            if ($tool -notin @('uv', 'pixi', 'all')) {
+                throw 'Usage: tools repair [uv|pixi|all] [--dry-run] [--last] [--strict] [--skip-workspaces] [--include-global]'
+            }
+            if ($remaining -contains '--include-global' -and $tool -eq 'uv') {
+                throw '--include-global applies to Pixi global tools only.'
+            }
+            $relocationContext = if ($remaining -contains '--last') {
+                Get-CapsulenvLastRelocationContext
+            } else {
+                Get-CapsulenvRelocationContext
+            }
+            Invoke-CapsulenvToolRelocationRepair `
+                -RelocationContext $relocationContext `
+                -Tool $tool `
+                -DryRun:($remaining -contains '--dry-run') `
+                -Strict:($remaining -contains '--strict') `
+                -SkipWorkspaces:($remaining -contains '--skip-workspaces') `
+                -IncludePixiGlobal:($remaining -contains '--include-global') |
+                Format-Table -AutoSize
+        }
+        default { throw "Unknown tools action: $($Arguments[0])" }
     }
-    $relocationContext = if ($remaining -contains '--last') {
-        Get-CapsulenvLastRelocationContext
-    } else {
-        Get-CapsulenvRelocationContext
-    }
-    Invoke-CapsulenvToolRelocationRepair `
-        -RelocationContext $relocationContext `
-        -Tool uv `
-        -DryRun:($remaining -contains '--dry-run') `
-        -Strict:($remaining -contains '--strict') |
-        Format-Table -AutoSize
 }
 
 function Invoke-CapsulenvBitwardenCommand {

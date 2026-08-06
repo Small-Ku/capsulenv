@@ -74,6 +74,21 @@ function Invoke-CapsulenvDoctor {
         -Importance Optional `
         -Detail $managedProjectLinksDetail))
 
+    try {
+        $toolWorkspaces = @(Get-CapsulenvToolWorkspaces)
+        $invalidToolWorkspaces = @($toolWorkspaces | Where-Object { $_.Status -ne 'Ready' })
+        $toolWorkspacesPassed = ($invalidToolWorkspaces.Count -eq 0)
+        $toolWorkspacesDetail = "{0} registered workspace(s); {1} unavailable" -f $toolWorkspaces.Count, $invalidToolWorkspaces.Count
+    } catch {
+        $toolWorkspacesPassed = $false
+        $toolWorkspacesDetail = $_.Exception.Message
+    }
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Tool workspace registry' `
+        -Passed $toolWorkspacesPassed `
+        -Importance Optional `
+        -Detail $toolWorkspacesDetail))
+
     $persistRoot = Join-Path $scoopRoot 'persist'
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Scoop persist store' `

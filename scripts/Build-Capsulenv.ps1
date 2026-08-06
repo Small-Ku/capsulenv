@@ -61,6 +61,7 @@ try {
         @{ Source = 'scripts\scoop-capsulenv-replay.ps1'; Destination = 'scripts\scoop-capsulenv-replay.ps1' }
         @{ Source = 'docs\MIGRATION.md'; Destination = 'docs\MIGRATION.md' }
         @{ Source = 'docs\INSTALL.md'; Destination = 'docs\INSTALL.md' }
+        @{ Source = 'docs\TOOLS.md'; Destination = 'docs\TOOLS.md' }
     )
     foreach ($entry in $files) {
         $source = Join-Path $sourceRoot $entry.Source

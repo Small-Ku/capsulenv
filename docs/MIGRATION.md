@@ -111,3 +111,28 @@ capsulenv.cmd cache repair --strict
 ```
 
 另外新增 `Build-Capsulenv.ps1`、`Install-Capsulenv.ps1` 與 `install.cmd`。安裝版直接載入 `modules\Capsulenv` 中的 deterministic merged module；更新只管理 `.capsulenv-install.json` 列出的 runtime files，保留 Scoop、cache、tool data、workspace、local config 與未知檔案，失敗時回滾已修改的 managed files。
+
+
+## v0.7.0
+
+v0.7.0 將配置 schema 升至 5，新增 tool-native relocation repair。uv managed Python、uv global tool environment、Pixi global trampoline，以及 project workspace environment 不能只靠重接 junction 修復；capsulenv 現在交回 uv/Pixi 原生命令重建。
+
+uv managed Python 會按 `uv python list` 回報的既有 installation key 逐一重裝；global tool 則從 receipt 與環境取得原始安裝意圖和當前版本，不會因 relocation 自動升級。
+
+Project environment 必須先明確登記：
+
+```bat
+capsulenv.cmd tools register uv workspace\python-app
+capsulenv.cmd tools register pixi workspace\science-app
+capsulenv.cmd tools status
+```
+
+只有具 `uv.lock` 或 `pixi.lock` 的登記 workspace 會自動重建。uv 會先交易式備份原環境，以 `uv venv --relocatable` 重建，再執行 `uv sync --locked --reinstall`；舊版 uv 沒有 `--relocatable` 時會退回完整重建後 locked sync。`UV_PROJECT_ENVIRONMENT` 只接受 workspace 或 capsulenv root 內的路徑，避免誤刪外部／系統環境。Pixi 使用 `pixi reinstall --all --locked`。Registry 位於 `.capsulenv/tool-workspaces.json`，capsule 內 workspace 與 uv environment 均以相對 reference 保存。
+
+Pixi global manifest 沒有由 capsulenv 可依賴的 lock file，而且 dependency 可使用版本範圍，因此 `pixi global sync` 預設不會在 relocation 中自動執行。明確接受重新解析時使用：
+
+```bat
+capsulenv.cmd tools repair pixi --last --include-global
+```
+
+或在 local config 將 `ToolStorage.Relocation.Pixi.RepairGlobal` 設為 `$true`。完整說明見 `docs/TOOLS.md`。
