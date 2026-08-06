@@ -47,10 +47,28 @@
 
     Environment = @{
         PathVariables = @{
-            # CARGO_HOME = 'scoop\persist\rustup\.cargo'
+            # CUSTOM_SDK_HOME = 'tool-data\custom-sdk'
         }
         Variables = @{
             # RUSTUP_TOOLCHAIN = 'stable'
         }
     }
+
+    # ToolStorage.ProjectLinks replaces the default profile allow-list as one
+    # unit when present. Other ToolStorage hashtables merge recursively.
+    # ToolStorage = @{
+    #     Variables = @{
+    #         SCCACHE_CACHE_SIZE = '40G'
+    #         RUSTC_WRAPPER = 'sccache'
+    #     }
+    #     ProjectLinks = @{
+    #         'cargo-target' = @{
+    #             Kind = 'Directory'
+    #             ProjectPath = 'target'
+    #             StorePath = 'project-cache\{ProjectId}\cargo-target'
+    #             LinkType = 'Junction'
+    #         }
+    #     }
+    # }
+
 }

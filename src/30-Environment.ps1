@@ -31,6 +31,11 @@ function Get-CapsulenvEnvironmentPlan {
         )
     }
 
+    $toolStorage = Get-CapsulenvToolStoragePlan
+    foreach ($name in $toolStorage.Variables.Keys) {
+        $variables[$name] = [string]$toolStorage.Variables[$name]
+    }
+
     $pathEntries = New-Object System.Collections.Generic.List[string]
     $scoopShims = Join-Path $variables.SCOOP 'shims'
     $pathEntries.Add($scoopShims)
@@ -40,10 +45,16 @@ function Get-CapsulenvEnvironmentPlan {
             $pathEntries.Add($resolved)
         }
     }
+    foreach ($entry in $toolStorage.PathEntries) {
+        if (-not ($pathEntries -contains $entry)) {
+            $pathEntries.Add($entry)
+        }
+    }
 
     return [pscustomobject]@{
         Variables = $variables
         PathEntries = @($pathEntries)
+        Directories = @($toolStorage.Directories)
     }
 }
 
@@ -61,7 +72,7 @@ function Merge-CapsulenvPath {
             continue
         }
         $trimmed = $item.Trim()
-        $normalized = $trimmed.TrimEnd('\')
+        $normalized = $trimmed.TrimEnd([char[]]'\/')
         if (-not $seen.ContainsKey($normalized)) {
             $seen[$normalized] = $true
             $result.Add($trimmed)
@@ -75,6 +86,10 @@ function Set-CapsulenvSessionEnvironment {
     param()
 
     $plan = Get-CapsulenvEnvironmentPlan
+    $configuration = Get-CapsulenvConfiguration
+    if ($configuration.ToolStorage.Enabled -and $configuration.ToolStorage.CreateDirectories) {
+        [void](Initialize-CapsulenvToolStorage)
+    }
     foreach ($name in $plan.Variables.Keys) {
         [Environment]::SetEnvironmentVariable($name, [string]$plan.Variables[$name], 'Process')
     }
@@ -85,6 +100,45 @@ function Set-CapsulenvSessionEnvironment {
 function Get-CapsulenvUserEnvironmentBackupPath {
     $context = Get-CapsulenvContext
     return Join-Path $context.StateRoot 'user-environment-backup.json'
+}
+
+function Write-CapsulenvUserEnvironmentBackup {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$Backup
+    )
+
+    $parent = Split-Path -Parent $Path
+    [void](New-Item -ItemType Directory -Path $parent -Force)
+    $temporary = Join-Path $parent ('.user-environment-backup-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
+    try {
+        $Backup | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporary -Encoding UTF8
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            try {
+                [System.IO.File]::Replace($temporary, $Path, $null, $true)
+            } catch {
+                $fallback = Join-Path $parent ('.user-environment-backup-{0}.rollback' -f [Guid]::NewGuid().ToString('N'))
+                Move-Item -LiteralPath $Path -Destination $fallback
+                try {
+                    Move-Item -LiteralPath $temporary -Destination $Path
+                    Remove-Item -LiteralPath $fallback -Force
+                } catch {
+                    if (Test-Path -LiteralPath $Path) {
+                        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+                    }
+                    Move-Item -LiteralPath $fallback -Destination $Path -ErrorAction SilentlyContinue
+                    throw
+                }
+            }
+        } else {
+            Move-Item -LiteralPath $temporary -Destination $Path
+        }
+    } finally {
+        if (Test-Path -LiteralPath $temporary) {
+            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Enable-CapsulenvUserEnvironment {
@@ -108,8 +162,8 @@ function Enable-CapsulenvUserEnvironment {
     }
 
     [void](New-Item -ItemType Directory -Path $context.StateRoot -Force)
+    $names = @($plan.Variables.Keys) + 'PATH' | Sort-Object -Unique
     if (-not $backupExists) {
-        $names = @($plan.Variables.Keys) + 'PATH' | Sort-Object -Unique
         $backup = [ordered]@{}
         foreach ($name in $names) {
             $value = [Environment]::GetEnvironmentVariable($name, 'User')
@@ -118,7 +172,33 @@ function Enable-CapsulenvUserEnvironment {
                 Value = $value
             }
         }
-        $backup | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $backupPath -Encoding UTF8
+        Write-CapsulenvUserEnvironmentBackup -Path $backupPath -Backup $backup
+    } elseif ($Force) {
+        # Preserve the original snapshot while extending an older backup with
+        # variables introduced by a newer capsulenv/configuration version.
+        $existing = Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
+        $backup = [ordered]@{}
+        foreach ($property in $existing.PSObject.Properties) {
+            $backup[$property.Name] = [ordered]@{
+                Exists = [bool]$property.Value.Exists
+                Value = $property.Value.Value
+            }
+        }
+        $backupChanged = $false
+        foreach ($name in $names) {
+            if ($backup.Contains($name)) {
+                continue
+            }
+            $value = [Environment]::GetEnvironmentVariable($name, 'User')
+            $backup[$name] = [ordered]@{
+                Exists = $null -ne $value
+                Value = $value
+            }
+            $backupChanged = $true
+        }
+        if ($backupChanged) {
+            Write-CapsulenvUserEnvironmentBackup -Path $backupPath -Backup $backup
+        }
     }
 
     foreach ($name in $plan.Variables.Keys) {

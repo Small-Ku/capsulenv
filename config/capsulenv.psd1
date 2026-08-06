@@ -1,5 +1,5 @@
 @{
-    SchemaVersion = 3
+    SchemaVersion = 4
 
     Scoop = @{
         Root = 'scoop'
@@ -43,6 +43,48 @@
         Path = @('bin')
         PathVariables = @{}
         Variables = @{}
+    }
+
+
+    ToolStorage = @{
+        Enabled = $true
+        CreateDirectories = $true
+
+        # Portable caches and tool-managed installations. All relative paths
+        # are resolved from CAPSULENV_ROOT and are included in user backup/
+        # restore when `enable-user` is used.
+        PathVariables = @{
+            UV_CACHE_DIR = 'cache\uv'
+            UV_PYTHON_CACHE_DIR = 'cache\uv-python'
+            UV_PYTHON_INSTALL_DIR = 'tool-data\uv\python'
+            UV_PYTHON_BIN_DIR = 'bin'
+            UV_TOOL_DIR = 'tool-data\uv\tools'
+            UV_TOOL_BIN_DIR = 'bin'
+            PIXI_HOME = 'tool-data\pixi'
+            PIXI_CACHE_DIR = 'cache\pixi'
+            RUSTUP_HOME = 'tool-data\rustup'
+            CARGO_HOME = 'tool-data\cargo'
+            SCCACHE_DIR = 'cache\sccache'
+            CCACHE_DIR = 'cache\ccache'
+            CCACHE_TEMPDIR = 'cache\ccache\tmp'
+        }
+        Variables = @{}
+        Path = @(
+            'tool-data\cargo\bin'
+            'tool-data\pixi\bin'
+        )
+
+        # Project-local paths can be backed by storage inside the capsule.
+        # Directory caches use junctions by default; hard links are valid only
+        # for profiles with Kind = 'File'.
+        ProjectLinks = @{
+            'cargo-target' = @{
+                Kind = 'Directory'
+                ProjectPath = 'target'
+                StorePath = 'project-cache\{ProjectId}\cargo-target'
+                LinkType = 'Junction'
+            }
+        }
     }
 
     Bitwarden = @{

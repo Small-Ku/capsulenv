@@ -9,3 +9,12 @@ config/capsulenv.local.psd1
 *.bak
 Thumbs.db
 Desktop.ini
+cache/
+tool-data/
+project-cache/
+modules/
+dist/
+workspace/
+bin/*
+!bin/firefox-capsulenv.cmd
+!bin/zen-capsulenv.cmd

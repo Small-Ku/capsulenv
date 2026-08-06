@@ -28,9 +28,28 @@ capsulenv commands
   capsulenv.cmd reset [app...]
       Run native Scoop reset without lifecycle replay. Defaults to all apps.
 
-  capsulenv.cmd enable-user
+  capsulenv.cmd enable-user [--force]
   capsulenv.cmd restore-user
-      Persist or restore SCOOP/PATH/SSH_AUTH_SOCK using an exact backup.
+      Persist or restore the complete portable environment using an exact
+      backup. --force reapplies/upgrades without replacing original values.
+
+
+  capsulenv.cmd cache paths
+  capsulenv.cmd cache init
+  capsulenv.cmd cache status [project-path]
+      Show or create portable tool cache/home directories.
+
+  capsulenv.cmd cache link <profile> [project-path] [--move]
+      [--junction|--symlink|--hardlink]
+      Link a project-local build/cache path to capsule storage. Directory
+      profiles default to junctions; hardlink is valid for file profiles only.
+
+  capsulenv.cmd cache unlink <profile> [project-path] [--restore]
+      Remove a managed project link. --restore moves stored data back.
+
+  capsulenv.cmd cache repair [--strict]
+      Recreate registered junctions/symlinks whose absolute targets became
+      stale after moving the complete capsule.
 
   capsulenv.cmd doctor
 
@@ -53,6 +72,93 @@ capsulenv commands
   capsulenv.cmd bitwarden configure-git
   capsulenv.cmd bitwarden restore-git
 '@ | Write-Host
+}
+
+
+function Invoke-CapsulenvCacheCommand {
+    param([string[]]$Arguments)
+
+    if ($Arguments.Count -lt 1) {
+        throw 'Usage: cache <paths|init|status|link|unlink|repair> [...]'
+    }
+
+    $action = $Arguments[0].ToLowerInvariant()
+    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    switch ($action) {
+        'paths' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: cache paths'
+            }
+            Get-CapsulenvToolStorageStatus | Format-Table -AutoSize
+        }
+        'init' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: cache init'
+            }
+            [void](Initialize-CapsulenvToolStorage)
+            Get-CapsulenvToolStorageStatus | Format-Table -AutoSize
+        }
+        'status' {
+            if ($remaining.Count -gt 1) {
+                throw 'Usage: cache status [project-path]'
+            }
+            $projectPath = if ($remaining.Count -eq 1) { [string]$remaining[0] } else { '.' }
+            Get-CapsulenvProjectCacheStatus -ProjectPath $projectPath | Format-Table -AutoSize
+        }
+        'link' {
+            $allowedFlags = @('--move', '--junction', '--symlink', '--hardlink')
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin $allowedFlags })
+            $positionals = @($remaining | Where-Object { $_ -notlike '--*' })
+            if ($unknownFlags.Count -gt 0 -or $positionals.Count -lt 1 -or $positionals.Count -gt 2) {
+                throw 'Usage: cache link <profile> [project-path] [--move] [--junction|--symlink|--hardlink]'
+            }
+            $selectedFlags = @($remaining | Where-Object { $_ -in @('--junction', '--symlink', '--hardlink') })
+            if ($selectedFlags.Count -gt 1) {
+                throw 'Choose only one cache link type.'
+            }
+            $linkType = if ($selectedFlags.Count -eq 0) {
+                $null
+            } else {
+                switch ($selectedFlags[0]) {
+                    '--junction' { 'Junction' }
+                    '--symlink' { 'SymbolicLink' }
+                    '--hardlink' { 'HardLink' }
+                }
+            }
+            $projectPath = if ($positionals.Count -eq 2) { [string]$positionals[1] } else { '.' }
+            $linkParameters = @{
+                Profile = [string]$positionals[0]
+                ProjectPath = $projectPath
+                MoveExisting = $remaining -contains '--move'
+            }
+            if (-not [string]::IsNullOrWhiteSpace($linkType)) {
+                $linkParameters['LinkType'] = $linkType
+            }
+            New-CapsulenvProjectCacheLink @linkParameters | Format-List
+        }
+        'unlink' {
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -ne '--restore' })
+            $positionals = @($remaining | Where-Object { $_ -notlike '--*' })
+            if ($unknownFlags.Count -gt 0 -or $positionals.Count -lt 1 -or $positionals.Count -gt 2) {
+                throw 'Usage: cache unlink <profile> [project-path] [--restore]'
+            }
+            $projectPath = if ($positionals.Count -eq 2) { [string]$positionals[1] } else { '.' }
+            Remove-CapsulenvProjectCacheLink `
+                -Profile ([string]$positionals[0]) `
+                -ProjectPath $projectPath `
+                -Restore:($remaining -contains '--restore') |
+                Format-List
+        }
+        'repair' {
+            $unknown = @($remaining | Where-Object { $_ -ne '--strict' })
+            if ($unknown.Count -gt 0) {
+                throw 'Usage: cache repair [--strict]'
+            }
+            Repair-CapsulenvProjectCacheLinks -Strict:($remaining -contains '--strict') |
+                Format-Table -AutoSize
+        }
+        default { throw "Unknown cache action: $($Arguments[0])" }
+    }
 }
 
 function Invoke-CapsulenvBitwardenCommand {
@@ -184,9 +290,21 @@ function Invoke-Capsulenv {
             [void](Set-CapsulenvSessionEnvironment)
             [void](Reset-CapsulenvScoop)
         }
-        'enable-user' { Enable-CapsulenvUserEnvironment }
-        'restore-user' { Restore-CapsulenvUserEnvironment }
+        'enable-user' {
+            $unknown = @($remaining | Where-Object { $_ -ne '--force' })
+            if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {
+                throw 'Usage: enable-user [--force]'
+            }
+            Enable-CapsulenvUserEnvironment -Force:($remaining -contains '--force')
+        }
+        'restore-user' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: restore-user'
+            }
+            Restore-CapsulenvUserEnvironment
+        }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
+        'cache' { Invoke-CapsulenvCacheCommand -Arguments $remaining }
         'firefox' { Start-CapsulenvBrowser -Browser Firefox -Arguments $remaining }
         'zen' { Start-CapsulenvBrowser -Browser Zen -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }

@@ -25,11 +25,30 @@ function Merge-CapsulenvHashtable {
     return $result
 }
 
+
+function Assert-CapsulenvPortableStoragePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "ToolStorage path is empty: $Name"
+    }
+    $expanded = [Environment]::ExpandEnvironmentVariables($Path)
+    if (
+        [System.IO.Path]::IsPathRooted($expanded) -or
+        $expanded -match '(^|[\\/])\.\.([\\/]|$)'
+    ) {
+        throw "ToolStorage paths must remain inside CAPSULENV_ROOT: $Name=$Path"
+    }
+}
+
 function Assert-CapsulenvConfiguration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][hashtable]$Configuration)
 
-    foreach ($sectionName in @('Scoop', 'Environment', 'Bitwarden', 'Browsers')) {
+    foreach ($sectionName in @('Scoop', 'Environment', 'ToolStorage', 'Bitwarden', 'Browsers')) {
         if (-not $Configuration.ContainsKey($sectionName) -or $Configuration[$sectionName] -isnot [hashtable]) {
             throw "Configuration section is missing or invalid: $sectionName"
         }
@@ -134,9 +153,84 @@ function Assert-CapsulenvConfiguration {
         ) {
             throw "Environment configuration value must be a hashtable: $name"
         }
+        if (
+            -not $Configuration.ToolStorage.ContainsKey($name) -or
+            $Configuration.ToolStorage[$name] -isnot [hashtable]
+        ) {
+            throw "ToolStorage configuration value must be a hashtable: $name"
+        }
+    }
+    if (-not $Configuration.ToolStorage.ContainsKey('Enabled') -or $Configuration.ToolStorage.Enabled -isnot [bool]) {
+        throw 'ToolStorage.Enabled must be Boolean.'
+    }
+    if (-not $Configuration.ToolStorage.ContainsKey('CreateDirectories') -or $Configuration.ToolStorage.CreateDirectories -isnot [bool]) {
+        throw 'ToolStorage.CreateDirectories must be Boolean.'
+    }
+    foreach ($listName in @('Path', 'ProjectLinks')) {
+        if (-not $Configuration.ToolStorage.ContainsKey($listName)) {
+            throw "ToolStorage configuration value is missing: $listName"
+        }
+    }
+    if ($Configuration.ToolStorage.ProjectLinks -isnot [hashtable]) {
+        throw 'ToolStorage.ProjectLinks must be a hashtable.'
+    }
+    foreach ($name in $Configuration.ToolStorage.PathVariables.Keys) {
+        if ([string]::IsNullOrWhiteSpace([string]$name) -or ([string]$name).Contains('=')) {
+            throw "ToolStorage contains an invalid environment variable name: $name"
+        }
+        Assert-CapsulenvPortableStoragePath `
+            -Name ("PathVariables.{0}" -f $name) `
+            -Path ([string]$Configuration.ToolStorage.PathVariables[$name])
+    }
+    foreach ($name in $Configuration.ToolStorage.Variables.Keys) {
+        if ([string]::IsNullOrWhiteSpace([string]$name) -or ([string]$name).Contains('=')) {
+            throw "ToolStorage contains an invalid environment variable name: $name"
+        }
+    }
+    $toolPathIndex = 0
+    foreach ($pathEntry in @($Configuration.ToolStorage.Path)) {
+        Assert-CapsulenvPortableStoragePath `
+            -Name ("Path[{0}]" -f $toolPathIndex) `
+            -Path ([string]$pathEntry)
+        $toolPathIndex++
+    }
+    foreach ($profileName in $Configuration.ToolStorage.ProjectLinks.Keys) {
+        $profile = $Configuration.ToolStorage.ProjectLinks[$profileName]
+        if ([string]::IsNullOrWhiteSpace([string]$profileName) -or $profile -isnot [hashtable]) {
+            throw 'ToolStorage.ProjectLinks contains an invalid profile.'
+        }
+        foreach ($requiredName in @('Kind', 'ProjectPath', 'StorePath', 'LinkType')) {
+            if (-not $profile.ContainsKey($requiredName) -or [string]::IsNullOrWhiteSpace([string]$profile[$requiredName])) {
+                throw "ToolStorage.ProjectLinks.$profileName is missing $requiredName."
+            }
+        }
+        if (([string]$profile.Kind) -notin @('Directory', 'File')) {
+            throw "ToolStorage.ProjectLinks.$profileName.Kind must be Directory or File."
+        }
+        if (([string]$profile.LinkType) -notin @('Junction', 'SymbolicLink', 'HardLink')) {
+            throw "ToolStorage.ProjectLinks.$profileName.LinkType is unsupported."
+        }
+        if (([string]$profile.Kind) -eq 'Directory' -and ([string]$profile.LinkType) -eq 'HardLink') {
+            throw "ToolStorage.ProjectLinks.$profileName cannot use a directory hard link."
+        }
+        if (([string]$profile.Kind) -eq 'File' -and ([string]$profile.LinkType) -eq 'Junction') {
+            throw "ToolStorage.ProjectLinks.$profileName cannot use a junction for a file."
+        }
+        foreach ($pathName in @('ProjectPath', 'StorePath')) {
+            $pathValue = [string]$profile[$pathName]
+            if ([System.IO.Path]::IsPathRooted($pathValue) -or $pathValue -match '(^|[\\/])\.\.([\\/]|$)') {
+                throw "ToolStorage.ProjectLinks.$profileName.$pathName must remain relative and cannot traverse parents."
+            }
+        }
+        $storePath = [string]$profile.StorePath
+        foreach ($placeholder in [regex]::Matches($storePath, '\{[^}]+\}')) {
+            if ($placeholder.Value -notin @('{ProjectId}', '{ProjectName}')) {
+                throw "ToolStorage.ProjectLinks.$profileName.StorePath contains an unsupported placeholder: $($placeholder.Value)"
+            }
+        }
     }
 
-    $reserved = @('CAPSULENV_ROOT', 'SCOOP', 'SCOOP_GLOBAL', 'SSH_AUTH_SOCK')
+    $reserved = @('CAPSULENV_ROOT', 'SCOOP', 'SCOOP_GLOBAL', 'SSH_AUTH_SOCK', 'PATH')
     foreach ($name in @($Configuration.Environment.PathVariables.Keys) + @($Configuration.Environment.Variables.Keys)) {
         if ($reserved -contains [string]$name) {
             throw "Environment variable is managed by a dedicated capsulenv setting and cannot be overridden here: $name"
@@ -145,6 +239,30 @@ function Assert-CapsulenvConfiguration {
     foreach ($name in $Configuration.Environment.PathVariables.Keys) {
         if ($Configuration.Environment.Variables.ContainsKey($name)) {
             throw "Environment variable is declared as both a path and a literal value: $name"
+        }
+    }
+    foreach ($name in @($Configuration.ToolStorage.PathVariables.Keys) + @($Configuration.ToolStorage.Variables.Keys)) {
+        if ($reserved -contains [string]$name) {
+            throw "ToolStorage cannot override a dedicated capsulenv variable: $name"
+        }
+    }
+    foreach ($name in $Configuration.ToolStorage.PathVariables.Keys) {
+        if ($Configuration.ToolStorage.Variables.ContainsKey($name)) {
+            throw "ToolStorage variable is declared as both a path and a literal value: $name"
+        }
+        if (
+            $Configuration.Environment.PathVariables.ContainsKey($name) -or
+            $Configuration.Environment.Variables.ContainsKey($name)
+        ) {
+            throw "Environment variable is declared by both ToolStorage and Environment: $name"
+        }
+    }
+    foreach ($name in $Configuration.ToolStorage.Variables.Keys) {
+        if (
+            $Configuration.Environment.PathVariables.ContainsKey($name) -or
+            $Configuration.Environment.Variables.ContainsKey($name)
+        ) {
+            throw "Environment variable is declared by both ToolStorage and Environment: $name"
         }
     }
 }
@@ -176,12 +294,19 @@ function Import-CapsulenvConfiguration {
                 }
             }
         }
+        if (
+            $local.ContainsKey('ToolStorage') -and
+            $local.ToolStorage -is [hashtable] -and
+            $local.ToolStorage.ContainsKey('ProjectLinks')
+        ) {
+            $configuration.ToolStorage.ProjectLinks = $local.ToolStorage.ProjectLinks
+        }
     }
 
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 3) {
+    if ([int]$configuration.SchemaVersion -ne 4) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

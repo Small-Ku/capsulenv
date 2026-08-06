@@ -40,6 +40,40 @@ function Invoke-CapsulenvDoctor {
         -Passed ($null -ne $scoopExecutable) `
         -Detail $(if ($scoopExecutable) { $scoopExecutable } else { 'Not found' })))
 
+    $toolStoragePlan = Get-CapsulenvToolStoragePlan
+    $toolPathValues = @($toolStoragePlan.Directories)
+    $missingToolDirectories = @($toolPathValues | Where-Object { -not (Test-Path -LiteralPath $_) })
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Portable tool storage' `
+        -Passed $toolStoragePlan.Enabled `
+        -Importance Optional `
+        -Detail $(if (-not $toolStoragePlan.Enabled) {
+            'Disabled'
+        } else {
+            "$($toolStoragePlan.Locations.Count) location(s); $($missingToolDirectories.Count) path(s) will be created on first session/cache init"
+        })))
+
+    $projectProfiles = @($configuration.ToolStorage.ProjectLinks.Keys)
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Project cache links' `
+        -Passed ($projectProfiles.Count -gt 0) `
+        -Importance Optional `
+        -Detail $(if ($projectProfiles.Count -gt 0) { $projectProfiles -join ', ' } else { 'No profiles configured' })))
+
+    try {
+        $managedProjectLinks = @(Get-CapsulenvManagedProjectCacheLinks)
+        $managedProjectLinksPassed = $true
+        $managedProjectLinksDetail = "{0} registered link(s)" -f $managedProjectLinks.Count
+    } catch {
+        $managedProjectLinksPassed = $false
+        $managedProjectLinksDetail = $_.Exception.Message
+    }
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Managed project cache registry' `
+        -Passed $managedProjectLinksPassed `
+        -Importance Optional `
+        -Detail $managedProjectLinksDetail))
+
     $persistRoot = Join-Path $scoopRoot 'persist'
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Scoop persist store' `
@@ -158,6 +192,7 @@ function Initialize-CapsulenvIntegrations {
         Write-CapsulenvMessage -Level Info -Message 'Portable Scoop root or host changed; rehydrating installed apps...'
         Invoke-CapsulenvScoopRehydrate
     }
+    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden
 }
 
@@ -173,6 +208,7 @@ function Initialize-Capsulenv {
     Invoke-CapsulenvScoopRehydrate `
         -SkipHooks:$SkipHooks `
         -SkipPersistRepairs:$SkipPersistRepairs
+    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden
 
     $context = Get-CapsulenvContext
