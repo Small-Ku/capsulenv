@@ -60,6 +60,26 @@ function Invoke-CapsulenvDoctor {
         -Importance Optional `
         -Detail $(if ($rehydrationRequired) { 'Required before normal use' } else { 'Current root and host match the last successful run' })))
 
+    $relocationContext = Get-CapsulenvRelocationContext
+    $configuredRepairFiles = [int](
+        @($configuration.Scoop.RelocationRepairs.Keys | ForEach-Object {
+            @($configuration.Scoop.RelocationRepairs[$_]).Count
+        } | Measure-Object -Sum).Sum
+    )
+    $repairDetail = if ($relocationContext.HasPathChanges) {
+        $moves = @($relocationContext.PathMappings | ForEach-Object {
+            '{0}: {1} -> {2}' -f $_.Name, $_.OldPath, $_.NewPath
+        })
+        "Pending (source=$($relocationContext.PreviousSource)); $configuredRepairFiles allow-listed file rule(s); $($moves -join '; ')"
+    } else {
+        "$configuredRepairFiles allow-listed file rule(s); no pending path relocation"
+    }
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Persist path repair' `
+        -Passed (-not $relocationContext.HasPathChanges) `
+        -Importance Optional `
+        -Detail $repairDetail))
+
     if ($configuration.Bitwarden.Enabled) {
         $bitwarden = Get-CapsulenvBitwardenExecutable
         $results.Add((New-CapsulenvCheckResult `
@@ -143,11 +163,16 @@ function Initialize-CapsulenvIntegrations {
 
 function Initialize-Capsulenv {
     [CmdletBinding()]
-    param([switch]$SkipHooks)
+    param(
+        [switch]$SkipHooks,
+        [switch]$SkipPersistRepairs
+    )
 
     [void](Get-CapsulenvConfiguration -Refresh)
     [void](Set-CapsulenvSessionEnvironment)
-    Invoke-CapsulenvScoopRehydrate -SkipHooks:$SkipHooks
+    Invoke-CapsulenvScoopRehydrate `
+        -SkipHooks:$SkipHooks `
+        -SkipPersistRepairs:$SkipPersistRepairs
     Initialize-CapsulenvBitwarden
 
     $context = Get-CapsulenvContext

@@ -234,6 +234,45 @@ try {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force
     }
 }
+if ($env:OS -eq 'Windows_NT') {
+    $shimInferenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-shim-test-{0}" -f [Guid]::NewGuid().ToString('N'))
+    $oldCapsuleRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-shim-old-{0}" -f [Guid]::NewGuid().ToString('N'))
+    try {
+        $shimConfigRoot = Join-Path $shimInferenceRoot 'config'
+        $shimRoot = Join-Path (Join-Path $shimInferenceRoot 'scoop') 'shims'
+        [void](New-Item -ItemType Directory -Path $shimConfigRoot -Force)
+        [void](New-Item -ItemType Directory -Path $shimRoot -Force)
+        Copy-Item -LiteralPath (Join-Path (Join-Path $root 'config') 'capsulenv.psd1') -Destination $shimConfigRoot
+        $oldScoopRoot = Join-Path $oldCapsuleRoot 'scoop'
+        $oldTarget = Join-Path (Join-Path (Join-Path $oldScoopRoot 'apps') 'pwsh') '7.0.0\pwsh.exe'
+        ('path = "{0}"' -f $oldTarget) |
+            Set-Content -LiteralPath (Join-Path $shimRoot 'pwsh.shim') -Encoding ASCII
+
+        $inferredContext = & $module {
+            param($TemporaryRoot)
+            [void](Initialize-CapsulenvContext -Root $TemporaryRoot)
+            [void](Get-CapsulenvConfiguration -Refresh)
+            Get-CapsulenvRelocationContext
+        } $shimInferenceRoot
+        $inferredScoopMapping = @($inferredContext.PathMappings | Where-Object { $_.Name -eq 'ScoopRoot' })
+        $inferredRootMapping = @($inferredContext.PathMappings | Where-Object { $_.Name -eq 'Root' })
+        Assert-CapsulenvTest `
+            -Condition ($inferredContext.PreviousSource.Contains('local-shims')) `
+            -Message 'Relocation context did not report stale local shim inference.'
+        Assert-CapsulenvTest `
+            -Condition ($inferredScoopMapping.Count -eq 1 -and $inferredScoopMapping[0].OldPath -eq $oldScoopRoot) `
+            -Message 'Relocation context did not infer the previous Scoop root from shim metadata.'
+        Assert-CapsulenvTest `
+            -Condition ($inferredRootMapping.Count -eq 1 -and $inferredRootMapping[0].OldPath -eq $oldCapsuleRoot) `
+            -Message 'Relocation context did not infer the previous capsule root from the Scoop-relative layout.'
+    } finally {
+        & $module { param($OriginalRoot) [void](Initialize-CapsulenvContext -Root $OriginalRoot) } $root
+        if (Test-Path -LiteralPath $shimInferenceRoot) {
+            Remove-Item -LiteralPath $shimInferenceRoot -Recurse -Force
+        }
+    }
+}
+
 $repairRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-repair-test-{0}" -f [Guid]::NewGuid().ToString('N'))
 try {
     $repairConfigRoot = Join-Path $repairRoot 'config'
@@ -308,6 +347,11 @@ Assert-CapsulenvTest `
 Assert-CapsulenvTest `
     -Condition (-not $config.Scoop.RelocationRepairs.ContainsKey('bitwarden')) `
     -Message 'Bitwarden app state must not receive generic path replacement by default.'
+foreach ($browserApp in @('firefox', 'firefox-esr', 'zen-browser')) {
+    Assert-CapsulenvTest `
+        -Condition $config.Scoop.RelocationRepairs.ContainsKey($browserApp) `
+        -Message "Missing default browser persist relocation rules: $browserApp"
+}
 Assert-CapsulenvTest `
     -Condition ($config.Bitwarden.Authorization -in @('always', 'never', 'remember-until-lock')) `
     -Message 'Bitwarden.Authorization is invalid.'

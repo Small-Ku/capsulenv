@@ -12,10 +12,14 @@ capsulenv commands
   capsulenv.cmd run <command> [arguments...]
       Run one command inside the portable environment.
 
-  capsulenv.cmd init [--skip-hooks]
-  capsulenv.cmd rehydrate [--skip-hooks]
-      Run native `scoop reset *`, then replay configured safe lifecycle hooks.
-      Scoop itself owns persist data and application profiles.
+  capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs]
+  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs]
+      Run native `scoop reset *`, replay configured safe lifecycle hooks,
+      then repair allow-listed persisted text settings after relocation.
+
+  capsulenv.cmd repair-persist [app...] [--dry-run] [--last]
+      Repair only explicitly configured persisted files. --last reuses the
+      most recently completed OldRoot -> NewRoot relocation context.
 
   capsulenv.cmd hooks <pre_install|post_install> <app> [app...]
       Explicitly replay one installed-manifest hook. pre_install is opt-in
@@ -127,10 +131,42 @@ function Invoke-Capsulenv {
             Invoke-CapsulenvExternalCommand -Command $remaining[0] -Arguments $externalArguments
         }
         'init' {
-            Initialize-Capsulenv -SkipHooks:($remaining -contains '--skip-hooks')
+            $allowed = @('--skip-hooks', '--skip-persist-repairs')
+            $unknown = @($remaining | Where-Object { $_ -notin $allowed })
+            if ($unknown.Count -gt 0) {
+                throw 'Usage: init [--skip-hooks] [--skip-persist-repairs]'
+            }
+            Initialize-Capsulenv `
+                -SkipHooks:($remaining -contains '--skip-hooks') `
+                -SkipPersistRepairs:($remaining -contains '--skip-persist-repairs')
         }
         'rehydrate' {
-            Invoke-CapsulenvScoopRehydrate -SkipHooks:($remaining -contains '--skip-hooks')
+            $allowed = @('--skip-hooks', '--skip-persist-repairs')
+            $unknown = @($remaining | Where-Object { $_ -notin $allowed })
+            if ($unknown.Count -gt 0) {
+                throw 'Usage: rehydrate [--skip-hooks] [--skip-persist-repairs]'
+            }
+            Invoke-CapsulenvScoopRehydrate `
+                -SkipHooks:($remaining -contains '--skip-hooks') `
+                -SkipPersistRepairs:($remaining -contains '--skip-persist-repairs')
+        }
+        'repair-persist' {
+            $allowedFlags = @('--dry-run', '--last')
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin $allowedFlags })
+            if ($unknownFlags.Count -gt 0) {
+                throw 'Usage: repair-persist [app...] [--dry-run] [--last]'
+            }
+            $apps = @($remaining | Where-Object { $_ -notlike '--*' })
+            $relocationContext = if ($remaining -contains '--last') {
+                Get-CapsulenvLastRelocationContext
+            } else {
+                Get-CapsulenvRelocationContext
+            }
+            Invoke-CapsulenvPersistRelocationRepair `
+                -RelocationContext $relocationContext `
+                -Apps $apps `
+                -DryRun:($remaining -contains '--dry-run') |
+                Format-List
         }
         'hooks' {
             if ($remaining.Count -lt 2) {

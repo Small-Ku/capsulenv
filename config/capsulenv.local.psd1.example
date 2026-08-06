@@ -16,6 +16,21 @@
         #     firefox = @('post_install')
         #     'zen-browser' = @('post_install')
         # }
+
+
+        # RelocationRepairs also replaces the default allow-list as one unit.
+        # Use @{} to disable all persisted text path repairs.
+        # RelocationRepairs = @{
+        #     'some-app' = @(
+        #         @{
+        #             Path = 'config\settings.json'
+        #             Format = 'json' # text | json
+        #             Processes = @('some-app')
+        #             MaxBytes = 4194304
+        #             Required = $false
+        #         }
+        #     )
+        # }
     }
 
     Bitwarden = @{
