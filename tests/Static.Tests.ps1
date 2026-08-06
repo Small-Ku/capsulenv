@@ -51,6 +51,33 @@ Assert-CapsulenvTest `
     -Condition (-not $generatedText.Contains('##MOD_EXEC##')) `
     -Message 'Generated module still contains merge markers.'
 
+$launcherSource = [System.IO.File]::ReadAllText((Join-Path $root 'capsulenv.cmd'))
+$bootstrapOrder = @(
+    'call :FindScoopPwsh "%CAPSULENV_BOOTSTRAP_SCOOP_ROOT%"',
+    'call :FindScoopPwsh "%CAPSULENV_BOOTSTRAP_SCOOP_GLOBAL_ROOT%"',
+    'where pwsh.exe',
+    '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe'
+)
+$previousBootstrapIndex = -1
+foreach ($bootstrapStep in $bootstrapOrder) {
+    $bootstrapIndex = $launcherSource.IndexOf($bootstrapStep, [System.StringComparison]::OrdinalIgnoreCase)
+    Assert-CapsulenvTest `
+        -Condition ($bootstrapIndex -gt $previousBootstrapIndex) `
+        -Message "PowerShell bootstrap search order is missing or unsafe at: $bootstrapStep"
+    $previousBootstrapIndex = $bootstrapIndex
+}
+foreach ($requiredBootstrapBehavior in @(
+    'dir /b /ad /o-d',
+    'if /i not "%%D"=="current"',
+    'call :SelectPowerShell "%CAPSULENV_PWSH_APP_ROOT%\current\pwsh.exe"',
+    'call :SelectPowerShell "%~1\shims\pwsh.exe"',
+    '"%~1" -NoLogo -NoProfile -Command "exit 0" >nul 2>nul'
+)) {
+    Assert-CapsulenvTest `
+        -Condition $launcherSource.Contains($requiredBootstrapBehavior) `
+        -Message "PowerShell bootstrap resolver is missing required behavior: $requiredBootstrapBehavior"
+}
+
 $environmentSource = [System.IO.File]::ReadAllText(
     (Join-Path (Join-Path $root 'src') '30-Environment.ps1')
 )

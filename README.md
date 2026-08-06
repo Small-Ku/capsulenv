@@ -34,6 +34,20 @@ Scoop 原生 `reset` 會重建 app 的 `current` junction、shims、shortcuts、
 
 預設只重放 Firefox／Zen 類 manifest 的 `post_install`，用來重新註冊 Scoop profile。`pre_install` 預設完全不重放，因為不少 manifest 會在其中 rename installer、搬檔或做一次性 migration，第二次執行並不安全。
 
+## PowerShell bootstrap
+
+`capsulenv.cmd` 會先從 capsule 自己的 `scoop/apps/pwsh/<version>/pwsh.exe` 尋找 PowerShell 7，並排除可能在搬移後失效的 `current` junction。其後才嘗試 capsule-local `current`、Scoop shim、父層 `PATH` 的 `pwsh.exe`，最後回退至 Windows PowerShell 5.1。local Scoop root 優先於 `scoop-global/`。
+
+所有入口及 child PowerShell 均明確使用 process-scope `-ExecutionPolicy Bypass`；不會執行 `Set-ExecutionPolicy` 或持久修改 registry。Group Policy 的 `MachinePolicy`／`UserPolicy` 仍可覆蓋 process policy。
+
+若 `config/capsulenv.psd1` 把 Scoop roots 改成非預設位置，bootstrap 階段可先指定：
+
+```bat
+set CAPSULENV_BOOTSTRAP_SCOOP_ROOT=D:\portable\scoop
+set CAPSULENV_BOOTSTRAP_SCOOP_GLOBAL_ROOT=D:\portable\scoop-global
+capsulenv.cmd doctor
+```
+
 ## 開始使用
 
 把完整 portable Scoop root 放在 repo 的 `scoop/`：
