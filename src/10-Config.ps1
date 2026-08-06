@@ -174,6 +174,34 @@ function Assert-CapsulenvConfiguration {
     if ($Configuration.ToolStorage.ProjectLinks -isnot [hashtable]) {
         throw 'ToolStorage.ProjectLinks must be a hashtable.'
     }
+    if (
+        -not $Configuration.ToolStorage.ContainsKey('Relocation') -or
+        $Configuration.ToolStorage.Relocation -isnot [hashtable]
+    ) {
+        throw 'ToolStorage.Relocation must be a hashtable.'
+    }
+    foreach ($booleanName in @('Enabled', 'AutoRepair')) {
+        if (
+            -not $Configuration.ToolStorage.Relocation.ContainsKey($booleanName) -or
+            $Configuration.ToolStorage.Relocation[$booleanName] -isnot [bool]
+        ) {
+            throw "ToolStorage.Relocation.$booleanName must be Boolean."
+        }
+    }
+    if (
+        -not $Configuration.ToolStorage.Relocation.ContainsKey('Uv') -or
+        $Configuration.ToolStorage.Relocation.Uv -isnot [hashtable]
+    ) {
+        throw 'ToolStorage.Relocation.Uv must be a hashtable.'
+    }
+    foreach ($booleanName in @('Enabled', 'RepairManagedPython', 'RepairGlobalTools')) {
+        if (
+            -not $Configuration.ToolStorage.Relocation.Uv.ContainsKey($booleanName) -or
+            $Configuration.ToolStorage.Relocation.Uv[$booleanName] -isnot [bool]
+        ) {
+            throw "ToolStorage.Relocation.Uv.$booleanName must be Boolean."
+        }
+    }
     foreach ($name in $Configuration.ToolStorage.PathVariables.Keys) {
         if ([string]::IsNullOrWhiteSpace([string]$name) -or ([string]$name).Contains('=')) {
             throw "ToolStorage contains an invalid environment variable name: $name"
@@ -306,7 +334,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 4) {
+    if ([int]$configuration.SchemaVersion -ne 5) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

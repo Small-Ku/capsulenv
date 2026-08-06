@@ -1,5 +1,5 @@
 @{
-    SchemaVersion = 4
+    SchemaVersion = 5
 
     Scoop = @{
         Root = 'scoop'
@@ -83,6 +83,21 @@
                 ProjectPath = 'target'
                 StorePath = 'project-cache\{ProjectId}\cargo-target'
                 LinkType = 'Junction'
+            }
+        }
+
+
+        # Tool-native repair is used for metadata and launchers that cannot be
+        # fixed by reconnecting a directory junction. uv receipts remain the
+        # source of truth; capsulenv supplies the installed version only to the
+        # repair command so relocation does not become an implicit upgrade.
+        Relocation = @{
+            Enabled = $true
+            AutoRepair = $true
+            Uv = @{
+                Enabled = $true
+                RepairManagedPython = $true
+                RepairGlobalTools = $true
             }
         }
     }

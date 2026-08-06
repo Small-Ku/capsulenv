@@ -54,7 +54,15 @@ project-cache/
 
 預設管理 `UV_CACHE_DIR`、`UV_PYTHON_CACHE_DIR`、`UV_PYTHON_INSTALL_DIR`、`UV_PYTHON_BIN_DIR`、`UV_TOOL_DIR`、`UV_TOOL_BIN_DIR`、`PIXI_HOME`、`PIXI_CACHE_DIR`、`RUSTUP_HOME`、`CARGO_HOME`、`SCCACHE_DIR`、`CCACHE_DIR` 與 `CCACHE_TEMPDIR`。`bin/` 同時作為 uv-managed Python 與 uv tool executable 目錄；Cargo/Pixi global bin 亦加入 capsule session 的 `PATH`。Scoop 自己的下載 cache 已位於 `scoop/cache`，不重複 redirect，並只由 Scoop 按需要建立。 `tool-data/` 可能包含 Cargo registry credentials 或其他工具登入狀態，與 Scoop persist 一樣應視為私人 portable data；已預設 git-ignore，不應直接公開整個 runtime。
 
-設定環境變數不會代替安裝工具；工具仍由 portable Scoop 管理。Scoop 自己的 package download cache 會顯示為 `SCOOP_CACHE`。`cache/` 與 `project-cache/` 是可重建資料；`tool-data/` 則含 rustup toolchains、Cargo/uv/Pixi global tools 等，不應當成純 cache 隨意刪除。這些內容亦不適合由多部電腦同時寫入同一個同步資料夾。capsulenv 不會預設設定 `RUSTC_WRAPPER=sccache`，以免尚未安裝 sccache 時令 Cargo 失敗；需要時可在 local config 的 `ToolStorage.Variables` 明確加入。建立及查看 capsulenv-owned storage 位置：
+設定環境變數不會代替安裝工具；工具仍由 portable Scoop 管理。Scoop 自己的 package download cache 會顯示為 `SCOOP_CACHE`。`cache/` 與 `project-cache/` 是可重建資料；`tool-data/` 則含 rustup toolchains、Cargo/uv/Pixi global tools 等，不應當成純 cache 隨意刪除。這些內容亦不適合由多部電腦同時寫入同一個同步資料夾。capsulenv 不會預設設定 `RUSTC_WRAPPER=sccache`，以免尚未安裝 sccache 時令 Cargo 失敗；需要時可在 local config 的 `ToolStorage.Variables` 明確加入。uv 自己建立的 virtual environment wrapper 與 executable metadata 不是 capsulenv-managed junction。搬移後，capsulenv 會逐一以原有 managed Python key 重裝，並從 tool receipt 取得完整安裝意圖；修復命令只額外指定當前已安裝版本，避免 relocation 意外升級，也不會改寫 receipt 的 registry、local path、URL 或 VCS requirement。無法安全解析的項目只會報告、不猜測。可先預覽：
+
+```bat
+capsulenv.cmd tools repair uv --dry-run --last
+```
+
+詳見 `docs/TOOLS.md`。
+
+建立及查看 capsulenv-owned storage 位置：
 
 ```bat
 capsulenv.cmd cache init

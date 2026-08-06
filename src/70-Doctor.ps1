@@ -200,14 +200,18 @@ function Initialize-Capsulenv {
     [CmdletBinding()]
     param(
         [switch]$SkipHooks,
-        [switch]$SkipPersistRepairs
+        [switch]$SkipPersistRepairs,
+        [switch]$SkipToolRepairs,
+        [switch]$StrictToolRepairs
     )
 
     [void](Get-CapsulenvConfiguration -Refresh)
     [void](Set-CapsulenvSessionEnvironment)
     Invoke-CapsulenvScoopRehydrate `
         -SkipHooks:$SkipHooks `
-        -SkipPersistRepairs:$SkipPersistRepairs
+        -SkipPersistRepairs:$SkipPersistRepairs `
+        -SkipToolRepairs:$SkipToolRepairs `
+        -StrictToolRepairs:$StrictToolRepairs
     [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden
 

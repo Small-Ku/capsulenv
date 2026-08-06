@@ -12,8 +12,8 @@ capsulenv commands
   capsulenv.cmd run <command> [arguments...]
       Run one command inside the portable environment.
 
-  capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs]
-  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs]
+  capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs]
+  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs]
       Run native `scoop reset *`, replay configured safe lifecycle hooks,
       then repair allow-listed persisted text settings after relocation.
 
@@ -50,6 +50,11 @@ capsulenv commands
   capsulenv.cmd cache repair [--strict]
       Recreate registered junctions/symlinks whose absolute targets became
       stale after moving the complete capsule.
+
+
+  capsulenv.cmd tools repair uv [--dry-run] [--last] [--strict]
+      Rebuild uv-managed Python installations and replay global tools at their
+      installed versions while preserving the source intent in uv receipts.
 
   capsulenv.cmd doctor
 
@@ -161,6 +166,32 @@ function Invoke-CapsulenvCacheCommand {
     }
 }
 
+function Invoke-CapsulenvToolsCommand {
+    param([string[]]$Arguments)
+
+    if ($Arguments.Count -lt 1 -or $Arguments[0].ToLowerInvariant() -ne 'repair') {
+        throw 'Usage: tools repair uv [--dry-run] [--last] [--strict]'
+    }
+    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    $allowedFlags = @('--dry-run', '--last', '--strict')
+    $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin $allowedFlags })
+    $positionals = @($remaining | Where-Object { $_ -notlike '--*' })
+    if ($unknownFlags.Count -gt 0 -or $positionals.Count -ne 1 -or $positionals[0].ToLowerInvariant() -ne 'uv') {
+        throw 'Usage: tools repair uv [--dry-run] [--last] [--strict]'
+    }
+    $relocationContext = if ($remaining -contains '--last') {
+        Get-CapsulenvLastRelocationContext
+    } else {
+        Get-CapsulenvRelocationContext
+    }
+    Invoke-CapsulenvToolRelocationRepair `
+        -RelocationContext $relocationContext `
+        -Tool uv `
+        -DryRun:($remaining -contains '--dry-run') `
+        -Strict:($remaining -contains '--strict') |
+        Format-Table -AutoSize
+}
+
 function Invoke-CapsulenvBitwardenCommand {
     param([string[]]$Arguments)
 
@@ -237,24 +268,28 @@ function Invoke-Capsulenv {
             Invoke-CapsulenvExternalCommand -Command $remaining[0] -Arguments $externalArguments
         }
         'init' {
-            $allowed = @('--skip-hooks', '--skip-persist-repairs')
+            $allowed = @('--skip-hooks', '--skip-persist-repairs', '--skip-tool-repairs', '--strict-tool-repairs')
             $unknown = @($remaining | Where-Object { $_ -notin $allowed })
             if ($unknown.Count -gt 0) {
-                throw 'Usage: init [--skip-hooks] [--skip-persist-repairs]'
+                throw 'Usage: init [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]'
             }
             Initialize-Capsulenv `
                 -SkipHooks:($remaining -contains '--skip-hooks') `
-                -SkipPersistRepairs:($remaining -contains '--skip-persist-repairs')
+                -SkipPersistRepairs:($remaining -contains '--skip-persist-repairs') `
+                -SkipToolRepairs:($remaining -contains '--skip-tool-repairs') `
+                -StrictToolRepairs:($remaining -contains '--strict-tool-repairs')
         }
         'rehydrate' {
-            $allowed = @('--skip-hooks', '--skip-persist-repairs')
+            $allowed = @('--skip-hooks', '--skip-persist-repairs', '--skip-tool-repairs', '--strict-tool-repairs')
             $unknown = @($remaining | Where-Object { $_ -notin $allowed })
             if ($unknown.Count -gt 0) {
-                throw 'Usage: rehydrate [--skip-hooks] [--skip-persist-repairs]'
+                throw 'Usage: rehydrate [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]'
             }
             Invoke-CapsulenvScoopRehydrate `
                 -SkipHooks:($remaining -contains '--skip-hooks') `
-                -SkipPersistRepairs:($remaining -contains '--skip-persist-repairs')
+                -SkipPersistRepairs:($remaining -contains '--skip-persist-repairs') `
+                -SkipToolRepairs:($remaining -contains '--skip-tool-repairs') `
+                -StrictToolRepairs:($remaining -contains '--strict-tool-repairs')
         }
         'repair-persist' {
             $allowedFlags = @('--dry-run', '--last')
@@ -305,6 +340,7 @@ function Invoke-Capsulenv {
         }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
         'cache' { Invoke-CapsulenvCacheCommand -Arguments $remaining }
+        'tools' { Invoke-CapsulenvToolsCommand -Arguments $remaining }
         'firefox' { Start-CapsulenvBrowser -Browser Firefox -Arguments $remaining }
         'zen' { Start-CapsulenvBrowser -Browser Zen -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }

@@ -300,7 +300,9 @@ function Invoke-CapsulenvScoopRehydrate {
     [CmdletBinding()]
     param(
         [switch]$SkipHooks,
-        [switch]$SkipPersistRepairs
+        [switch]$SkipPersistRepairs,
+        [switch]$SkipToolRepairs,
+        [switch]$StrictToolRepairs
     )
 
     $relocationContext = Get-CapsulenvRelocationContext
@@ -314,6 +316,18 @@ function Invoke-CapsulenvScoopRehydrate {
     $repairResult = $null
     if (-not $SkipPersistRepairs -and $relocationContext.HasPathChanges) {
         $repairResult = Invoke-CapsulenvPersistRelocationRepair -RelocationContext $relocationContext
+    }
+
+    $toolRelocation = (Get-CapsulenvToolRelocationConfiguration)
+    if (
+        -not $SkipToolRepairs -and
+        $relocationContext.HasPathChanges -and
+        $toolRelocation.Enabled -and
+        $toolRelocation.AutoRepair
+    ) {
+        [void](Invoke-CapsulenvToolRelocationRepair `
+            -RelocationContext $relocationContext `
+            -Strict:$StrictToolRepairs)
     }
 
     Save-CapsulenvRehydrationState -RelocationContext $relocationContext -PersistRepairResult $repairResult

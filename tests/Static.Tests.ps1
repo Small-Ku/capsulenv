@@ -123,7 +123,9 @@ $required = @(
     'Get-CapsulenvToolStorageStatus',
     'Get-CapsulenvProjectCacheStatus',
     'Repair-CapsulenvProjectCacheLinks',
-    'Get-CapsulenvManagedProjectCacheLinks'
+    'Get-CapsulenvManagedProjectCacheLinks',
+    'Invoke-CapsulenvToolRelocationRepair',
+    'Repair-CapsulenvUvRelocation'
 )
 foreach ($name in $required) {
     Assert-CapsulenvTest `
@@ -132,10 +134,39 @@ foreach ($name in $required) {
 }
 
 $config = Get-CapsulenvConfiguration -Refresh
-Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 4) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 5) -Message 'Unexpected configuration schema.'
 Assert-CapsulenvTest `
     -Condition ([string]$config.Bitwarden.Authorization -eq 'always') `
     -Message 'Unexpected default Bitwarden SSH authorization behavior.'
+
+$uvRequirement = & $module {
+    $receipt = @'
+[tool]
+requirements = [{ name = "ruff", url = "https://example.invalid/ruff.whl" }]
+python = "C:/Old Capsule/tool-data/uv/python/cpython"
+'@
+    Get-CapsulenvUvFirstRequirementTable -ReceiptText $receipt
+}
+Assert-CapsulenvTest `
+    -Condition ([string]$uvRequirement.Name -eq 'ruff') `
+    -Message 'uv receipt parser did not preserve the first requirement name.'
+
+$toolRelocationSource = [System.IO.File]::ReadAllText(
+    (Join-Path (Join-Path $root 'src') '37-ToolRelocation.ps1')
+)
+foreach ($requiredUvBehavior in @(
+    '("{0}=={1}" -f $toolName, $version)',
+    '[string]$installation.Key,',
+    "'--force'",
+    "'--no-python-downloads'"
+)) {
+    Assert-CapsulenvTest `
+        -Condition $toolRelocationSource.Contains($requiredUvBehavior) `
+        -Message "uv relocation repair is missing required behavior: $requiredUvBehavior"
+}
+Assert-CapsulenvTest `
+    -Condition (-not $toolRelocationSource.Contains('Set-CapsulenvUvReceiptPinnedVersion')) `
+    -Message 'uv relocation must not rewrite the saved requirement to pin a version.'
 
 $relocationReplacement = & $module {
     $context = [pscustomobject]@{
