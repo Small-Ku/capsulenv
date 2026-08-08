@@ -13,6 +13,7 @@ capsulenv/
 ├─ scripts/scoop-capsulenv-replay.ps1
 ├─ config/
 ├─ modules/Capsulenv/                installed/prebuilt merged module
+├─ PowerShell/Modules/                private/user modules on PSModulePath
 ├─ cache/                            portable download/compile caches
 ├─ tool-data/                        toolchains and global tool state
 ├─ project-cache/                    linked per-project build caches
@@ -30,6 +31,29 @@ capsulenv/
 ```
 
 capsulenv 同時設定 `SCOOP` 與 `SCOOP_GLOBAL`，避免 `reset *` 意外枚舉主機的 `%ProgramData%\scoop`。兩個 root 都仍由 Scoop 本體管理。
+
+## Portable PowerShell modules
+
+Capsulenv 預設建立 `PowerShell/Modules/`，在 session 中 prepend 到 `PSModulePath`，並把第一個 module root 暴露為 `CAPSULENV_MODULE_ROOT`。這個目錄是 mutable user data，不屬於 capsulenv installer 的 managed runtime files，因此更新 capsulenv 不會刪除其中的私人 modules。
+
+可在 `config/capsulenv.local.psd1` 改成其他位置；相對路徑會從 capsule root 解析：
+
+```powershell
+@{
+    Environment = @{
+        ModulePath = @('PowerShell\Modules')
+    }
+}
+```
+
+私人 module build script 建議接受明確的 `-InstallRoot`，其次使用 `$env:CAPSULENV_MODULE_ROOT`，最後才回退到 Documents 的 PowerShell module folders。如此在 capsulenv shell 內可直接：
+
+```powershell
+.\Merge-ModuleScripts.ps1 -Install
+Import-Module NyaModule
+```
+
+而不會把 module 同時複製到 `%USERPROFILE%\Documents\PowerShell\Modules`。`PSModulePath` 只在 capsulenv session 中 prepend，不會由 `enable-user` 持久覆寫；這可保留 PowerShell 5.1／7 各自在啟動時建立 default module paths 的原生語意。`CAPSULENV_MODULE_ROOT` 本身仍可隨 `enable-user` 備份／還原。
 
 ## Portable tool storage
 
@@ -137,7 +161,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 
 install.cmd D:\Portable\capsulenv
 ```
 
-安裝目的地不可位於 source repository 內；source-local staging 應使用 `Build-Capsulenv.ps1`。安裝器只更新 `.capsulenv-install.json` 列出的 managed files，保留 `scoop/`、`scoop-global/`、`cache/`、`tool-data/`、`project-cache/`、`workspace/`、`.capsulenv/`、local config 與其他未知檔案。更新失敗時會把已動過的 managed files 交易式還原。正常安裝版直接 import `modules\Capsulenv\Capsulenv.psd1`，不需要攜帶 `src/` 或 merge script。詳見 `docs/INSTALL.md`。
+安裝目的地不可位於 source repository 內；source-local staging 應使用 `Build-Capsulenv.ps1`。安裝器只更新 `.capsulenv-install.json` 列出的 managed files，保留 `scoop/`、`scoop-global/`、`cache/`、`tool-data/`、`project-cache/`、`workspace/`、`PowerShell/Modules/`、`.capsulenv/`、local config 與其他未知檔案。更新失敗時會把已動過的 managed files 交易式還原。正常安裝版直接 import `modules\Capsulenv\Capsulenv.psd1`，不需要攜帶 `src/` 或 merge script。詳見 `docs/INSTALL.md`。
 
 ## 開始使用
 
@@ -362,7 +386,7 @@ capsulenv.cmd enable-user
 capsulenv.cmd restore-user
 ```
 
-首次 `enable-user` 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`SSH_AUTH_SOCK`、tool cache/home variables 及自訂 variables；restore 會還原「原值」或「原本不存在」。升級或搬位後可用 `capsulenv.cmd enable-user --force` 延伸舊 backup 並重套新值，既有 backup entries 不會被覆寫。
+首次 `enable-user` 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`CAPSULENV_MODULE_ROOT`、`SSH_AUTH_SOCK`、tool cache/home variables 及自訂 variables；restore 會還原「原值」或「原本不存在」。`PSModulePath` 刻意保持 session-only，避免持久 User scope 值改變 Windows PowerShell／PowerShell 7 的預設 module-path construction。升級或搬位後可用 `capsulenv.cmd enable-user --force` 延伸舊 backup 並重套新值，既有 backup entries 不會被覆寫。
 
 ## 驗證
 

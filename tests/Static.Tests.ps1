@@ -139,7 +139,18 @@ foreach ($name in $required) {
 }
 
 $config = Get-CapsulenvConfiguration -Refresh
-Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 5) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 6) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest `
+    -Condition (@($config.Environment.ModulePath).Count -gt 0) `
+    -Message 'Portable PowerShell module path is not configured.'
+$environmentPlan = & $module { Get-CapsulenvEnvironmentPlan }
+$expectedModuleRoot = [System.IO.Path]::GetFullPath((Join-Path $root 'PowerShell/Modules'))
+Assert-CapsulenvTest `
+    -Condition ([string]$environmentPlan.Variables.CAPSULENV_MODULE_ROOT -eq $expectedModuleRoot) `
+    -Message 'CAPSULENV_MODULE_ROOT does not resolve to the first portable module path.'
+Assert-CapsulenvTest `
+    -Condition (@($environmentPlan.ModulePathEntries) -contains $expectedModuleRoot) `
+    -Message 'Portable module root is missing from the environment plan.'
 Assert-CapsulenvTest `
     -Condition ([string]$config.Bitwarden.Authorization -eq 'always') `
     -Message 'Unexpected default Bitwarden SSH authorization behavior.'

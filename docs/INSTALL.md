@@ -20,7 +20,9 @@ Equivalent PowerShell invocation:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-Capsulenv.ps1 -Destination D:\Portable\capsulenv
 ```
 
-The destination must be separate from the source repository; use the build script for a source-local `dist` tree. The installer updates only files recorded in `.capsulenv-install.json`. It preserves `scoop/`, `scoop-global/`, `cache/`, `tool-data/`, `project-cache/`, `workspace/`, `.capsulenv/`, `config\capsulenv.local.psd1` and every unrelated file in the destination. A non-empty directory without the install marker requires `-Force`; this adopts the directory but still does not delete unrelated content. Managed files and the install marker are backed up before mutation; a failed update rolls them back while leaving mutable/unrelated data untouched.
+The destination must be separate from the source repository; use the build script for a source-local `dist` tree. The installer updates only files recorded in `.capsulenv-install.json`. It preserves `scoop/`, `scoop-global/`, `cache/`, `tool-data/`, `project-cache/`, `workspace/`, `PowerShell/Modules/`, `.capsulenv/`, `config\capsulenv.local.psd1` and every unrelated file in the destination. A non-empty directory without the install marker requires `-Force`; this adopts the directory but still does not delete unrelated content. Managed files and the install marker are backed up before mutation; a failed update rolls them back while leaving mutable/unrelated data untouched.
+
+`PowerShell/Modules/` is the default portable private-module store. Capsulenv prepends it to `PSModulePath` and exposes its first configured module root as `CAPSULENV_MODULE_ROOT`; module repositories can consume that variable in their own build/install scripts without becoming capsulenv-managed runtime content.
 
 Use `-IncludeDevelopmentFiles` only when the destination should remain able to rebuild the module itself:
 

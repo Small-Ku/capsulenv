@@ -1,5 +1,5 @@
 @{
-    SchemaVersion = 5
+    SchemaVersion = 6
 
     Scoop = @{
         Root = 'scoop'
@@ -41,6 +41,9 @@
 
     Environment = @{
         Path = @('bin')
+        # Portable PowerShell module roots. The first entry is also exposed as
+        # CAPSULENV_MODULE_ROOT for private module build/install scripts.
+        ModulePath = @('PowerShell\Modules')
         PathVariables = @{}
         Variables = @{}
     }

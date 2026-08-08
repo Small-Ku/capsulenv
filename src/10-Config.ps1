@@ -160,6 +160,21 @@ function Assert-CapsulenvConfiguration {
             throw "ToolStorage configuration value must be a hashtable: $name"
         }
     }
+    if (-not $Configuration.Environment.ContainsKey('Path')) {
+        throw 'Environment configuration value is missing: Path'
+    }
+    if (-not $Configuration.Environment.ContainsKey('ModulePath')) {
+        throw 'Environment configuration value is missing: ModulePath'
+    }
+    foreach ($modulePathEntry in @($Configuration.Environment.ModulePath)) {
+        if ([string]::IsNullOrWhiteSpace([string]$modulePathEntry)) {
+            throw 'Environment.ModulePath contains an empty path.'
+        }
+        $expandedModulePath = [Environment]::ExpandEnvironmentVariables([string]$modulePathEntry)
+        if ($expandedModulePath -match '(^|[\\/])\.\.([\\/]|$)') {
+            throw "Environment.ModulePath must not traverse parents: $modulePathEntry"
+        }
+    }
     if (-not $Configuration.ToolStorage.ContainsKey('Enabled') -or $Configuration.ToolStorage.Enabled -isnot [bool]) {
         throw 'ToolStorage.Enabled must be Boolean.'
     }
@@ -358,7 +373,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 5) {
+    if ([int]$configuration.SchemaVersion -ne 6) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

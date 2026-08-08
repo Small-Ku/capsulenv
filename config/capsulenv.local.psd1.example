@@ -46,6 +46,11 @@
     }
 
     Environment = @{
+        # Override the portable PowerShell module roots. Relative paths are
+        # resolved from CAPSULENV_ROOT; the first entry becomes
+        # CAPSULENV_MODULE_ROOT and all entries are prepended to PSModulePath.
+        # ModulePath = @('PowerShell\Modules')
+
         PathVariables = @{
             # CUSTOM_SDK_HOME = 'tool-data\custom-sdk'
         }

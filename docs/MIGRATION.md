@@ -142,3 +142,7 @@ capsulenv.cmd tools repair pixi --last --include-global
 v0.7.2 將 build/install 驗證改為真正由 PowerShell runtime 執行，而不再只依賴文字級 parser 檢查。修正 StrictMode 下未初始化 `$LASTEXITCODE`、CRLF export marker 未被 module merger 收集，以及 PowerShell 7.6 對 generic `List<T>` 直接 `@(...)` 展開可能觸發 binder 例外的問題。
 
 `Test-Capsulenv.ps1` 現在會額外實際執行 runtime build、首次 install、重複 update、prebuilt module import 與 installed entrypoint smoke test；更新測試亦驗證 local config、cache 與未知 destination files 不會被 installer 覆寫。
+
+## v0.8.0 portable PowerShell module root
+
+配置 schema 升至 6。`Environment.ModulePath` 預設為 `PowerShell\Modules`；所有項目會在 capsulenv session 中 prepend 到 `PSModulePath`，第一項另外暴露為 `CAPSULENV_MODULE_ROOT`。`CAPSULENV_MODULE_ROOT` 會納入 `enable-user` 的 reversible backup，但 `PSModulePath` 刻意不寫入 User scope，以保留 PowerShell 5.1／7 各自的預設 module-path construction。Capsulenv installer 只建立 module root，不管理其中內容，因此私人 modules 可跟 capsule 一起搬移及跨 capsulenv 更新保留。

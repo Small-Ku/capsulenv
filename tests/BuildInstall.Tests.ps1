@@ -49,9 +49,12 @@ try {
     $unmanagedPath = Join-Path $installRoot 'unmanaged.txt'
     $localConfigPath = Join-Path (Join-Path $installRoot 'config') 'capsulenv.local.psd1'
     $cacheStatePath = Join-Path (Join-Path $installRoot 'cache') 'preserved.txt'
+    $privateModuleStatePath = Join-Path (Join-Path (Join-Path (Join-Path $installRoot 'PowerShell') 'Modules') 'PrivateTest') 'preserved.txt'
     'keep-me' | Set-Content -LiteralPath $unmanagedPath -Encoding UTF8
     '@{ ToolStorage = @{ Enabled = $false } }' | Set-Content -LiteralPath $localConfigPath -Encoding UTF8
     'cache-state' | Set-Content -LiteralPath $cacheStatePath -Encoding UTF8
+    [void](New-Item -ItemType Directory -Path (Split-Path -Parent $privateModuleStatePath) -Force)
+    'module-state' | Set-Content -LiteralPath $privateModuleStatePath -Encoding UTF8
 
     [void](& (Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1') $installRoot)
     Assert-CapsulenvBuildInstallTest `
@@ -63,6 +66,9 @@ try {
     Assert-CapsulenvBuildInstallTest `
         -Condition ((Get-Content -LiteralPath $cacheStatePath -Raw).Trim() -eq 'cache-state') `
         -Message 'Installer update changed mutable cache state.'
+    Assert-CapsulenvBuildInstallTest `
+        -Condition ((Get-Content -LiteralPath $privateModuleStatePath -Raw).Trim() -eq 'module-state') `
+        -Message 'Installer update changed the portable private-module store.'
 
     Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     $installedModulePath = Join-Path (Join-Path (Join-Path $installRoot 'modules') 'Capsulenv') 'Capsulenv.psd1'
@@ -73,6 +79,24 @@ try {
     Assert-CapsulenvBuildInstallTest `
         -Condition ((Get-Alias cenv -ErrorAction Stop).Definition -eq 'Invoke-Capsulenv') `
         -Message 'Installed prebuilt module does not export the cenv alias.'
+
+    $previousCapsulenvRoot = $env:CAPSULENV_ROOT
+    $previousModulePath = $env:PSModulePath
+    try {
+        $env:CAPSULENV_ROOT = $installRoot
+        [void](Set-CapsulenvSessionEnvironment)
+        $expectedPrivateModuleRoot = [System.IO.Path]::GetFullPath((Join-Path $installRoot 'PowerShell/Modules'))
+        Assert-CapsulenvBuildInstallTest `
+            -Condition ([string]$env:CAPSULENV_MODULE_ROOT -eq $expectedPrivateModuleRoot) `
+            -Message 'Installed runtime did not expose CAPSULENV_MODULE_ROOT.'
+        $effectiveModulePaths = @($env:PSModulePath -split [regex]::Escape([string][System.IO.Path]::PathSeparator))
+        Assert-CapsulenvBuildInstallTest `
+            -Condition ($effectiveModulePaths -contains $expectedPrivateModuleRoot) `
+            -Message 'Installed runtime did not prepend the portable private-module root to PSModulePath.'
+    } finally {
+        $env:CAPSULENV_ROOT = $previousCapsulenvRoot
+        $env:PSModulePath = $previousModulePath
+    }
 
     & (Join-Path (Join-Path $installRoot 'scripts') 'Invoke-Capsulenv.ps1') help
     Write-Host 'capsulenv build/install smoke tests passed.' -ForegroundColor Green

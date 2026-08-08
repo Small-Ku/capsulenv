@@ -169,6 +169,7 @@ try {
         'tool-data',
         'project-cache',
         'workspace',
+        'PowerShell/Modules',
         '.capsulenv',
         'bin'
     )) {

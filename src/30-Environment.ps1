@@ -36,6 +36,17 @@ function Get-CapsulenvEnvironmentPlan {
         $variables[$name] = [string]$toolStorage.Variables[$name]
     }
 
+    $modulePathEntries = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($configuration.Environment.ModulePath)) {
+        $resolved = Resolve-CapsulenvPath -Path ([string]$entry) -AllowMissing
+        if (-not ($modulePathEntries -contains $resolved)) {
+            $modulePathEntries.Add($resolved)
+        }
+    }
+    if ($modulePathEntries.Count -gt 0) {
+        $variables['CAPSULENV_MODULE_ROOT'] = $modulePathEntries[0]
+    }
+
     $pathEntries = New-Object System.Collections.Generic.List[string]
     $scoopShims = Join-Path $variables.SCOOP 'shims'
     $pathEntries.Add($scoopShims)
@@ -54,6 +65,7 @@ function Get-CapsulenvEnvironmentPlan {
     return [pscustomobject]@{
         Variables = $variables
         PathEntries = $pathEntries.ToArray()
+        ModulePathEntries = $modulePathEntries.ToArray()
         Directories = @($toolStorage.Directories)
     }
 }
@@ -81,6 +93,30 @@ function Merge-CapsulenvPath {
     return ($result -join ';')
 }
 
+function Merge-CapsulenvModulePath {
+    [CmdletBinding()]
+    param(
+        [string]$ExistingPath,
+        [Parameter(Mandatory = $true)][string[]]$Prepend
+    )
+
+    $separator = [System.IO.Path]::PathSeparator
+    $result = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+    foreach ($item in @($Prepend) + @($ExistingPath -split [regex]::Escape([string]$separator))) {
+        if ([string]::IsNullOrWhiteSpace($item)) {
+            continue
+        }
+        $trimmed = $item.Trim()
+        $normalized = $trimmed.TrimEnd([char[]]'\/')
+        if (-not $seen.ContainsKey($normalized)) {
+            $seen[$normalized] = $true
+            $result.Add($trimmed)
+        }
+    }
+    return ($result -join [string]$separator)
+}
+
 function Set-CapsulenvSessionEnvironment {
     [CmdletBinding()]
     param()
@@ -90,10 +126,16 @@ function Set-CapsulenvSessionEnvironment {
     if ($configuration.ToolStorage.Enabled -and $configuration.ToolStorage.CreateDirectories) {
         [void](Initialize-CapsulenvToolStorage)
     }
+    foreach ($modulePathEntry in @($plan.ModulePathEntries)) {
+        if (-not (Test-Path -LiteralPath $modulePathEntry -PathType Container)) {
+            [void](New-Item -ItemType Directory -Path $modulePathEntry -Force)
+        }
+    }
     foreach ($name in $plan.Variables.Keys) {
         [Environment]::SetEnvironmentVariable($name, [string]$plan.Variables[$name], 'Process')
     }
     $env:PATH = Merge-CapsulenvPath -ExistingPath $env:PATH -Prepend $plan.PathEntries
+    $env:PSModulePath = Merge-CapsulenvModulePath -ExistingPath $env:PSModulePath -Prepend $plan.ModulePathEntries
     return $plan
 }
 

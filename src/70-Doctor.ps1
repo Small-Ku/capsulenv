@@ -53,6 +53,19 @@ function Invoke-CapsulenvDoctor {
             "$($toolStoragePlan.Locations.Count) location(s); $($missingToolDirectories.Count) path(s) will be created on first session/cache init"
         })))
 
+    $environmentPlan = Get-CapsulenvEnvironmentPlan
+    $moduleRoots = @($environmentPlan.ModulePathEntries)
+    $missingModuleRoots = @($moduleRoots | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Container) })
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Portable PowerShell modules' `
+        -Passed ($moduleRoots.Count -gt 0) `
+        -Importance Optional `
+        -Detail $(if ($moduleRoots.Count -eq 0) {
+            'No module roots configured'
+        } else {
+            "InstallRoot=$($moduleRoots[0]); $($missingModuleRoots.Count) path(s) will be created on first session"
+        })))
+
     $projectProfiles = @($configuration.ToolStorage.ProjectLinks.Keys)
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Project cache links' `
