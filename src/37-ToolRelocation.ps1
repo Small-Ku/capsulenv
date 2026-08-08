@@ -90,7 +90,7 @@ function Invoke-CapsulenvNativeTool {
         }
     }
     if ($exitCode -ne 0 -and -not $AllowFailure) {
-        throw "Native tool failed with exit code $exitCode: $Executable $($Arguments -join ' ')"
+        throw "Native tool failed with exit code ${exitCode}: $Executable $($Arguments -join ' ')"
     }
     return $exitCode
 }
