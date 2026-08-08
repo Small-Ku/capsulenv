@@ -146,3 +146,10 @@ v0.7.2 將 build/install 驗證改為真正由 PowerShell runtime 執行，而�
 ## v0.8.0 portable PowerShell module root
 
 配置 schema 升至 6。`Environment.ModulePath` 預設為 `PowerShell\Modules`；所有項目會在 capsulenv session 中 prepend 到 `PSModulePath`，第一項另外暴露為 `CAPSULENV_MODULE_ROOT`。`CAPSULENV_MODULE_ROOT` 會納入 `enable-user` 的 reversible backup，但 `PSModulePath` 刻意不寫入 User scope，以保留 PowerShell 5.1／7 各自的預設 module-path construction。Capsulenv installer 只建立 module root，不管理其中內容，因此私人 modules 可跟 capsule 一起搬移及跨 capsulenv 更新保留。
+
+
+## v0.8.1 Scoop lifecycle replay argument binding
+
+Scoop custom commands are dispatched by collecting trailing CLI tokens into a `string[]` and array-splatting that array into `scoop-<command>.ps1`. PowerShell array splatting binds those values positionally; a string value such as `-Hook` is not reinterpreted as a named parameter token. Earlier capsulenv releases therefore invoked the temporary lifecycle replay command with an empty mandatory `Hook` parameter during `init`/`rehydrate`.
+
+v0.8.1 makes the replay protocol explicitly positional: `scoop <temporary-command> post_install <app...>`. The runner binds `Hook` at position 0 and the remaining app names from position 1 onward. Regression coverage executes the replay runner through the same `string[]` array-splat semantics used by Scoop.

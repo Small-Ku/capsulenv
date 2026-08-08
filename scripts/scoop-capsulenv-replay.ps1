@@ -1,11 +1,11 @@
 # Summary: Replay installed Scoop manifest lifecycle hooks without reinstalling files.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, Position = 0)]
     [ValidateSet('pre_install', 'post_install')]
     [string]$Hook,
 
-    [Parameter(Mandatory = $true, Position = 0, ValueFromRemainingArguments = $true)]
+    [Parameter(Mandatory = $true, Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$Apps
 )
 

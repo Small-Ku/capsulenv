@@ -119,7 +119,7 @@ function Invoke-CapsulenvScoopHookReplay {
     [void](Set-CapsulenvSessionEnvironment)
     $temporaryCommand = Install-CapsulenvScoopReplayCommand
     try {
-        $arguments = @($temporaryCommand.Command, '-Hook', $Hook) + @($Apps)
+        $arguments = @($temporaryCommand.Command, $Hook) + @($Apps)
         [void](Invoke-CapsulenvScoopCommand -Arguments $arguments)
     } finally {
         if (Test-Path -LiteralPath $temporaryCommand.Path -PathType Leaf) {

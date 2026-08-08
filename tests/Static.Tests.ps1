@@ -565,6 +565,35 @@ Assert-CapsulenvTest `
     -Condition (-not $replayText.Contains('scoop install')) `
     -Message 'Lifecycle replay must not reinstall or download applications.'
 
+
+# Scoop dispatches custom-command arguments by collecting them into a string[]
+# and array-splatting that array into scoop-<command>.ps1. Array splatting does
+# not reinterpret '-Hook' as a named parameter, so the replay runner must use
+# positional binding for Hook and Apps.
+$scoopSource = [System.IO.File]::ReadAllText(
+    (Join-Path (Join-Path $root 'src') '40-Scoop.ps1')
+)
+Assert-CapsulenvTest `
+    -Condition $scoopSource.Contains('$arguments = @($temporaryCommand.Command, $Hook) + @($Apps)') `
+    -Message 'Scoop lifecycle replay must pass Hook positionally through the custom-command dispatcher.'
+$legacyNamedHookCall = @'
+@($temporaryCommand.Command, '-Hook', $Hook)
+'@
+Assert-CapsulenvTest `
+    -Condition (-not $scoopSource.Contains($legacyNamedHookCall.Trim())) `
+    -Message 'Scoop custom-command array splatting cannot forward -Hook as a named parameter.'
+
+$dispatchError = $null
+try {
+    [string[]]$scoopStyleArguments = @('post_install', 'firefox')
+    & $replayPath @scoopStyleArguments
+} catch {
+    $dispatchError = $_.Exception.Message
+}
+Assert-CapsulenvTest `
+    -Condition ($null -ne $dispatchError -and $dispatchError.Contains('Required Scoop library was not found')) `
+    -Message "Lifecycle replay positional binding did not survive Scoop-style array splatting: $dispatchError"
+
 $relocationSource = @(
     [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '45-Relocation.ps1')),
     [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '46-PersistRelocation.ps1'))
