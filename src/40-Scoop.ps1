@@ -46,8 +46,10 @@ function Invoke-CapsulenvScoopCommand {
         throw 'Scoop is not installed in the configured portable root.'
     }
 
+    Clear-CapsulenvLastExitCode
     & $scoop @Arguments
-    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    $succeeded = $?
+    $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
     if ($exitCode -ne 0 -and -not $AllowFailure) {
         throw "scoop $($Arguments -join ' ') failed with exit code $exitCode"
     }

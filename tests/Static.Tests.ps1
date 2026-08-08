@@ -182,7 +182,7 @@ foreach ($requiredPixiBehavior in @(
     "'reinstall',",
     "'--all',",
     "'--locked',",
-    "'--manifest-path', [string]$workspace.ProjectPath"
+    "'--manifest-path', [string]`$workspace.ProjectPath"
 )) {
     Assert-CapsulenvTest `
         -Condition $pixiRelocationSource.Contains($requiredPixiBehavior) `
@@ -212,8 +212,8 @@ $workspaceRegistrySource = [System.IO.File]::ReadAllText(
 foreach ($requiredWorkspaceBehavior in @(
     "'tool-workspaces.json'",
     "SchemaVersion = 2",
-    "ProjectScope = [string]$reference.Scope",
-    "ProjectReference = [string]$reference.Reference"
+    "ProjectScope = [string]`$reference.Scope",
+    "ProjectReference = [string]`$reference.Reference"
 )) {
     Assert-CapsulenvTest `
         -Condition $workspaceRegistrySource.Contains($requiredWorkspaceBehavior) `
@@ -528,7 +528,7 @@ Assert-CapsulenvTest `
     -Condition $projectCacheSource.Contains('Windows does not support directory hard links') `
     -Message 'Directory hard links must remain rejected.'
 Assert-CapsulenvTest `
-    -Condition ($projectCacheSource.IndexOf('$target = Get-CapsulenvReparseTarget') -lt $projectCacheSource.IndexOf('Test-CapsulenvHardLinkMatch')) `
+    -Condition ($projectCacheSource.IndexOf('$target = Get-CapsulenvReparseTarget') -lt $projectCacheSource.IndexOf('Test-CapsulenvHardLinkMatch -Left $Plan.LinkPath')) `
     -Message 'File symlinks must be detected before hard-link file identity checks.'
 
 $mergedPath = & $module {

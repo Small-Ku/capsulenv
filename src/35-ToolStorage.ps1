@@ -85,8 +85,8 @@ function Get-CapsulenvToolStoragePlan {
         Enabled = $true
         Variables = $variables
         Locations = $locations
-        PathEntries = @($pathEntries)
-        Directories = @($directories)
+        PathEntries = $pathEntries.ToArray()
+        Directories = $directories.ToArray()
     }
 }
 

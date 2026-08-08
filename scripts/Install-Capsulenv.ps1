@@ -105,7 +105,7 @@ try {
         -IncludeDevelopmentFiles:$IncludeDevelopmentFiles
 
     $newManagedFiles = @(
-        Get-ChildItem -LiteralPath $buildRoot -File -Recurse | ForEach-Object {
+        Get-ChildItem -LiteralPath $buildRoot -File -Recurse -Force | ForEach-Object {
             $_.FullName.Substring($buildRoot.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')
         } | Sort-Object -Unique
     )

@@ -285,7 +285,7 @@ function Register-CapsulenvToolWorkspace {
         LastPath = [string]$definition.ProjectPath
         RegisteredAtUtc = [DateTime]::UtcNow.ToString('o')
     })
-    Write-CapsulenvToolWorkspaceRegistry -Records @($records)
+    Write-CapsulenvToolWorkspaceRegistry -Records $records.ToArray()
 
     return [pscustomobject]@{
         Tool = $Tool
@@ -392,7 +392,7 @@ function Get-CapsulenvToolWorkspaces {
             })
         }
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Register-CapsulenvToolWorkspace, Unregister-CapsulenvToolWorkspace, Get-CapsulenvToolWorkspaces

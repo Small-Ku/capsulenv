@@ -237,7 +237,7 @@ function Get-CapsulenvJsonTopLevelProperties {
             $index++
         }
         if ($index -lt $JsonText.Length -and $JsonText[$index] -eq '}') {
-            return @($properties)
+            return $properties.ToArray()
         }
         if ($index -ge $JsonText.Length -or $JsonText[$index] -ne '"') {
             throw "Expected a top-level JSON property at character $index."
@@ -283,7 +283,7 @@ function Get-CapsulenvJsonTopLevelProperties {
             continue
         }
         if ($JsonText[$index] -eq '}') {
-            return @($properties)
+            return $properties.ToArray()
         }
         throw "Expected ',' or '}' after JSON property $name."
     }
@@ -485,7 +485,7 @@ function Get-CapsulenvBitwardenPromptPropertyNames {
         }
     }
 
-    return @($names)
+    return $names.ToArray()
 }
 
 function Read-CapsulenvBitwardenDesktopSettingsBackup {

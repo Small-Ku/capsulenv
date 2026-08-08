@@ -136,3 +136,9 @@ capsulenv.cmd tools repair pixi --last --include-global
 ```
 
 或在 local config 將 `ToolStorage.Relocation.Pixi.RepairGlobal` 設為 `$true`。完整說明見 `docs/TOOLS.md`。
+
+## v0.7.2
+
+v0.7.2 將 build/install 驗證改為真正由 PowerShell runtime 執行，而不再只依賴文字級 parser 檢查。修正 StrictMode 下未初始化 `$LASTEXITCODE`、CRLF export marker 未被 module merger 收集，以及 PowerShell 7.6 對 generic `List<T>` 直接 `@(...)` 展開可能觸發 binder 例外的問題。
+
+`Test-Capsulenv.ps1` 現在會額外實際執行 runtime build、首次 install、重複 update、prebuilt module import 與 installed entrypoint smoke test；更新測試亦驗證 local config、cache 與未知 destination files 不會被 installer 覆寫。

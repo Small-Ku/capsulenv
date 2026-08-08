@@ -82,8 +82,10 @@ function Invoke-CapsulenvNativeTool {
         Set-Location -LiteralPath $WorkingDirectory
     }
     try {
+        Clear-CapsulenvLastExitCode
         & $Executable @Arguments
-        $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        $succeeded = $?
+        $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
     } finally {
         if ($null -ne $previous) {
             Set-Location -LiteralPath $previous.Path
@@ -113,9 +115,10 @@ function Invoke-CapsulenvNativeToolCapture {
             $previous = Get-Location
             Set-Location -LiteralPath $WorkingDirectory
         }
-        $LASTEXITCODE = 0
+        Clear-CapsulenvLastExitCode
         & $Executable @Arguments 1> $stdoutPath 2> $stderrPath
-        $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        $succeeded = $?
+        $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
         $stdout = if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) {
             [System.IO.File]::ReadAllText($stdoutPath)
         } else { '' }
@@ -346,7 +349,7 @@ function Get-CapsulenvUvManagedPythonInstallations {
             Path = $fullPath
         })
     }
-    return @($installations)
+    return $installations.ToArray()
 }
 
 function Repair-CapsulenvUvManagedPython {
@@ -389,7 +392,7 @@ function Repair-CapsulenvUvManagedPython {
             Detail = $installation.Path
         })
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 function Repair-CapsulenvUvGlobalTools {
@@ -452,7 +455,7 @@ function Repair-CapsulenvUvGlobalTools {
             throw "Failed to repair uv tool '$toolName': $($_.Exception.Message)"
         }
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 function Repair-CapsulenvUvRelocation {
@@ -482,7 +485,7 @@ function Repair-CapsulenvUvRelocation {
             $results.Add($result)
         }
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 function Invoke-CapsulenvToolRelocationRepair {
@@ -540,7 +543,7 @@ function Invoke-CapsulenvToolRelocationRepair {
             Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
         }
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Invoke-CapsulenvToolRelocationRepair, Repair-CapsulenvUvRelocation

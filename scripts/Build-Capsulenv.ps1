@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [string]$OutputPath = (Join-Path (Join-Path $PSScriptRoot '..') 'dist\capsulenv'),
+    [string]$OutputPath = (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'dist') 'capsulenv'),
     [switch]$IncludeDevelopmentFiles
 )
 
@@ -53,15 +53,15 @@ try {
     $files = @(
         @{ Source = 'capsulenv.cmd'; Destination = 'capsulenv.cmd' }
         @{ Source = 'README.md'; Destination = 'README.md' }
-        @{ Source = 'bin\firefox-capsulenv.cmd'; Destination = 'bin\firefox-capsulenv.cmd' }
-        @{ Source = 'bin\zen-capsulenv.cmd'; Destination = 'bin\zen-capsulenv.cmd' }
-        @{ Source = 'config\capsulenv.psd1'; Destination = 'config\capsulenv.psd1' }
-        @{ Source = 'config\capsulenv.local.psd1.example'; Destination = 'config\capsulenv.local.psd1.example' }
-        @{ Source = 'scripts\Invoke-Capsulenv.ps1'; Destination = 'scripts\Invoke-Capsulenv.ps1' }
-        @{ Source = 'scripts\scoop-capsulenv-replay.ps1'; Destination = 'scripts\scoop-capsulenv-replay.ps1' }
-        @{ Source = 'docs\MIGRATION.md'; Destination = 'docs\MIGRATION.md' }
-        @{ Source = 'docs\INSTALL.md'; Destination = 'docs\INSTALL.md' }
-        @{ Source = 'docs\TOOLS.md'; Destination = 'docs\TOOLS.md' }
+        @{ Source = 'bin/firefox-capsulenv.cmd'; Destination = 'bin/firefox-capsulenv.cmd' }
+        @{ Source = 'bin/zen-capsulenv.cmd'; Destination = 'bin/zen-capsulenv.cmd' }
+        @{ Source = 'config/capsulenv.psd1'; Destination = 'config/capsulenv.psd1' }
+        @{ Source = 'config/capsulenv.local.psd1.example'; Destination = 'config/capsulenv.local.psd1.example' }
+        @{ Source = 'scripts/Invoke-Capsulenv.ps1'; Destination = 'scripts/Invoke-Capsulenv.ps1' }
+        @{ Source = 'scripts/scoop-capsulenv-replay.ps1'; Destination = 'scripts/scoop-capsulenv-replay.ps1' }
+        @{ Source = 'docs/MIGRATION.md'; Destination = 'docs/MIGRATION.md' }
+        @{ Source = 'docs/INSTALL.md'; Destination = 'docs/INSTALL.md' }
+        @{ Source = 'docs/TOOLS.md'; Destination = 'docs/TOOLS.md' }
     )
     foreach ($entry in $files) {
         $source = Join-Path $sourceRoot $entry.Source
@@ -88,9 +88,9 @@ try {
             'Capsulenv.psd1',
             'Merge-ModuleScripts.ps1',
             'install.cmd',
-            'scripts\Build-Capsulenv.ps1',
-            'scripts\Install-Capsulenv.ps1',
-            'scripts\Test-Capsulenv.ps1'
+            'scripts/Build-Capsulenv.ps1',
+            'scripts/Install-Capsulenv.ps1',
+            'scripts/Test-Capsulenv.ps1'
         )) {
             $source = Join-Path $sourceRoot $fileName
             if (Test-Path -LiteralPath $source -PathType Leaf) {
@@ -107,8 +107,16 @@ try {
         $git = Get-Command git -ErrorAction SilentlyContinue
     }
     if ($git) {
-        $commit = (& $git.Source -C $sourceRoot rev-parse HEAD 2>$null | Select-Object -First 1)
-        if ($LASTEXITCODE -ne 0) {
+        $gitOutput = New-Object System.Collections.Generic.List[string]
+        Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+        & $git.Source -C $sourceRoot rev-parse HEAD 2>$null | ForEach-Object {
+            $gitOutput.Add([string]$_)
+        }
+        $gitSucceeded = $?
+        $gitExitVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+        $gitExitCode = if ($null -eq $gitExitVariable) { 0 } else { [int]$gitExitVariable.Value }
+        $commit = $gitOutput | Select-Object -First 1
+        if (-not $gitSucceeded -or $gitExitCode -ne 0) {
             $commit = $null
         }
     }

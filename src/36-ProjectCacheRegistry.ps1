@@ -152,7 +152,7 @@ function Register-CapsulenvProjectCacheLink {
         LastLinkPath = [string]$Plan.LinkPath
         LastStorePath = [string]$Plan.StorePath
     })
-    Write-CapsulenvProjectCacheRegistry -Records @($records)
+    Write-CapsulenvProjectCacheRegistry -Records $records.ToArray()
 }
 
 function Unregister-CapsulenvProjectCacheLink {
@@ -322,9 +322,9 @@ function Repair-CapsulenvProjectCacheLinks {
     }
 
     if ($registryChanged) {
-        Write-CapsulenvProjectCacheRegistry -Records @($updated)
+        Write-CapsulenvProjectCacheRegistry -Records $updated.ToArray()
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 function Get-CapsulenvManagedProjectCacheLinks {

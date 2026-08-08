@@ -137,7 +137,7 @@ function Repair-CapsulenvUvWorkspace {
             $venvArguments.Add('--relocatable')
         }
         $venvArguments.Add('--no-progress')
-        [void](Invoke-CapsulenvNativeTool -Executable $UvExecutable -Arguments @($venvArguments))
+        [void](Invoke-CapsulenvNativeTool -Executable $UvExecutable -Arguments $venvArguments.ToArray())
         [void](Invoke-CapsulenvNativeTool `
             -Executable $UvExecutable `
             -Arguments @(
@@ -260,7 +260,7 @@ function Repair-CapsulenvRegisteredToolWorkspaces {
             Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
         }
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 function Repair-CapsulenvPixiRelocation {
@@ -319,7 +319,7 @@ function Get-CapsulenvToolRelocationStatus {
             Detail = $workspaceDetail
         })
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Repair-CapsulenvPixiRelocation, Get-CapsulenvToolRelocationStatus

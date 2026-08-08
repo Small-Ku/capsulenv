@@ -92,3 +92,27 @@ function Test-CapsulenvWindows {
     }
     return $IsWindows
 }
+
+function Clear-CapsulenvLastExitCode {
+    [CmdletBinding()]
+    param()
+
+    Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+}
+
+function Get-CapsulenvLastExitCode {
+    [CmdletBinding()]
+    param(
+        [bool]$Succeeded = $true,
+        [int]$FailureCode = 1
+    )
+
+    $variable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+    if ($null -ne $variable -and $null -ne $variable.Value) {
+        return [int]$variable.Value
+    }
+    if ($Succeeded) {
+        return 0
+    }
+    return $FailureCode
+}

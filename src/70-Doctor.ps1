@@ -192,7 +192,7 @@ function Invoke-CapsulenvDoctor {
     if ($requiredFailures.Count -gt 0) {
         throw "capsulenv doctor found $($requiredFailures.Count) required failure(s)."
     }
-    return @($results)
+    return $results.ToArray()
 }
 
 function Initialize-CapsulenvIntegrations {

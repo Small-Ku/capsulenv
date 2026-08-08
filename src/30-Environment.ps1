@@ -53,7 +53,7 @@ function Get-CapsulenvEnvironmentPlan {
 
     return [pscustomobject]@{
         Variables = $variables
-        PathEntries = @($pathEntries)
+        PathEntries = $pathEntries.ToArray()
         Directories = @($toolStorage.Directories)
     }
 }
@@ -244,10 +244,10 @@ function Invoke-CapsulenvChildShell {
         return
     }
 
+    Clear-CapsulenvLastExitCode
     & $shellPath -NoLogo -ExecutionPolicy Bypass -Command $Command
-    if ($null -ne $LASTEXITCODE) {
-        $global:LASTEXITCODE = $LASTEXITCODE
-    }
+    $succeeded = $?
+    $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
 }
 
 function Invoke-CapsulenvExternalCommand {
@@ -259,10 +259,10 @@ function Invoke-CapsulenvExternalCommand {
 
     [void](Set-CapsulenvSessionEnvironment)
     Initialize-CapsulenvIntegrations
+    Clear-CapsulenvLastExitCode
     & $Command @Arguments
-    if ($null -ne $LASTEXITCODE) {
-        $global:LASTEXITCODE = $LASTEXITCODE
-    }
+    $succeeded = $?
+    $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Set-CapsulenvSessionEnvironment, Enable-CapsulenvUserEnvironment, Restore-CapsulenvUserEnvironment

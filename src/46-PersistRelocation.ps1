@@ -100,7 +100,7 @@ function Get-CapsulenvPersistRootsForApp {
         $seen[$key] = $true
         $roots.Add($resolved)
     }
-    return @($roots)
+    return $roots.ToArray()
 }
 
 function Resolve-CapsulenvPersistRepairPath {
@@ -204,7 +204,7 @@ function Get-CapsulenvPersistRelocationPlan {
         }
     }
 
-    return @($plan)
+    return $plan.ToArray()
 }
 
 function Assert-CapsulenvPersistRepairProcessesStopped {
@@ -308,11 +308,11 @@ function Invoke-CapsulenvPersistRelocationRepair {
         if ($rollbackFailures.Count -gt 0) {
             $preserveRollbackFiles = $true
             throw ("Persist relocation failed: {0}. Rollback also failed; recovery files were preserved: {1}" -f `
-                $originalError.Exception.Message, (@($rollbackFailures) -join '; '))
+                $originalError.Exception.Message, ($rollbackFailures.ToArray() -join '; '))
         }
         throw $originalError
     } finally {
-        foreach ($entry in @($prepared)) {
+        foreach ($entry in $prepared.ToArray()) {
             if (Test-Path -LiteralPath $entry.TempPath -PathType Leaf) {
                 Remove-Item -LiteralPath $entry.TempPath -Force
             }

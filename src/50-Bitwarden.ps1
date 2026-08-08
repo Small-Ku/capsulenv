@@ -164,8 +164,10 @@ function Test-CapsulenvBitwardenSshAgent {
         throw 'ssh-add was not found. Install the Windows OpenSSH client.'
     }
 
+    Clear-CapsulenvLastExitCode
     $output = & $sshAdd.Source -L 2>&1
-    $exitCode = $LASTEXITCODE
+    $succeeded = $?
+    $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
     [pscustomobject]@{
         Reachable = ($exitCode -eq 0 -or ($output -match 'no identities'))
         ExitCode = $exitCode
@@ -202,13 +204,17 @@ function Restore-CapsulenvGitValues {
     foreach ($property in $Backup.PSObject.Properties) {
         $entry = $property.Value
         if ($entry.Exists) {
+            Clear-CapsulenvLastExitCode
             & $Git config --global --replace-all $property.Name ([string]$entry.Value)
-            if ($LASTEXITCODE -ne 0) {
+            $exitCode = Get-CapsulenvLastExitCode -Succeeded $?
+            if ($exitCode -ne 0) {
                 throw "Failed to restore Git setting: $($property.Name)"
             }
         } else {
+            Clear-CapsulenvLastExitCode
             & $Git config --global --unset-all $property.Name 2>$null
-            if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 5) {
+            $exitCode = Get-CapsulenvLastExitCode -Succeeded $?
+            if ($exitCode -ne 0 -and $exitCode -ne 5) {
                 throw "Failed to remove Git setting: $($property.Name)"
             }
         }
@@ -249,9 +255,11 @@ function Set-CapsulenvGitOpenSsh {
         $keys = @('core.sshCommand', 'gpg.ssh.program')
         $captured = [ordered]@{}
         foreach ($key in $keys) {
+            Clear-CapsulenvLastExitCode
             $value = & $git config --global --get $key 2>$null
+            $exitCode = Get-CapsulenvLastExitCode -Succeeded $?
             $captured[$key] = [ordered]@{
-                Exists = ($LASTEXITCODE -eq 0)
+                Exists = ($exitCode -eq 0)
                 Value = ($value -join [Environment]::NewLine)
             }
         }
@@ -260,10 +268,14 @@ function Set-CapsulenvGitOpenSsh {
     }
 
     try {
+        Clear-CapsulenvLastExitCode
         & $git config --global --replace-all core.sshCommand $gitSshPath
-        if ($LASTEXITCODE -ne 0) { throw 'Failed to set Git core.sshCommand.' }
+        $exitCode = Get-CapsulenvLastExitCode -Succeeded $?
+        if ($exitCode -ne 0) { throw 'Failed to set Git core.sshCommand.' }
+        Clear-CapsulenvLastExitCode
         & $git config --global --replace-all gpg.ssh.program $gitSshKeygenPath
-        if ($LASTEXITCODE -ne 0) { throw 'Failed to set Git gpg.ssh.program.' }
+        $exitCode = Get-CapsulenvLastExitCode -Succeeded $?
+        if ($exitCode -ne 0) { throw 'Failed to set Git gpg.ssh.program.' }
     } catch {
         $configurationError = $_
         try {

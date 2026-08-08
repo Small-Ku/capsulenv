@@ -88,7 +88,7 @@ foreach ($file in $sourceFiles) {
 
     $functionMatches = [regex]::Matches(
         $content,
-        '(?m)^[ \t]*##MOD_EXEC##[ \t]+Export-ModuleMember[ \t]+-Function[ \t]+([-_A-Za-z0-9, \t]+)[ \t]*$'
+        '(?m)^[ \t]*##MOD_EXEC##[ \t]+Export-ModuleMember[ \t]+-Function[ \t]+([-_A-Za-z0-9, \t]+)[ \t]*\r?$'
     )
     foreach ($match in $functionMatches) {
         foreach ($name in ($match.Groups[1].Value -split ',')) {
@@ -101,7 +101,7 @@ foreach ($file in $sourceFiles) {
 
     $aliasMatches = [regex]::Matches(
         $content,
-        '(?m)^[ \t]*##MOD_EXEC##[ \t]+Export-ModuleMember[ \t]+-Alias[ \t]+([-_A-Za-z0-9, \t]+)[ \t]*$'
+        '(?m)^[ \t]*##MOD_EXEC##[ \t]+Export-ModuleMember[ \t]+-Alias[ \t]+([-_A-Za-z0-9, \t]+)[ \t]*\r?$'
     )
     foreach ($match in $aliasMatches) {
         foreach ($name in ($match.Groups[1].Value -split ',')) {
