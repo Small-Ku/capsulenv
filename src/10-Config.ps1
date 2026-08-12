@@ -180,6 +180,8 @@ function Assert-CapsulenvConfiguration {
         ) {
             throw "Environment configuration value must be a hashtable: $name"
         }
+    }
+    foreach ($name in @('PathVariables', 'FileVariables', 'Variables')) {
         if (
             -not $Configuration.ToolStorage.ContainsKey($name) -or
             $Configuration.ToolStorage[$name] -isnot [hashtable]
@@ -276,6 +278,14 @@ function Assert-CapsulenvConfiguration {
             -Name ("PathVariables.{0}" -f $name) `
             -Path ([string]$Configuration.ToolStorage.PathVariables[$name])
     }
+    foreach ($name in $Configuration.ToolStorage.FileVariables.Keys) {
+        if ([string]::IsNullOrWhiteSpace([string]$name) -or ([string]$name).Contains('=')) {
+            throw "ToolStorage contains an invalid environment variable name: $name"
+        }
+        Assert-CapsulenvPortableStoragePath `
+            -Name ("FileVariables.{0}" -f $name) `
+            -Path ([string]$Configuration.ToolStorage.FileVariables[$name])
+    }
     foreach ($name in $Configuration.ToolStorage.Variables.Keys) {
         if ([string]::IsNullOrWhiteSpace([string]$name) -or ([string]$name).Contains('=')) {
             throw "ToolStorage contains an invalid environment variable name: $name"
@@ -335,15 +345,15 @@ function Assert-CapsulenvConfiguration {
             throw "Environment variable is declared as both a path and a literal value: $name"
         }
     }
-    foreach ($name in @($Configuration.ToolStorage.PathVariables.Keys) + @($Configuration.ToolStorage.Variables.Keys)) {
+    $toolStorageVariableNames = @(
+        @($Configuration.ToolStorage.PathVariables.Keys) +
+        @($Configuration.ToolStorage.FileVariables.Keys) +
+        @($Configuration.ToolStorage.Variables.Keys)
+    )
+    foreach ($name in $toolStorageVariableNames) {
         if ($reserved -contains [string]$name) {
             throw "ToolStorage cannot override a dedicated capsulenv variable: $name"
         }
-    }
-    foreach ($name in $Configuration.ToolStorage.PathVariables.Keys) {
-        if ($Configuration.ToolStorage.Variables.ContainsKey($name)) {
-            throw "ToolStorage variable is declared as both a path and a literal value: $name"
-        }
         if (
             $Configuration.Environment.PathVariables.ContainsKey($name) -or
             $Configuration.Environment.Variables.ContainsKey($name)
@@ -351,13 +361,9 @@ function Assert-CapsulenvConfiguration {
             throw "Environment variable is declared by both ToolStorage and Environment: $name"
         }
     }
-    foreach ($name in $Configuration.ToolStorage.Variables.Keys) {
-        if (
-            $Configuration.Environment.PathVariables.ContainsKey($name) -or
-            $Configuration.Environment.Variables.ContainsKey($name)
-        ) {
-            throw "Environment variable is declared by both ToolStorage and Environment: $name"
-        }
+    $duplicates = @($toolStorageVariableNames | Group-Object | Where-Object { $_.Count -gt 1 })
+    if ($duplicates.Count -gt 0) {
+        throw "ToolStorage variable is declared in more than one storage class: $($duplicates[0].Name)"
     }
 }
 
@@ -400,7 +406,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 7) {
+    if ([int]$configuration.SchemaVersion -ne 8) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

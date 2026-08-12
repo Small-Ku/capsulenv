@@ -58,36 +58,65 @@ Import-Module NyaModule
 
 ## Portable tool storage
 
-開發工具自己的 cache、toolchain 與 global-tool data 會透過官方環境變數放在 capsule 內，而不是使用主機 `%LOCALAPPDATA%` 或 user home：
+工具儲存現在分成三種 ownership class，而不是把所有內容都當 cache：
 
 ```text
-cache/
-├─ uv/
-├─ uv-python/
-├─ pixi/
-├─ sccache/
-└─ ccache/
-tool-data/
-├─ uv/python/
-├─ uv/tools/
-├─ pixi/
-├─ rustup/
-└─ cargo/
-project-cache/
-└─ <stable-project-id>/
+cache/                              rebuildable shared caches
+├─ uv/                              uv package cache
+├─ uv-python/                       uv managed-Python archive cache
+├─ pixi/                            Pixi package/repodata/http/uv cache
+├─ npm/
+├─ pnpm/                            pnpm metadata/dlx cache
+├─ pnpm-store/                      pnpm content-addressable store
+├─ bun/
+├─ go-build/
+├─ go-mod/
+├─ ccache/
+└─ sccache/
+
+tool-data/                          persistent tool state/global installs
+├─ uv/python/                       installed managed Python runtimes
+├─ uv/tools/                        uv global tools
+├─ pixi/                            PIXI_HOME/global installs
+├─ npm/                             npm global prefix
+├─ pnpm/                            pnpm home/global packages/bin
+├─ pnpm-state/                      pnpm state/update metadata
+├─ bun/global/                      Bun global packages
+├─ bun/bin/                         Bun global package executables
+├─ go/gopath/                       Go workspace state
+├─ go/bin/                          go install binaries
+├─ go/env                           GOENV configuration file
+├─ rustup/                          rustup toolchains/state
+├─ cargo/                           Cargo home: bins + registry/git cache + credentials/config
+├─ ccache/ccache.conf               persistent ccache config
+└─ sccache/config.toml              persistent sccache config
 ```
 
-預設管理 `UV_CACHE_DIR`、`UV_PYTHON_CACHE_DIR`、`UV_PYTHON_INSTALL_DIR`、`UV_PYTHON_BIN_DIR`、`UV_TOOL_DIR`、`UV_TOOL_BIN_DIR`、`PIXI_HOME`、`PIXI_CACHE_DIR`、`RUSTUP_HOME`、`CARGO_HOME`、`SCCACHE_DIR`、`CCACHE_DIR` 與 `CCACHE_TEMPDIR`。`bin/` 同時作為 uv-managed Python 與 uv tool executable 目錄；Cargo/Pixi global bin 亦加入 capsule session 的 `PATH`。Scoop 自己的下載 cache 已位於 `scoop/cache`，不重複 redirect，並只由 Scoop 按需要建立。 `tool-data/` 可能包含 Cargo registry credentials 或其他工具登入狀態，與 Scoop persist 一樣應視為私人 portable data；已預設 git-ignore，不應直接公開整個 runtime。
+預設 environment mapping：
 
-設定環境變數不會代替安裝工具；工具仍由 portable Scoop 管理。Scoop 自己的 package download cache 會顯示為 `SCOOP_CACHE`。`cache/` 與 `project-cache/` 是可重建資料；`tool-data/` 則含 rustup toolchains、Cargo/uv/Pixi global tools 等，不應當成純 cache 隨意刪除。這些內容亦不適合由多部電腦同時寫入同一個同步資料夾。capsulenv 不會預設設定 `RUSTC_WRAPPER=sccache`，以免尚未安裝 sccache 時令 Cargo 失敗；需要時可在 local config 的 `ToolStorage.Variables` 明確加入。uv 與 Pixi 自己建立的 virtual environment、executable wrapper、trampoline 與 prefix metadata 不是 capsulenv-managed junction。搬移後，capsulenv 會逐一以原有 managed Python key 重裝 uv Python，從 tool receipt 保留 global tool 的完整安裝意圖，並修復明確登記、具 lock file 的 uv/Pixi workspace：
+| Tool | Rebuildable cache/store | Persistent capsule state |
+|---|---|---|
+| uv | `UV_CACHE_DIR`, `UV_PYTHON_CACHE_DIR` | managed Python、global tools、共同 `bin/` |
+| Pixi | `PIXI_CACHE_DIR` | `PIXI_HOME` |
+| npm | `NPM_CONFIG_CACHE` | `NPM_CONFIG_PREFIX` |
+| pnpm | `PNPM_CONFIG_STORE_DIR`, `PNPM_CONFIG_CACHE_DIR` | `PNPM_HOME`, state/global/global-bin dirs |
+| Bun | `BUN_INSTALL_CACHE_DIR` | `BUN_INSTALL_GLOBAL_DIR`, `BUN_INSTALL_BIN` |
+| Go | `GOCACHE`, `GOMODCACHE` | `GOPATH`, `GOBIN`, `GOENV` |
+| Rust/Cargo | project `target/` 另行處理 | `RUSTUP_HOME`, `CARGO_HOME` |
+| ccache | `CCACHE_DIR`, `CCACHE_TEMPDIR` | `CCACHE_CONFIGPATH` |
+| sccache | `SCCACHE_DIR` | `SCCACHE_CONF` |
 
-```bat
-capsulenv.cmd tools register uv workspace\python-app
-capsulenv.cmd tools register pixi workspace\science-app
-capsulenv.cmd tools repair all --dry-run --last
-```
+`PathVariables` 只代表 directory-valued environment variables；`FileVariables` 專門代表 `GOENV`、`CCACHE_CONFIGPATH`、`SCCACHE_CONF` 這類 file-valued setting。`cache init` 會建立 directory、file parent 以及缺少的空 config file，不會把 config filename 誤建立成 directory。ccache/sccache 的 config 特別移出 `cache/`，所以刪除 compiler cache 不會同時丟掉持久設定，也不會因 cache 被重建而退回 host user config。
 
-uv global tool 修復只把當前已安裝版本加在命令參數，不改寫 receipt 的 registry、local path、URL 或 VCS requirement。登記的 uv workspace 會先備份原環境，以 uv 原生 `venv --relocatable` 重建，再按 `uv.lock` 做 locked sync；environment path 必須位於 workspace 或 capsule 內。Pixi workspace 使用 `--locked` 重新安裝；Pixi global manifest 可能包含版本範圍，因此 `pixi global sync` 預設只在明確傳入 `--include-global` 時執行，避免 relocation 暗中升級。詳見 `docs/TOOLS.md`。
+`cache/` 原則上是可重建資料，但並不代表任何時候都應直接 `rmdir /s`：Capsulenv 不會預設開啟 Bun global virtual store、pnpm experimental global virtual store，也不會強制 uv symlink cache mode；若 local config 主動開啟會讓 project environment 對 shared store/cache 形成更強 linkage，清理時應使用相應 tool-native command。Capsulenv 因而暫不提供一個粗暴的 `cache clean all`。
+
+`tool-data/` 不可當 cache 清除。尤其 `CARGO_HOME` 同時放置 Cargo executable、registry/git cache、config/credentials，Rust/Cargo 沒有一個等價的官方單一變數可以把其中所有「cache」安全拆到 `cache/`，因此仍視為 mixed persistent state。Capsulenv 也不設定全域 `CARGO_TARGET_DIR`；每個專案的 `target/` 繼續透過 `cargo-target` project-link profile 選擇性搬入 `project-cache/`。
+
+同理，Capsulenv 不會把 `node_modules`、`.venv`、`.pixi` 或 Go temporary build scratch 集中成一份共享 project directory。uv/pnpm/Pixi 的 cache/store 依賴 hardlink/reflink 等機制取得最佳性能；若 capsule 在 `F:`、project 在 `D:`，工具可能退化成 copy。需要最大化 dedup/performance 時，建議把 source 放在 capsule 的 `workspace/` 或同一 filesystem；外部 project 則優先維持 correctness/isolation。
+
+Go 有一個刻意保留的例外：`go env GOTELEMETRYDIR` 是 Go 自己計算的 non-settable telemetry state location，直接設定同名 environment variable 不會重定向它。Capsulenv 不會為了這一項而覆寫整個 `%APPDATA%`/XDG user-config root，因為那會把大量無關 child process 一起改道。因此 Go build/module cache、`GOENV`、`GOPATH/GOBIN` 已 capsule-owned，但 Go telemetry 仍是 host-owned known exception；這比宣稱已 portable、實際仍寫 host profile 更誠實。
+
+ShellOnly 只把上述 environment mapping 放進 Capsulenv process tree；User mode才持久寫到目前 Windows user environment，並由既有 backup/restore contract 管理。npm/pnpm registry/auth、Bun global `bunfig.toml` 等 user configuration 並未被這輪 cache mapping 強制搬走；storage isolation 與 credential/config policy 保持分離。Scoop 自己的下載 cache 仍由 Scoop 管理在 `scoop/cache`，Capsulenv 只顯示其位置，不替 Scoop 建立或清除。
 
 建立及查看 capsulenv-owned storage 位置：
 

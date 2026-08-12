@@ -1,5 +1,5 @@
 @{
-    SchemaVersion = 7
+    SchemaVersion = 8
 
     Scoop = @{
         Root = 'scoop'
@@ -72,28 +72,68 @@
         Enabled = $true
         CreateDirectories = $true
 
-        # Portable caches and tool-managed installations. All relative paths
-        # are resolved from CAPSULENV_ROOT and are included in user backup/
-        # restore when `enable-user` is used.
+        # Directory-valued environment variables. Shared caches stay under
+        # cache/ and may be discarded; global installs/toolchains/state stay
+        # under tool-data/ and must not be treated as disposable cache.
         PathVariables = @{
+            # uv
             UV_CACHE_DIR = 'cache\uv'
             UV_PYTHON_CACHE_DIR = 'cache\uv-python'
             UV_PYTHON_INSTALL_DIR = 'tool-data\uv\python'
             UV_PYTHON_BIN_DIR = 'bin'
             UV_TOOL_DIR = 'tool-data\uv\tools'
             UV_TOOL_BIN_DIR = 'bin'
+
+            # Pixi
             PIXI_HOME = 'tool-data\pixi'
             PIXI_CACHE_DIR = 'cache\pixi'
+
+            # Node package managers
+            NPM_CONFIG_CACHE = 'cache\npm'
+            NPM_CONFIG_PREFIX = 'tool-data\npm'
+            PNPM_HOME = 'tool-data\pnpm'
+            PNPM_CONFIG_STORE_DIR = 'cache\pnpm-store'
+            PNPM_CONFIG_CACHE_DIR = 'cache\pnpm'
+            PNPM_CONFIG_STATE_DIR = 'tool-data\pnpm-state'
+            PNPM_CONFIG_GLOBAL_DIR = 'tool-data\pnpm\global'
+            PNPM_CONFIG_GLOBAL_BIN_DIR = 'tool-data\pnpm\bin'
+            BUN_INSTALL_GLOBAL_DIR = 'tool-data\bun\global'
+            BUN_INSTALL_BIN = 'tool-data\bun\bin'
+            BUN_INSTALL_CACHE_DIR = 'cache\bun'
+
+            # Go
+            GOPATH = 'tool-data\go\gopath'
+            GOBIN = 'tool-data\go\bin'
+            GOCACHE = 'cache\go-build'
+            GOMODCACHE = 'cache\go-mod'
+
+            # Rust/Cargo and compiler caches
             RUSTUP_HOME = 'tool-data\rustup'
             CARGO_HOME = 'tool-data\cargo'
             SCCACHE_DIR = 'cache\sccache'
             CCACHE_DIR = 'cache\ccache'
             CCACHE_TEMPDIR = 'cache\ccache\tmp'
         }
+
+        # File-valued environment variables are kept separately so init creates
+        # their parent directories/files instead of accidentally making a
+        # directory whose name should have been a config file. Empty ccache and
+        # sccache configs intentionally prevent fallback to host user config.
+        FileVariables = @{
+            GOENV = 'tool-data\go\env'
+            CCACHE_CONFIGPATH = 'tool-data\ccache\ccache.conf'
+            SCCACHE_CONF = 'tool-data\sccache\config.toml'
+        }
         Variables = @{}
         Path = @(
             'tool-data\cargo\bin'
             'tool-data\pixi\bin'
+            'tool-data\npm'
+            'tool-data\npm\bin'
+            'tool-data\pnpm'
+            'tool-data\pnpm\bin'
+            'tool-data\bun\bin'
+            'tool-data\go\bin'
         )
 
         # Project-local paths can be backed by storage inside the capsule.

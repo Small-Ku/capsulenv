@@ -93,7 +93,8 @@ function Invoke-CapsulenvDoctor {
 
     $toolStoragePlan = Get-CapsulenvToolStoragePlan
     $toolPathValues = @($toolStoragePlan.Directories)
-    $missingToolDirectories = @($toolPathValues | Where-Object { -not (Test-Path -LiteralPath $_) })
+    $missingToolDirectories = @($toolPathValues | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Container) })
+    $missingToolFiles = @($toolStoragePlan.Files | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Portable tool storage' `
         -Passed $toolStoragePlan.Enabled `
@@ -101,7 +102,7 @@ function Invoke-CapsulenvDoctor {
         -Detail $(if (-not $toolStoragePlan.Enabled) {
             'Disabled'
         } else {
-            "$($toolStoragePlan.Locations.Count) location(s); $($missingToolDirectories.Count) path(s) will be created on first session/cache init"
+            "$($toolStoragePlan.Locations.Count) location(s); $($missingToolDirectories.Count) directorie(s) and $($missingToolFiles.Count) config file(s) will be created on first session/cache init"
         })))
 
     $environmentPlan = Get-CapsulenvEnvironmentPlan

@@ -143,7 +143,7 @@ Describe 'Capsulenv static and relocation' {
         }
 
         $config = Get-CapsulenvConfiguration -Refresh
-        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 7) -Message 'Unexpected configuration schema.'
+        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 8) -Message 'Unexpected configuration schema.'
         Assert-CapsulenvTest -Condition ([bool]$config.Scoop.Bootstrap.Enabled) -Message 'Scoop bootstrap is not enabled by default.'
         Assert-CapsulenvTest -Condition ([int]$config.Scoop.Bootstrap.GitDepth -eq 1) -Message 'Scoop bootstrap must default to a shallow depth of one.'
         Assert-CapsulenvTest -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Scoop.Bootstrap.Scoop.Repository)) -Message 'Scoop bootstrap repository is missing.'
@@ -499,11 +499,29 @@ Describe 'Capsulenv static and relocation' {
             'UV_TOOL_BIN_DIR',
             'PIXI_HOME',
             'PIXI_CACHE_DIR',
+            'NPM_CONFIG_CACHE',
+            'NPM_CONFIG_PREFIX',
+            'PNPM_HOME',
+            'PNPM_CONFIG_STORE_DIR',
+            'PNPM_CONFIG_CACHE_DIR',
+            'PNPM_CONFIG_STATE_DIR',
+            'PNPM_CONFIG_GLOBAL_DIR',
+            'PNPM_CONFIG_GLOBAL_BIN_DIR',
+            'BUN_INSTALL_GLOBAL_DIR',
+            'BUN_INSTALL_BIN',
+            'BUN_INSTALL_CACHE_DIR',
+            'GOPATH',
+            'GOBIN',
+            'GOCACHE',
+            'GOMODCACHE',
+            'GOENV',
             'RUSTUP_HOME',
             'CARGO_HOME',
             'SCCACHE_DIR',
+            'SCCACHE_CONF',
             'CCACHE_DIR',
-            'CCACHE_TEMPDIR'
+            'CCACHE_TEMPDIR',
+            'CCACHE_CONFIGPATH'
         )) {
             Assert-CapsulenvTest `
                 -Condition ($plan.Variables.Contains($toolVariable) -and [System.IO.Path]::IsPathRooted([string]$plan.Variables[$toolVariable])) `
@@ -514,6 +532,34 @@ Describe 'Capsulenv static and relocation' {
             -Condition ($null -ne ($toolStorageStatus | Where-Object { $_.Name -eq 'SCOOP_CACHE' })) `
             -Message 'Scoop-owned package cache is missing from the tool-storage plan.'
         $toolStoragePlan = & $module { Get-CapsulenvToolStoragePlan }
+        Assert-CapsulenvTest `
+            -Condition (@($toolStoragePlan.Files).Count -eq 3) `
+            -Message 'ToolStorage file-valued configuration locations were not planned separately.'
+        [void](Initialize-CapsulenvToolStorage)
+        foreach ($fileVariable in @('GOENV', 'CCACHE_CONFIGPATH', 'SCCACHE_CONF')) {
+            $status = $toolStorageStatus | Where-Object { $_.Name -eq $fileVariable } | Select-Object -First 1
+            if ($null -eq $status) {
+                $status = @(Get-CapsulenvToolStorageStatus) | Where-Object { $_.Name -eq $fileVariable } | Select-Object -First 1
+            }
+            Assert-CapsulenvTest `
+                -Condition ($null -ne $status -and $status.Kind -eq 'File' -and $status.Class -eq 'Config' -and (Test-Path -LiteralPath $status.Value -PathType Leaf)) `
+                -Message "Portable file-valued tool config was not initialized correctly: $fileVariable"
+        }
+        foreach ($cacheVariable in @('UV_CACHE_DIR', 'PIXI_CACHE_DIR', 'NPM_CONFIG_CACHE', 'PNPM_CONFIG_STORE_DIR', 'BUN_INSTALL_CACHE_DIR', 'GOCACHE', 'GOMODCACHE', 'CCACHE_DIR', 'SCCACHE_DIR')) {
+            $status = @(Get-CapsulenvToolStorageStatus) | Where-Object { $_.Name -eq $cacheVariable } | Select-Object -First 1
+            Assert-CapsulenvTest `
+                -Condition ($null -ne $status -and $status.Class -eq 'Cache') `
+                -Message "Disposable cache was not classified as Cache: $cacheVariable"
+        }
+        Assert-CapsulenvTest `
+            -Condition (-not $plan.Variables.Contains('CARGO_TARGET_DIR')) `
+            -Message 'CARGO_TARGET_DIR must remain project-owned instead of becoming one shared global target directory.'
+        Assert-CapsulenvTest `
+            -Condition (-not $plan.Variables.Contains('GOTMPDIR')) `
+            -Message 'GOTMPDIR is temporary scratch space and must not be treated as persistent capsule cache.'
+        Assert-CapsulenvTest `
+            -Condition (-not $plan.Variables.Contains('GOTELEMETRYDIR')) `
+            -Message 'GOTELEMETRYDIR is reported by Go but is not an environment-settable redirect; do not claim it is capsule-owned.'
         $scoopCacheStatus = $toolStorageStatus | Where-Object { $_.Name -eq 'SCOOP_CACHE' } | Select-Object -First 1
         Assert-CapsulenvTest `
             -Condition ($toolStoragePlan.Directories -notcontains $scoopCacheStatus.Value) `

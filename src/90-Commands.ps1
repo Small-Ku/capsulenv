@@ -47,7 +47,7 @@ capsulenv commands
   capsulenv.cmd cache paths
   capsulenv.cmd cache init
   capsulenv.cmd cache status [project-path]
-      Show or create portable tool cache/home directories.
+      Show or initialize portable cache, tool-data, bin, and config locations.
 
   capsulenv.cmd cache link <profile> [project-path] [--move]
       [--junction|--symlink|--hardlink]

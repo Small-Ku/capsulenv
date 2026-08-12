@@ -61,7 +61,12 @@
 
     # ToolStorage.ProjectLinks replaces the default profile allow-list as one
     # unit when present. Other ToolStorage hashtables merge recursively.
+    # PathVariables are directories, FileVariables are file paths whose parent
+    # and an empty file are initialized inside CAPSULENV_ROOT when storage auto-init is enabled.
     # ToolStorage = @{
+    #     FileVariables = @{
+    #         SCCACHE_CONF = 'tool-data\sccache\config.toml'
+    #     }
     #     Variables = @{
     #         SCCACHE_CACHE_SIZE = '40G'
     #         RUSTC_WRAPPER = 'sccache'

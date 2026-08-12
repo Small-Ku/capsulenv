@@ -33,29 +33,54 @@ function Get-CapsulenvToolStoragePlan {
     $configuration = Get-CapsulenvConfiguration
     $variables = [ordered]@{}
     $locations = [ordered]@{}
+    $locationKinds = [ordered]@{}
+    $locationClasses = [ordered]@{}
     $pathEntries = New-Object System.Collections.Generic.List[string]
     $directories = New-Object System.Collections.Generic.List[string]
+    $files = New-Object System.Collections.Generic.List[string]
 
     if (-not $configuration.ToolStorage.Enabled) {
         return [pscustomobject]@{
             Enabled = $false
             Variables = $variables
             Locations = $locations
+            LocationKinds = $locationKinds
+            LocationClasses = $locationClasses
             PathEntries = @()
             Directories = @()
+            Files = @()
         }
     }
 
     foreach ($name in @($configuration.ToolStorage.PathVariables.Keys | Sort-Object)) {
-        $resolved = Resolve-CapsulenvPath `
-            -Path ([string]$configuration.ToolStorage.PathVariables[$name]) `
-            -AllowMissing
+        $relative = [string]$configuration.ToolStorage.PathVariables[$name]
+        $resolved = Resolve-CapsulenvPath -Path $relative -AllowMissing
         $variables[$name] = $resolved
         $locations[$name] = $resolved
+        $locationKinds[$name] = 'Directory'
+        $locationClasses[$name] = if ($relative -match '^(?i:cache)[\\/]') { 'Cache' } else { 'Data' }
         if (-not ($directories -contains $resolved)) {
             $directories.Add($resolved)
         }
     }
+
+    foreach ($name in @($configuration.ToolStorage.FileVariables.Keys | Sort-Object)) {
+        $resolved = Resolve-CapsulenvPath `
+            -Path ([string]$configuration.ToolStorage.FileVariables[$name]) `
+            -AllowMissing
+        $variables[$name] = $resolved
+        $locations[$name] = $resolved
+        $locationKinds[$name] = 'File'
+        $locationClasses[$name] = 'Config'
+        $parent = Split-Path -Parent $resolved
+        if (-not [string]::IsNullOrWhiteSpace($parent) -and -not ($directories -contains $parent)) {
+            $directories.Add($parent)
+        }
+        if (-not ($files -contains $resolved)) {
+            $files.Add($resolved)
+        }
+    }
+
     foreach ($name in @($configuration.ToolStorage.Variables.Keys | Sort-Object)) {
         $variables[$name] = [Environment]::ExpandEnvironmentVariables(
             [string]$configuration.ToolStorage.Variables[$name]
@@ -71,22 +96,31 @@ function Get-CapsulenvToolStoragePlan {
         if (-not ($directories -contains $resolved)) {
             $directories.Add($resolved)
         }
-        $locations[('PATH_{0}' -f $pathIndex)] = $resolved
+        $locationName = 'PATH_{0}' -f $pathIndex
+        $locations[$locationName] = $resolved
+        $locationKinds[$locationName] = 'Directory'
+        $locationClasses[$locationName] = 'Bin'
         $pathIndex++
     }
 
-    # Scoop owns this cache and chooses its layout. Listing/creating the
-    # directory here only makes the complete capsule storage plan visible.
+    # Scoop owns this cache and chooses its layout. Listing the location here
+    # makes the complete capsule storage plan visible, but capsulenv never
+    # creates or clears it behind Scoop's back.
     $scoopRoot = Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Root) -AllowMissing
     $scoopCache = Join-Path $scoopRoot 'cache'
     $locations['SCOOP_CACHE'] = $scoopCache
+    $locationKinds['SCOOP_CACHE'] = 'Directory'
+    $locationClasses['SCOOP_CACHE'] = 'Cache'
 
     return [pscustomobject]@{
         Enabled = $true
         Variables = $variables
         Locations = $locations
+        LocationKinds = $locationKinds
+        LocationClasses = $locationClasses
         PathEntries = $pathEntries.ToArray()
         Directories = $directories.ToArray()
+        Files = $files.ToArray()
     }
 }
 
@@ -96,13 +130,25 @@ function Initialize-CapsulenvToolStorage {
 
     $configuration = Get-CapsulenvConfiguration
     $plan = Get-CapsulenvToolStoragePlan
-    if (-not $plan.Enabled -or -not $configuration.ToolStorage.CreateDirectories) {
+    if (-not $plan.Enabled) {
+        return $plan
+    }
+
+    if (-not $configuration.ToolStorage.CreateDirectories) {
         return $plan
     }
 
     foreach ($directory in $plan.Directories) {
         if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
             [void](New-Item -ItemType Directory -Path $directory -Force)
+        }
+    }
+    foreach ($file in $plan.Files) {
+        if (Test-Path -LiteralPath $file -PathType Container) {
+            throw "ToolStorage file path is occupied by a directory: $file"
+        }
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            [System.IO.File]::WriteAllText($file, '')
         }
     }
     return $plan
@@ -607,11 +653,17 @@ function Get-CapsulenvToolStorageStatus {
     $plan = Get-CapsulenvToolStoragePlan
     foreach ($name in $plan.Locations.Keys) {
         $value = [string]$plan.Locations[$name]
+        $kind = [string]$plan.LocationKinds[$name]
         [pscustomobject]@{
             Name = $name
-            Kind = 'Path'
+            Kind = $kind
+            Class = [string]$plan.LocationClasses[$name]
             Value = $value
-            Exists = Test-Path -LiteralPath $value
+            Exists = if ($kind -eq 'File') {
+                Test-Path -LiteralPath $value -PathType Leaf
+            } else {
+                Test-Path -LiteralPath $value -PathType Container
+            }
         }
     }
     foreach ($name in $plan.Variables.Keys) {
@@ -621,6 +673,7 @@ function Get-CapsulenvToolStorageStatus {
         [pscustomobject]@{
             Name = $name
             Kind = 'Value'
+            Class = 'Setting'
             Value = [string]$plan.Variables[$name]
             Exists = $null
         }

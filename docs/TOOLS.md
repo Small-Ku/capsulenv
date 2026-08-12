@@ -1,4 +1,53 @@
-# Tool-native relocation
+# Tool storage and native relocation
+
+## Package-manager storage ownership
+
+Capsulenv splits tool storage into rebuildable shared cache, persistent tool data,
+and project-local state. The default environment mappings are intentionally
+process-only in ShellOnly mode and become User environment variables only after
+`install-user`.
+
+| Tool | Cache/store under `cache/` | Persistent state under `tool-data/` | Project-local policy |
+|---|---|---|---|
+| uv | `uv`, `uv-python` | managed Python and global tools | `.venv` remains project-owned; registered lock-backed workspaces can be rebuilt |
+| Pixi | `pixi` | `PIXI_HOME` | `.pixi` remains Pixi/workspace-owned |
+| npm | `npm` | global prefix `npm` | `node_modules` remains project-owned |
+| pnpm | `pnpm`, `pnpm-store` | home/global/state/bin | project virtual store remains project-owned |
+| Bun | `bun` | global packages/bin | `node_modules` remains project-owned; global virtual store is not enabled by Capsulenv |
+| Go | `go-build`, `go-mod` | GOPATH/GOBIN/GOENV | temporary scratch remains OS/tool-owned |
+| Rust/Cargo | no separate Cargo-home split | rustup and Cargo home | `target` can use the `cargo-target` project-link profile |
+| ccache | `ccache` | `ccache/ccache.conf` | project `ccache.conf` remains project-owned |
+| sccache | `sccache` | `sccache/config.toml` | file-based config is capsule-owned; explicit environment overrides still apply |
+
+`ToolStorage.PathVariables` are directory-valued environment variables.
+`ToolStorage.FileVariables` are file-valued variables; initialization creates the
+parent directory and a missing empty file. This distinction matters for `GOENV`,
+`CCACHE_CONFIGPATH`, and `SCCACHE_CONF`.
+
+`CARGO_HOME` is deliberately **not** placed under `cache/`: it is mixed state
+containing installed binaries and potentially configuration/credentials as well
+as registry/git caches. Likewise pnpm state/global dirs and package-manager global
+installs are persistent data even though some can be reconstructed from manifests.
+
+Go has one host-owned exception that cannot be represented honestly as another
+ToolStorage path: `GOTELEMETRYDIR` is reported by the Go command but is not an
+environment-settable redirect. Capsulenv isolates `GOENV`, `GOPATH`, `GOBIN`,
+`GOCACHE`, and `GOMODCACHE`, but does not rewrite the process-wide Windows/XDG
+user-config root merely to move telemetry state. Go telemetry therefore remains
+a documented host-owned exception.
+
+The central stores for uv, pnpm and Pixi perform best when the consuming project
+environment is on the same filesystem. A project on another drive may force copy
+fallbacks instead of hardlink/reflink materialization. Capsulenv favors portable
+isolation by default; put projects under `workspace/` (or otherwise on the same
+filesystem) when deduplication performance matters.
+
+Capsulenv does not expose a generic destructive `cache clean all`. Several tools
+have daemon or linking semantics, and optional modes such as Bun/pnpm global
+virtual stores or uv symlink linking can make a shared cache a live dependency.
+Use tool-native cleaning commands when required; `cache paths` shows which paths
+belong to the capsule.
+
 
 Directory hardlinks do not exist on Windows, and not every portable tool link is
 a filesystem junction owned by capsulenv. Package hardlinks usually survive a
