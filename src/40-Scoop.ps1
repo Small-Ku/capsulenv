@@ -216,6 +216,7 @@ function Get-CapsulenvRelocationFingerprint {
 
     $context = Get-CapsulenvContext
     [ordered]@{
+        CapsuleId = (Get-CapsulenvIdentity)
         Root = $context.Root
         ScoopRoot = (Get-CapsulenvScoopRoot)
         ScoopGlobalRoot = (Get-CapsulenvScoopGlobalRoot)
@@ -239,7 +240,7 @@ function Test-CapsulenvScoopRehydrationRequired {
         return $true
     }
     $current = Get-CapsulenvRelocationFingerprint
-    foreach ($name in @('Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
+    foreach ($name in @('CapsuleId', 'Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
         $property = $saved.PSObject.Properties[$name]
         if ($null -eq $property -or [string]$property.Value -ne [string]$current[$name]) {
             return $true
@@ -256,7 +257,7 @@ function ConvertTo-CapsulenvFingerprintSnapshot {
         return $null
     }
     $snapshot = [ordered]@{}
-    foreach ($name in @('Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
+    foreach ($name in @('CapsuleId', 'Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
         if ($Fingerprint -is [System.Collections.IDictionary]) {
             if ($Fingerprint.Contains($name)) {
                 $snapshot[$name] = [string]$Fingerprint[$name]
@@ -282,6 +283,7 @@ function Save-CapsulenvRehydrationState {
     $stateDirectory = Split-Path -Parent $statePath
     [void](New-Item -ItemType Directory -Path $stateDirectory -Force)
     $state = Get-CapsulenvRelocationFingerprint
+    $state.Insert(0, 'SchemaVersion', 2)
     $state['CompletedAtUtc'] = [DateTime]::UtcNow.ToString('o')
     if ($null -ne $RelocationContext -and $RelocationContext.HasPathChanges) {
         $state['LastRelocation'] = [ordered]@{

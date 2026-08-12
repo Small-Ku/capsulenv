@@ -1,9 +1,10 @@
 @{
-    SchemaVersion = 8
+    SchemaVersion = 9
 
     Scoop = @{
         Root = 'scoop'
         GlobalRoot = 'scoop-global'
+        Cache = 'cache\scoop'
         RehydrateOnRelocation = $true
 
         # Fresh portable Scoop bootstrap. Git is preferred when available and
@@ -120,6 +121,13 @@
         # directory whose name should have been a config file. Empty ccache and
         # sccache configs intentionally prevent fallback to host user config.
         FileVariables = @{
+            # Keep user/global configuration on the USB instead of falling back
+            # to host profile files. These are intentionally empty on first use.
+            GIT_CONFIG_GLOBAL = 'tool-data\git\config'
+            UV_CONFIG_FILE = 'tool-data\uv\uv.toml'
+            PIXI_CONFIG_FILE = 'tool-data\pixi\config.toml'
+            NPM_CONFIG_USERCONFIG = 'tool-data\npm\npmrc'
+
             GOENV = 'tool-data\go\env'
             CCACHE_CONFIGPATH = 'tool-data\ccache\ccache.conf'
             SCCACHE_CONF = 'tool-data\sccache\config.toml'

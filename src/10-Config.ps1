@@ -66,6 +66,13 @@ function Assert-CapsulenvConfiguration {
         throw 'Scoop configuration value is missing: GlobalRoot'
     }
     if (
+        -not $Configuration.Scoop.ContainsKey('Cache') -or
+        [string]::IsNullOrWhiteSpace([string]$Configuration.Scoop.Cache)
+    ) {
+        throw 'Scoop configuration value is missing: Cache'
+    }
+    Assert-CapsulenvPortableStoragePath -Name 'Scoop.Cache' -Path ([string]$Configuration.Scoop.Cache)
+    if (
         -not $Configuration.Scoop.ContainsKey('RehydrateOnRelocation') -or
         $Configuration.Scoop.RehydrateOnRelocation -isnot [bool]
     ) {
@@ -334,7 +341,7 @@ function Assert-CapsulenvConfiguration {
         }
     }
 
-    $reserved = @('CAPSULENV_ROOT', 'SCOOP', 'SCOOP_GLOBAL', 'SSH_AUTH_SOCK', 'PATH')
+    $reserved = @('CAPSULENV_ROOT', 'CAPSULENV_ID', 'CAPSULENV_SCRATCH', 'SCOOP', 'SCOOP_GLOBAL', 'SCOOP_CACHE', 'SSH_AUTH_SOCK', 'PATH')
     foreach ($name in @($Configuration.Environment.PathVariables.Keys) + @($Configuration.Environment.Variables.Keys)) {
         if ($reserved -contains [string]$name) {
             throw "Environment variable is managed by a dedicated capsulenv setting and cannot be overridden here: $name"
@@ -406,7 +413,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 8) {
+    if ([int]$configuration.SchemaVersion -ne 9) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

@@ -6,9 +6,9 @@ function Show-CapsulenvHelp {
 capsulenv commands
 
   capsulenv.cmd shell
-      Open a child PowerShell with the shell-only portable Scoop environment active.
-      Fresh installs bootstrap Scoop/Main inside the capsule; host Scoop settings
-      and user environment variables are not adopted or persisted.
+      Open a child PowerShell with the capsule environment active. In ShellOnly
+      mode host Scoop settings/user environment are untouched; in User mode the
+      current user-owned integration remains active.
 
   capsulenv.cmd bootstrap
       Bootstrap missing Scoop/Main repositories in the capsule. Git uses a
@@ -36,12 +36,28 @@ capsulenv commands
       reset path; User mode uses native Scoop reset. Defaults to all apps.
 
   capsulenv.cmd install-user [--force]
+  capsulenv.cmd user-shell [--force]
   capsulenv.cmd enable-user [--force]
   capsulenv.cmd restore-user
       Install this capsule as the current Windows user's Scoop environment, or
       restore Capsulenv-owned User environment/Bitwarden integration and return
       to shell-only mode. Package-manifest shortcuts/env remain Scoop-owned.
+      install-user is idempotent while the same capsule already owns User mode.
+      user-shell performs that takeover/synchronization and opens a shell in one step.
       enable-user is retained as a compatibility alias for install-user.
+
+  capsulenv.cmd eject [--force]
+      Stop capsule-owned processes, report dirty workspace repositories, record
+      eject state, and remove host-local scratch. It never calls restore-user.
+
+  capsulenv.cmd offline status
+  capsulenv.cmd offline prefetch [installed-app ...]
+      Check offline run readiness or ask Scoop to populate its portable download
+      cache for installed apps while a network connection is available.
+
+  capsulenv.cmd drift
+      Compare installed Scoop versions with the manifests in the capsule's local
+      buckets. This is an offline drift check; it does not update buckets.
 
 
   capsulenv.cmd cache paths
@@ -256,6 +272,24 @@ function Invoke-CapsulenvToolsCommand {
     }
 }
 
+
+function Invoke-CapsulenvOfflineCommand {
+    param([string[]]$Arguments)
+
+    $action = if ($Arguments.Count -gt 0) { $Arguments[0].ToLowerInvariant() } else { 'status' }
+    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    switch ($action) {
+        'status' {
+            if ($remaining.Count -gt 0) { throw 'Usage: offline status' }
+            Get-CapsulenvOfflineReadiness | Format-List
+        }
+        'prefetch' {
+            Invoke-CapsulenvOfflinePrefetch -Apps $remaining | Format-List
+        }
+        default { throw 'Usage: offline <status|prefetch> [installed-app ...]' }
+    }
+}
+
 function Invoke-CapsulenvBitwardenCommand {
     param([string[]]$Arguments)
 
@@ -324,6 +358,13 @@ function Invoke-Capsulenv {
 
     switch ($command) {
         'shell' { Invoke-CapsulenvChildShell }
+        'user-shell' {
+            $unknown = @($remaining | Where-Object { $_ -ne '--force' })
+            if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {
+                throw 'Usage: user-shell [--force]'
+            }
+            Enter-CapsulenvUserShell -Force:($remaining -contains '--force')
+        }
         'bootstrap' {
             if ($remaining.Count -gt 0) {
                 throw 'Usage: bootstrap'
@@ -415,6 +456,18 @@ function Invoke-Capsulenv {
                 throw 'Usage: restore-user'
             }
             Restore-CapsulenvUserEnvironment
+        }
+        'eject' {
+            $unknown = @($remaining | Where-Object { $_ -ne '--force' })
+            if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {
+                throw 'Usage: eject [--force]'
+            }
+            Invoke-CapsulenvEject -Force:($remaining -contains '--force') | Format-List
+        }
+        'offline' { Invoke-CapsulenvOfflineCommand -Arguments $remaining }
+        'drift' {
+            if ($remaining.Count -gt 0) { throw 'Usage: drift' }
+            Get-CapsulenvVersionDrift | Format-Table -AutoSize
         }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
         'cache' { Invoke-CapsulenvCacheCommand -Arguments $remaining }

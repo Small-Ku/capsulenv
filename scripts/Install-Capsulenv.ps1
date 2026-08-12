@@ -98,24 +98,16 @@ if ($hasContents -and $null -eq $existingMarker -and -not $Force) {
     throw "Destination is not empty and was not installed by capsulenv: $destinationRoot. Pass -Force to adopt it without deleting unrelated data."
 }
 
-$modeStatePath = Join-Path (Join-Path $destinationRoot '.capsulenv') 'install-mode.json'
-$userBackupPath = Join-Path (Join-Path $destinationRoot '.capsulenv') 'user-environment-backup.json'
+# Integration mode is host/user ownership, not a capsule-global property. The
+# authoritative current mode is resolved by the installed module after runtime
+# files are in place. Install metadata only records the last requested mode.
 $currentMode = 'ShellOnly'
-if (Test-Path -LiteralPath $modeStatePath -PathType Leaf) {
-    try {
-        $modeState = Get-Content -LiteralPath $modeStatePath -Raw | ConvertFrom-Json
-        if ([string]$modeState.Mode -in @('ShellOnly', 'User')) {
-            $currentMode = [string]$modeState.Mode
-        }
-    } catch {
-        # Fall back to the v0.8.x backup marker below.
-    }
-} elseif (Test-Path -LiteralPath $userBackupPath -PathType Leaf) {
-    $currentMode = 'User'
-} elseif ($null -ne $existingMarker -and [string]$existingMarker.InstallMode -in @('ShellOnly', 'User')) {
-    $currentMode = [string]$existingMarker.InstallMode
+$effectiveMode = if ($PSBoundParameters.ContainsKey('Mode')) { [string]$Mode } else { $null }
+$markerMode = if ($null -ne $existingMarker -and [string]$existingMarker.InstallMode -in @('ShellOnly', 'User')) {
+    [string]$existingMarker.InstallMode
+} else {
+    'ShellOnly'
 }
-$effectiveMode = if ($PSBoundParameters.ContainsKey('Mode')) { [string]$Mode } else { $currentMode }
 
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-install-{0}" -f [Guid]::NewGuid().ToString('N'))
 $buildRoot = Join-Path $temporaryRoot 'runtime'
@@ -207,7 +199,7 @@ try {
         Version = [string]$build.Version
         InstalledAtUtc = [DateTime]::UtcNow.ToString('o')
         SourceCommit = $build.SourceCommit
-        InstallMode = $currentMode
+        InstallMode = $markerMode
         ManagedFiles = $newManagedFiles
     }
     $temporaryMarker = Join-Path $destinationRoot ('.capsulenv-install-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
@@ -275,16 +267,19 @@ try {
         [void](Ensure-CapsulenvScoopPortableConfig)
     }
 
+    $currentMode = Get-CapsulenvInstallMode
+    if (-not $PSBoundParameters.ContainsKey('Mode')) {
+        $effectiveMode = $currentMode
+    }
+
     if ($effectiveMode -eq 'User') {
         Install-CapsulenvUserEnvironment -Force:($currentMode -eq 'User')
     } elseif ($currentMode -eq 'User') {
-        if (-not (Test-Path -LiteralPath $userBackupPath -PathType Leaf)) {
-            throw "Cannot switch a User installation to ShellOnly because the original user-environment backup is missing: $userBackupPath"
-        }
         Restore-CapsulenvUserEnvironment
     } else {
         Set-CapsulenvInstallMode -Mode ShellOnly
     }
+    $installResult.InstallMode = $effectiveMode
 
     # Commit the requested ownership mode to install metadata only after the
     # mode transition itself succeeded. If restore-user/install-user fails,

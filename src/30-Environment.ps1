@@ -14,7 +14,9 @@ function Get-CapsulenvEnvironmentPlan {
         CAPSULENV_ROOT = $context.Root
         SCOOP = $scoopRoot
         SCOOP_GLOBAL = $scoopGlobalRoot
-        SCOOP_CACHE = (Join-Path $scoopRoot 'cache')
+        SCOOP_CACHE = (Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Cache) -AllowMissing)
+        CAPSULENV_ID = (Get-CapsulenvIdentity)
+        CAPSULENV_SCRATCH = (Get-CapsulenvScratchPath)
     }
 
     if ($configuration.Bitwarden.Enabled -and $configuration.Bitwarden.SetSshAuthSock) {
@@ -73,7 +75,7 @@ function Get-CapsulenvEnvironmentPlan {
         Variables = $variables
         PathEntries = $pathEntries.ToArray()
         ModulePathEntries = $modulePathEntries.ToArray()
-        Directories = @($toolStorage.Directories)
+        Directories = @($toolStorage.Directories) + @([string]$variables.CAPSULENV_SCRATCH)
     }
 }
 
@@ -201,6 +203,11 @@ function Set-CapsulenvSessionEnvironment {
     if ($configuration.ToolStorage.Enabled -and $configuration.ToolStorage.CreateDirectories) {
         [void](Initialize-CapsulenvToolStorage)
     }
+    foreach ($directory in @($plan.Directories)) {
+        if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+            [void](New-Item -ItemType Directory -Path $directory -Force)
+        }
+    }
     foreach ($modulePathEntry in @($plan.ModulePathEntries)) {
         if (-not (Test-Path -LiteralPath $modulePathEntry -PathType Container)) {
             [void](New-Item -ItemType Directory -Path $modulePathEntry -Force)
@@ -219,13 +226,13 @@ function Set-CapsulenvSessionEnvironment {
 }
 
 function Get-CapsulenvUserEnvironmentBackupPath {
-    $context = Get-CapsulenvContext
-    return Join-Path $context.StateRoot 'user-environment-backup.json'
+    Move-CapsulenvLegacyUserIntegrationState
+    return Join-Path (Get-CapsulenvUserIntegrationStateRoot) 'environment-backup.json'
 }
 
 function Get-CapsulenvInstallModeStatePath {
-    $context = Get-CapsulenvContext
-    return Join-Path $context.StateRoot 'install-mode.json'
+    Move-CapsulenvLegacyUserIntegrationState
+    return Join-Path (Get-CapsulenvUserIntegrationStateRoot) 'install-mode.json'
 }
 
 function Get-CapsulenvInstallModeState {
@@ -238,7 +245,25 @@ function Get-CapsulenvInstallModeState {
     }
     try {
         $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-        if ([string]$state.Mode -notin @('ShellOnly', 'User')) {
+        $schema = if ($null -ne $state.PSObject.Properties['SchemaVersion']) { [int]$state.SchemaVersion } else { 2 }
+        if ($schema -notin @(2, 3) -or [string]$state.Mode -notin @('ShellOnly', 'User')) {
+            return $null
+        }
+        if ($schema -ge 3) {
+            $capsuleProperty = $state.PSObject.Properties['CapsuleId']
+            if (
+                $null -eq $capsuleProperty -or
+                -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$capsuleProperty.Value, [string](Get-CapsulenvIdentity))
+            ) {
+                Write-CapsulenvMessage -Level Warning -Message 'Ignoring install-mode state that belongs to a different capsule identity.'
+                return $null
+            }
+        }
+        $hostProperty = $state.PSObject.Properties['HostIntegrationKey']
+        if (
+            $schema -ge 3 -and
+            ($null -eq $hostProperty -or [string]$hostProperty.Value -ne [string](Get-CapsulenvHostIntegrationKey))
+        ) {
             return $null
         }
         return $state
@@ -251,11 +276,15 @@ function Get-CapsulenvInstallMode {
     [CmdletBinding()]
     param()
 
-    $state = Get-CapsulenvInstallModeState
-    if ($null -ne $state) {
-        return [string]$state.Mode
+    if (Test-CapsulenvWindows) {
+        if (Test-CapsulenvCurrentUserIntegrationOwnership) {
+            return 'User'
+        }
+        return 'ShellOnly'
     }
-    if (Test-Path -LiteralPath (Get-CapsulenvUserEnvironmentBackupPath) -PathType Leaf) {
+
+    $state = Get-CapsulenvInstallModeState
+    if ($null -ne $state -and [string]$state.Mode -eq 'User') {
         return 'User'
     }
     return 'ShellOnly'
@@ -276,9 +305,11 @@ function Set-CapsulenvInstallMode {
     $temporary = Join-Path $parent ('.install-mode-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
     try {
         [ordered]@{
-            SchemaVersion = 2
+            SchemaVersion = 3
+            CapsuleId = (Get-CapsulenvIdentity)
+            HostIntegrationKey = (Get-CapsulenvHostIntegrationKey)
             Mode = $Mode
-            ManagedPathEntries = @($ManagedPathEntries)
+            ManagedPathEntries = @($ManagedPathEntries | ForEach-Object { ConvertTo-CapsulenvStatePathReference -Path ([string]$_) })
             UpdatedAtUtc = [DateTime]::UtcNow.ToString('o')
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $temporary -Encoding UTF8
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {
@@ -436,6 +467,42 @@ function Ensure-CapsulenvUserEnvironmentBackupEntries {
     }
 }
 
+
+function Get-CapsulenvManagedPathEntriesFromState {
+    [CmdletBinding()]
+    param(
+        $State,
+        $RelocationContext
+    )
+
+    if ($null -eq $State) {
+        return @()
+    }
+    $managedProperty = $State.PSObject.Properties['ManagedPathEntries']
+    if ($null -eq $managedProperty) {
+        return @()
+    }
+
+    $referenceRoot = $null
+    if ($null -ne $RelocationContext -and $RelocationContext.HasPathChanges) {
+        foreach ($mapping in @($RelocationContext.PathMappings)) {
+            if ([string]$mapping.Name -eq 'Root') {
+                $referenceRoot = [string]$mapping.OldPath
+                break
+            }
+        }
+    }
+
+    $result = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($managedProperty.Value)) {
+        if ([string]::IsNullOrWhiteSpace([string]$entry)) {
+            continue
+        }
+        $result.Add((Resolve-CapsulenvStatePathReference -Reference ([string]$entry) -CapsuleRoot $referenceRoot))
+    }
+    return $result.ToArray()
+}
+
 function Sync-CapsulenvUserEnvironment {
     [CmdletBinding()]
     param($RelocationContext)
@@ -449,13 +516,7 @@ function Sync-CapsulenvUserEnvironment {
     Ensure-CapsulenvUserEnvironmentBackupEntries `
         -Names (@($plan.Variables.Keys) + @('PATH', $scoopPathEnvironmentVariable))
     $state = Get-CapsulenvInstallModeState
-    $previousEntries = @()
-    if ($null -ne $state) {
-        $managedProperty = $state.PSObject.Properties['ManagedPathEntries']
-        if ($null -ne $managedProperty) {
-            $previousEntries = @($managedProperty.Value | ForEach-Object { [string]$_ })
-        }
-    }
+    $previousEntries = @(Get-CapsulenvManagedPathEntriesFromState -State $state -RelocationContext $RelocationContext)
     if ($previousEntries.Count -eq 0 -and $null -ne $RelocationContext -and $RelocationContext.HasPathChanges) {
         $derived = New-Object System.Collections.Generic.List[string]
         foreach ($entry in @($plan.PathEntries)) {
@@ -544,13 +605,30 @@ function Write-CapsulenvUserEnvironmentBackup {
 
 function Install-CapsulenvUserEnvironment {
     [CmdletBinding()]
-    param([switch]$Force)
+    param(
+        [switch]$Force,
+        [switch]$RefreshBackup
+    )
 
     $context = Get-CapsulenvContext
     $backupPath = Get-CapsulenvUserEnvironmentBackupPath
     $backupExists = Test-Path -LiteralPath $backupPath -PathType Leaf
-    if ($backupExists -and -not $Force) {
-        throw "A user-environment backup already exists: $backupPath. Restore it first or pass -Force to reapply without replacing the original backup."
+    $ledgerState = Get-CapsulenvInstallModeState
+    $ledgerWasUser = ($backupExists -and $null -ne $ledgerState -and [string]$ledgerState.Mode -eq 'User')
+    $currentMode = Get-CapsulenvInstallMode
+    if ($currentMode -eq 'User' -and -not $backupExists) {
+        throw "The current Windows user already points at this capsule, but its reversible environment backup is missing: $backupPath"
+    }
+    $alreadyUser = ($backupExists -and $currentMode -eq 'User')
+    if ($backupExists -and -not $alreadyUser -and $ledgerWasUser -and -not $Force) {
+        # A reset-on-shutdown host erased User environment integration while the
+        # USB retained its host-scoped ledger. Treat a deliberate install-user
+        # on that same host as a fresh takeover and snapshot the now-clean User
+        # environment instead of demanding restore-user first.
+        $RefreshBackup = $true
+    }
+    if ($backupExists -and -not $Force -and -not $RefreshBackup -and -not $alreadyUser) {
+        throw "A user-environment backup already exists but this capsule is not recorded as the active User integration: $backupPath. Restore it first or pass -Force to reapply without replacing the original backup."
     }
 
     $plan = Set-CapsulenvSessionEnvironment
@@ -564,7 +642,7 @@ function Install-CapsulenvUserEnvironment {
     [void](New-Item -ItemType Directory -Path $context.StateRoot -Force)
     $scoopPathEnvironmentVariable = Get-CapsulenvScoopPathEnvironmentVariable
     $names = @($plan.Variables.Keys) + @('PATH', $scoopPathEnvironmentVariable) | Sort-Object -Unique
-    if (-not $backupExists) {
+    if (-not $backupExists -or ($RefreshBackup -and -not $alreadyUser)) {
         $backup = [ordered]@{}
         foreach ($name in $names) {
             $value = [Environment]::GetEnvironmentVariable($name, 'User')
@@ -613,7 +691,20 @@ function Install-CapsulenvUserEnvironment {
     if ($rehydrationRequired) {
         Invoke-CapsulenvScoopRehydrate -IntegrationMode User
     }
-    Write-CapsulenvMessage -Level Success -Message "User environment enabled. Backup: $backupPath"
+    Write-CapsulenvMessage -Level Success -Message $(if ($alreadyUser) { "User environment synchronized. Backup: $backupPath" } else { "User environment enabled. Backup: $backupPath" })
+}
+
+function Enter-CapsulenvUserShell {
+    [CmdletBinding()]
+    param([switch]$Force)
+
+    # A reset/shared host may have a stale host-scoped backup on the USB while
+    # its actual User environment has already been restored by the machine.
+    # user-shell is the convenience-first entrypoint: if this host is not
+    # currently integrated, refresh that host's reversible backup before takeover.
+    $refreshBackup = ((Get-CapsulenvInstallMode) -ne 'User')
+    Install-CapsulenvUserEnvironment -Force:$Force -RefreshBackup:$refreshBackup
+    Invoke-CapsulenvChildShell
 }
 
 function Enable-CapsulenvUserEnvironment {
@@ -692,4 +783,4 @@ function Invoke-CapsulenvExternalCommand {
     $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Set-CapsulenvSessionEnvironment, Get-CapsulenvInstallMode, Set-CapsulenvInstallMode, Install-CapsulenvUserEnvironment, Enable-CapsulenvUserEnvironment, Restore-CapsulenvUserEnvironment
+##MOD_EXEC## Export-ModuleMember -Function Set-CapsulenvSessionEnvironment, Get-CapsulenvInstallMode, Set-CapsulenvInstallMode, Install-CapsulenvUserEnvironment, Enter-CapsulenvUserShell, Enable-CapsulenvUserEnvironment, Restore-CapsulenvUserEnvironment

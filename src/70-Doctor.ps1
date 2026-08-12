@@ -65,7 +65,7 @@ function Invoke-CapsulenvDoctor {
             $modePassed = (
                 [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$userScoop, [string]$scoopRoot) -and
                 [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$userGlobal, [string]$scoopGlobalRoot) -and
-                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$userCache, [string](Join-Path $scoopRoot 'cache')) -and
+                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$userCache, [string](Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Cache) -AllowMissing)) -and
                 $missingManagedPath.Count -eq 0
             )
             "User; SCOOP=$userScoop; SCOOP_GLOBAL=$userGlobal; SCOOP_CACHE=$userCache; missing managed PATH entries=$($missingManagedPath.Count)"
@@ -90,6 +90,20 @@ function Invoke-CapsulenvDoctor {
         -Passed $modePassed `
         -Importance Optional `
         -Detail $modeDetail))
+
+    $capsuleId = Get-CapsulenvIdentity
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Capsule identity' `
+        -Passed (-not [string]::IsNullOrWhiteSpace($capsuleId)) `
+        -Importance Optional `
+        -Detail $capsuleId))
+
+    $scratchPath = Get-CapsulenvScratchPath
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Host-local scratch' `
+        -Passed (-not $scratchPath.StartsWith((Get-CapsulenvContext).Root, [System.StringComparison]::OrdinalIgnoreCase)) `
+        -Importance Optional `
+        -Detail $scratchPath))
 
     $toolStoragePlan = Get-CapsulenvToolStoragePlan
     $toolPathValues = @($toolStoragePlan.Directories)
@@ -289,6 +303,29 @@ function Invoke-CapsulenvDoctor {
             -Passed ($null -ne $profile) `
             -Importance Optional `
             -Detail $(if ($profile) { $profile } else { 'No Scoop-persisted profile found' })))
+    }
+
+    try {
+        $offline = Get-CapsulenvOfflineReadiness
+        $results.Add((New-CapsulenvCheckResult `
+            -Name 'Offline run readiness' `
+            -Passed ([bool]$offline.RunReady) `
+            -Importance Optional `
+            -Detail ("InstalledApps={0}; MissingManifests={1}; CacheFiles={2}; CacheBytes={3}" -f $offline.InstalledApps, $offline.MissingInstalledManifests, $offline.CacheFiles, $offline.CacheBytes)))
+    } catch {
+        $results.Add((New-CapsulenvCheckResult -Name 'Offline run readiness' -Passed $false -Importance Optional -Detail $_.Exception.Message))
+    }
+
+    try {
+        $drift = @(Get-CapsulenvVersionDrift)
+        $drifted = @($drift | Where-Object { $_.Status -eq 'Drift' })
+        $results.Add((New-CapsulenvCheckResult `
+            -Name 'Scoop version drift' `
+            -Passed ($drifted.Count -eq 0) `
+            -Importance Optional `
+            -Detail ("{0} installed app(s); {1} differ from local bucket manifests" -f $drift.Count, $drifted.Count)))
+    } catch {
+        $results.Add((New-CapsulenvCheckResult -Name 'Scoop version drift' -Passed $false -Importance Optional -Detail $_.Exception.Message))
     }
 
     $results | Format-Table -AutoSize | Out-Host

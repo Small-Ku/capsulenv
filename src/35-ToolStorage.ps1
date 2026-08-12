@@ -107,7 +107,7 @@ function Get-CapsulenvToolStoragePlan {
     # makes the complete capsule storage plan visible, but capsulenv never
     # creates or clears it behind Scoop's back.
     $scoopRoot = Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Root) -AllowMissing
-    $scoopCache = Join-Path $scoopRoot 'cache'
+    $scoopCache = Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Cache) -AllowMissing
     $locations['SCOOP_CACHE'] = $scoopCache
     $locationKinds['SCOOP_CACHE'] = 'Directory'
     $locationClasses['SCOOP_CACHE'] = 'Cache'

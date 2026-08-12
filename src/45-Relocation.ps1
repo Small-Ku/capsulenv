@@ -110,7 +110,17 @@ function Get-CapsulenvPreviousRelocationFingerprint {
     $previous = [ordered]@{}
     $sourceParts = New-Object System.Collections.Generic.List[string]
     if ($null -ne $saved) {
-        foreach ($name in @('Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
+        $savedCapsuleProperty = $saved.PSObject.Properties['CapsuleId']
+        if (
+            $null -ne $savedCapsuleProperty -and
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$savedCapsuleProperty.Value, [string](Get-CapsulenvIdentity))
+        ) {
+            Write-CapsulenvMessage -Level Warning -Message 'Ignoring relocation state from a different capsule identity; stale Scoop shim metadata may still be used.'
+            $saved = $null
+        }
+    }
+    if ($null -ne $saved) {
+        foreach ($name in @('CapsuleId', 'Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
             $property = $saved.PSObject.Properties[$name]
             if ($null -ne $property -and -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
                 $previous[$name] = [string]$property.Value
