@@ -4,6 +4,7 @@ param()
 try {
     $testsRoot = Join-Path (Join-Path $PSScriptRoot '..') 'tests'
     & (Join-Path $testsRoot 'Static.Tests.ps1')
+    & (Join-Path $testsRoot 'Bootstrap.Tests.ps1')
     & (Join-Path $testsRoot 'BuildInstall.Tests.ps1')
     exit 0
 } catch {

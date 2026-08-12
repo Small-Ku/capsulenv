@@ -45,6 +45,19 @@ try {
     Assert-CapsulenvBuildInstallTest `
         -Condition (@($installMarker.ManagedFiles) -contains '.capsulenv-runtime.json') `
         -Message 'Installer does not own the runtime metadata file.'
+    Assert-CapsulenvBuildInstallTest `
+        -Condition ([int]$installMarker.SchemaVersion -eq 2) `
+        -Message 'Installer did not write the install-mode-aware marker schema.'
+    Assert-CapsulenvBuildInstallTest `
+        -Condition ([string]$installMarker.InstallMode -eq 'ShellOnly') `
+        -Message 'Fresh installation must default to ShellOnly mode.'
+    Assert-CapsulenvBuildInstallTest `
+        -Condition ((Get-Content -LiteralPath (Join-Path $installRoot 'scoop/config.json') -Raw).Trim() -eq '{}') `
+        -Message 'Installer did not establish the portable Scoop config boundary.'
+    $modeState = Get-Content -LiteralPath (Join-Path (Join-Path $installRoot '.capsulenv') 'install-mode.json') -Raw | ConvertFrom-Json
+    Assert-CapsulenvBuildInstallTest `
+        -Condition ([string]$modeState.Mode -eq 'ShellOnly') `
+        -Message 'Fresh installation did not persist ShellOnly mode state.'
 
     $unmanagedPath = Join-Path $installRoot 'unmanaged.txt'
     $localConfigPath = Join-Path (Join-Path $installRoot 'config') 'capsulenv.local.psd1'

@@ -115,6 +115,11 @@ $required = @(
     'Invoke-CapsulenvBitwardenSshAgentSetup',
     'Restore-CapsulenvBitwardenSshAgentSetup',
     'Test-CapsulenvBitwardenSshAgent',
+    'Initialize-CapsulenvScoopBootstrap',
+    'Ensure-CapsulenvScoopPortableConfig',
+    'Get-CapsulenvInstallMode',
+    'Set-CapsulenvInstallMode',
+    'Install-CapsulenvUserEnvironment',
     'Enable-CapsulenvUserEnvironment',
     'Restore-CapsulenvUserEnvironment',
     'Initialize-CapsulenvToolStorage',
@@ -139,7 +144,11 @@ foreach ($name in $required) {
 }
 
 $config = Get-CapsulenvConfiguration -Refresh
-Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 6) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 7) -Message 'Unexpected configuration schema.'
+Assert-CapsulenvTest -Condition ([bool]$config.Scoop.Bootstrap.Enabled) -Message 'Scoop bootstrap is not enabled by default.'
+Assert-CapsulenvTest -Condition ([int]$config.Scoop.Bootstrap.GitDepth -eq 1) -Message 'Scoop bootstrap must default to a shallow depth of one.'
+Assert-CapsulenvTest -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Scoop.Bootstrap.Scoop.Repository)) -Message 'Scoop bootstrap repository is missing.'
+Assert-CapsulenvTest -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Scoop.Bootstrap.Main.Repository)) -Message 'Main bootstrap repository is missing.'
 Assert-CapsulenvTest `
     -Condition (@($config.Environment.ModulePath).Count -gt 0) `
     -Message 'Portable PowerShell module path is not configured.'
@@ -698,7 +707,12 @@ try {
         'Copy-CapsulenvInstallFile',
         '.capsulenv-install.json',
         'ManagedFiles',
-        'Install destination must not be inside the source repository'
+        'Install destination must not be inside the source repository',
+        "[ValidateSet('ShellOnly', 'User')]",
+        '[switch]$SkipScoopBootstrap',
+        'Initialize-CapsulenvScoopBootstrap',
+        'Ensure-CapsulenvScoopPortableConfig',
+        'InstallMode = $effectiveMode'
     )) {
         Assert-CapsulenvTest `
             -Condition $installerSource.Contains($requiredInstallerBehavior) `
