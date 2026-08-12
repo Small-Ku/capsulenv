@@ -9,9 +9,10 @@ process-only in ShellOnly mode and become User environment variables only after
 
 | Tool | Cache/store under `cache/` | Persistent state under `tool-data/` | Project-local policy |
 |---|---|---|---|
-| uv | `uv`, `uv-python` | managed Python and global tools | `.venv` remains project-owned; registered lock-backed workspaces can be rebuilt |
-| Pixi | `pixi` | `PIXI_HOME` | `.pixi` remains Pixi/workspace-owned |
-| npm | `npm` | global prefix `npm` | `node_modules` remains project-owned |
+| Git | — | `git/config` via `GIT_CONFIG_GLOBAL` | repository config remains project-owned |
+| uv | `uv`, `uv-python` | managed Python, global tools, `uv/uv.toml` | `.venv` remains project-owned; registered lock-backed workspaces can be rebuilt |
+| Pixi | `pixi` | `PIXI_HOME` plus `pixi/config.toml` via `PIXI_CONFIG_FILE` | `.pixi` remains Pixi/workspace-owned |
+| npm | `npm` | global prefix plus `npm/npmrc` | `node_modules` remains project-owned |
 | pnpm | `pnpm`, `pnpm-store` | home/global/state/bin | project virtual store remains project-owned |
 | Bun | `bun` | global packages/bin | `node_modules` remains project-owned; global virtual store is not enabled by Capsulenv |
 | Go | `go-build`, `go-mod` | GOPATH/GOBIN/GOENV | temporary scratch remains OS/tool-owned |
@@ -21,13 +22,27 @@ process-only in ShellOnly mode and become User environment variables only after
 
 `ToolStorage.PathVariables` are directory-valued environment variables.
 `ToolStorage.FileVariables` are file-valued variables; initialization creates the
-parent directory and a missing empty file. This distinction matters for `GOENV`,
-`CCACHE_CONFIGPATH`, and `SCCACHE_CONF`.
+parent directory and a missing empty file. This distinction now covers
+`GIT_CONFIG_GLOBAL`, `UV_CONFIG_FILE`, `PIXI_CONFIG_FILE`, `NPM_CONFIG_USERCONFIG`,
+`GOENV`, `CCACHE_CONFIGPATH`, and `SCCACHE_CONF`. Git/uv/Pixi/npm therefore do not
+fall back to host user/global config while inside Capsulenv. Because an npm user config can contain
+registry credentials, `tool-data/npm/npmrc` must be treated as persistent secret-bearing
+state rather than disposable cache.
 
 `CARGO_HOME` is deliberately **not** placed under `cache/`: it is mixed state
 containing installed binaries and potentially configuration/credentials as well
 as registry/git caches. Likewise pnpm state/global dirs and package-manager global
 installs are persistent data even though some can be reconstructed from manifests.
+
+Capsulenv deliberately does not redirect `XDG_CONFIG_HOME` for the whole session.
+Current pnpm can use the portable `PNPM_CONFIG_*` settings above and honors
+`NPM_CONFIG_USERCONFIG` as a fallback for registry/auth configuration, but its newer
+global YAML configuration directory is not forcibly relocated. Bun likewise has no
+dedicated environment variable for the global `bunfig.toml` path; upstream discovers
+it through HOME/XDG (or an explicit per-command `--config`). Overriding XDG globally
+would silently change unrelated applications, while interposing package-manager shims
+would duplicate Scoop ownership, so those remain documented host-config boundaries.
+Project-local pnpm/Bun configuration stays project-owned.
 
 Go has one host-owned exception that cannot be represented honestly as another
 ToolStorage path: `GOTELEMETRYDIR` is reported by the Go command but is not an
@@ -54,6 +69,24 @@ a filesystem junction owned by capsulenv. Package hardlinks usually survive a
 move on the same NTFS volume, but launchers, virtual environments, Conda prefixes,
 and tool metadata can retain the previous absolute capsule path. Capsulenv repairs
 those objects through the owning tool instead of recursively rewriting binaries.
+
+
+## Host-local scratch
+
+`CAPSULENV_SCRATCH` is the one deliberately non-portable storage location. It resolves to the host temporary root under `capsulenv/<capsule-id>` and is intended only for transient extraction/compiler/script working data. Capsulenv does not redirect `TEMP` or `TMP`, so Windows installers and unrelated child applications keep their normal local-temp assumptions. `eject` removes this directory when possible.
+
+## Offline cache warm-up and version drift
+
+```bat
+capsulenv.cmd offline status
+capsulenv.cmd offline prefetch
+capsulenv.cmd offline prefetch git nodejs python
+capsulenv.cmd drift
+```
+
+`offline status` checks whether Scoop core, Main, and the manifests for already-installed apps are present and reports the current `cache/scoop` population. It answers whether the existing USB environment is structurally ready to run; it does not claim that every possible future install can be completed offline.
+
+`offline prefetch` warms Scoop's portable download cache for all installed apps, or for the named installed subset. It uses the locally available bucket reference and asks Scoop not to update itself as a side effect, so a prefetch does not silently change the version snapshot being prepared. `drift` compares installed app versions against the manifests already present in the USB's local buckets and performs no network update.
 
 ## Status and workspace registry
 

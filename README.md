@@ -14,7 +14,8 @@ capsulenv/
 ├─ config/
 ├─ modules/Capsulenv/                installed/prebuilt merged module
 ├─ PowerShell/Modules/                private/user modules on PSModulePath
-├─ cache/                            portable download/compile caches
+├─ cache/                            portable reusable caches
+│  └─ scoop/                         Scoop download cache
 ├─ tool-data/                        toolchains and global tool state
 ├─ project-cache/                    linked per-project build caches
 ├─ workspace/                        recommended portable source workspace
@@ -23,8 +24,7 @@ capsulenv/
 │  ├─ buckets/
 │  ├─ persist/                       manifest-declared persisted app data/profiles
 │  ├─ shims/
-│  ├─ config.json                     portable Scoop config boundary
-│  └─ cache/
+│  └─ config.json                     portable Scoop config boundary
 ├─ scoop-global/                     optional Scoop-owned global root
 ├─ .capsulenv/                       relocation state, link registry, reversible backups
 ├─ .build/                           development-only generated module
@@ -75,10 +75,13 @@ cache/                              rebuildable shared caches
 └─ sccache/
 
 tool-data/                          persistent tool state/global installs
+├─ git/config                      portable Git global config
 ├─ uv/python/                       installed managed Python runtimes
 ├─ uv/tools/                        uv global tools
+├─ uv/uv.toml                       uv user config
 ├─ pixi/                            PIXI_HOME/global installs
 ├─ npm/                             npm global prefix
+│  └─ npmrc                         npm/pnpm user config
 ├─ pnpm/                            pnpm home/global packages/bin
 ├─ pnpm-state/                      pnpm state/update metadata
 ├─ bun/global/                      Bun global packages
@@ -96,9 +99,10 @@ tool-data/                          persistent tool state/global installs
 
 | Tool | Rebuildable cache/store | Persistent capsule state |
 |---|---|---|
-| uv | `UV_CACHE_DIR`, `UV_PYTHON_CACHE_DIR` | managed Python、global tools、共同 `bin/` |
+| Git | — | `GIT_CONFIG_GLOBAL` → `tool-data/git/config` |
+| uv | `UV_CACHE_DIR`, `UV_PYTHON_CACHE_DIR` | managed Python、global tools、`UV_CONFIG_FILE`、共同 `bin/` |
 | Pixi | `PIXI_CACHE_DIR` | `PIXI_HOME` |
-| npm | `NPM_CONFIG_CACHE` | `NPM_CONFIG_PREFIX` |
+| npm | `NPM_CONFIG_CACHE` | `NPM_CONFIG_PREFIX`, `NPM_CONFIG_USERCONFIG` |
 | pnpm | `PNPM_CONFIG_STORE_DIR`, `PNPM_CONFIG_CACHE_DIR` | `PNPM_HOME`, state/global/global-bin dirs |
 | Bun | `BUN_INSTALL_CACHE_DIR` | `BUN_INSTALL_GLOBAL_DIR`, `BUN_INSTALL_BIN` |
 | Go | `GOCACHE`, `GOMODCACHE` | `GOPATH`, `GOBIN`, `GOENV` |
@@ -106,7 +110,7 @@ tool-data/                          persistent tool state/global installs
 | ccache | `CCACHE_DIR`, `CCACHE_TEMPDIR` | `CCACHE_CONFIGPATH` |
 | sccache | `SCCACHE_DIR` | `SCCACHE_CONF` |
 
-`PathVariables` 只代表 directory-valued environment variables；`FileVariables` 專門代表 `GOENV`、`CCACHE_CONFIGPATH`、`SCCACHE_CONF` 這類 file-valued setting。`cache init` 會建立 directory、file parent 以及缺少的空 config file，不會把 config filename 誤建立成 directory。ccache/sccache 的 config 特別移出 `cache/`，所以刪除 compiler cache 不會同時丟掉持久設定，也不會因 cache 被重建而退回 host user config。
+`PathVariables` 只代表 directory-valued environment variables；`FileVariables` 專門代表 `GIT_CONFIG_GLOBAL`、`UV_CONFIG_FILE`、`NPM_CONFIG_USERCONFIG`、`GOENV`、`CCACHE_CONFIGPATH`、`SCCACHE_CONF` 這類 file-valued setting。`cache init` 會建立 directory、file parent 以及缺少的空 config file，不會把 config filename 誤建立成 directory。Git/uv/npm 的 user/global config 因而跟 USB 搬移；ccache/sccache 的 config 亦特別移出 `cache/`，所以刪除 compiler cache 不會同時丟掉持久設定，也不會因 cache 被重建而退回 host user config。
 
 `cache/` 原則上是可重建資料，但並不代表任何時候都應直接 `rmdir /s`：Capsulenv 不會預設開啟 Bun global virtual store、pnpm experimental global virtual store，也不會強制 uv symlink cache mode；若 local config 主動開啟會讓 project environment 對 shared store/cache 形成更強 linkage，清理時應使用相應 tool-native command。Capsulenv 因而暫不提供一個粗暴的 `cache clean all`。
 
@@ -116,7 +120,9 @@ tool-data/                          persistent tool state/global installs
 
 Go 有一個刻意保留的例外：`go env GOTELEMETRYDIR` 是 Go 自己計算的 non-settable telemetry state location，直接設定同名 environment variable 不會重定向它。Capsulenv 不會為了這一項而覆寫整個 `%APPDATA%`/XDG user-config root，因為那會把大量無關 child process 一起改道。因此 Go build/module cache、`GOENV`、`GOPATH/GOBIN` 已 capsule-owned，但 Go telemetry 仍是 host-owned known exception；這比宣稱已 portable、實際仍寫 host profile 更誠實。
 
-ShellOnly 只把上述 environment mapping 放進 Capsulenv process tree；User mode才持久寫到目前 Windows user environment，並由既有 backup/restore contract 管理。npm/pnpm registry/auth、Bun global `bunfig.toml` 等 user configuration 並未被這輪 cache mapping 強制搬走；storage isolation 與 credential/config policy 保持分離。Scoop 自己的下載 cache 仍由 Scoop 管理在 `scoop/cache`，Capsulenv 只顯示其位置，不替 Scoop 建立或清除。
+ShellOnly 只把上述 environment mapping 放進 Capsulenv process tree；User mode才持久寫到目前 Windows user environment，並由 host-scoped backup/restore contract 管理。一般 `git config --global`、uv user config 與 npm/pnpm 共用的 user config 會寫入 USB-owned file；因此若 `npmrc` 內包含 registry token，它也會跟 capsule 一起攜帶，應按 secret 處理。Bun 的一般 `bunfig.toml` 暫不另造 Capsulenv abstraction。Scoop download cache 則透過 `SCOOP_CACHE` 明確放在頂層 `cache/scoop`，與其他可重用 cache 一起搬移。
+
+Capsulenv 另提供 `CAPSULENV_SCRATCH`，位置為 host `%TEMP%\capsulenv\<capsule-id>`（非 Windows test host 則使用該平台 temporary directory）。它只供 Capsulenv/scripts 放真正 transient、高寫入的工作資料；Capsulenv 不改寫 `TEMP`/`TMP`。`eject` 會嘗試清掉這個 scratch。
 
 建立及查看 capsulenv-owned storage 位置：
 
@@ -425,19 +431,34 @@ install.cmd D:\Portable\capsulenv -Mode User
 
 ```bat
 capsulenv.cmd install-user
+capsulenv.cmd user-shell
 capsulenv.cmd restore-user
 ```
 
-`enable-user` 保留為 `install-user` 的 compatibility alias。首次 User install 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`SCOOP_CACHE`、`PATH`、`CAPSULENV_MODULE_ROOT`、`SSH_AUTH_SOCK`、tool cache/home variables、自訂 variables，以及 Scoop `use_isolated_path` 指定的 path variable（如 `SCOOP_PATH`）；`restore-user` 會還原「原值」或「原本不存在」，再把 mode 記回 ShellOnly。`PSModulePath` 刻意保持 session-only。若 Capsulenv 的 User-mode Bitwarden integration 曾改過 global Git SSH 設定或 Windows `ssh-agent` service，`restore-user` 也會先利用既有 backup 還原它們；service 有待還原時需以 elevated terminal 執行。User mode state 另外記錄 Capsulenv 自己 prepend 的 PATH entries；整個 capsule 從 `F:` 搬到 `G:` 時，rehydrate 除了移除舊 managed entries，亦只針對 relocation context 已知的舊 `ScoopRoot`／`ScoopGlobalRoot` 清掉 manifest app PATH（或 isolated Scoop path variable）中的舊 drive entries，再由 native reset 加回新位置。
+洗機共用電腦可直接把 `user-shell` 當日常入口；它在目前 user 尚未被 capsule 接管時執行/刷新 User takeover，處理 relocation，然後開 shell。離開前可用 `capsulenv.cmd eject` 關閉 capsule-owned processes、檢查 dirty workspace repos、記錄 eject state 並清 host-local scratch；**`eject` 不會呼叫 `restore-user`**。真正要還原 host user integration 時才明確執行 `restore-user`。
+
+`enable-user` 保留為 `install-user` 的 compatibility alias。Capsulenv 的 mode 現在代表**目前 machine/user 的 integration ownership**，不是 USB 的全域 profile：每個 capsule 有 stable UUID，而 User backup/state 放在 `.capsulenv/user-integrations/<machine-user-hash>/`。因此同一支 USB 可在 Laptop 保持 ShellOnly，同時在洗機共用電腦使用 User；共用電腦重置後再次 `install-user` 會辨識該 host 的舊 User ledger、重新 snapshot 乾淨 User environment 後接管，不要求先 `restore-user`。`user-shell` 則把 install/sync、relocation self-heal 與開 shell 合成一個 idempotent 入口。
+
+首次 User install 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`SCOOP_CACHE`、`PATH`、`CAPSULENV_MODULE_ROOT`、`SSH_AUTH_SOCK`、tool cache/home/config variables、自訂 variables，以及 Scoop `use_isolated_path` 指定的 path variable（如 `SCOOP_PATH`）；`restore-user` 會還原「原值」或「原本不存在」。`PSModulePath` 刻意保持 session-only。若 Capsulenv 的 User-mode Bitwarden integration 曾改過 global Git SSH 設定或 Windows `ssh-agent` service，`restore-user` 也會先利用既有 backup 還原它們；service 有待還原時需以 elevated terminal 執行。Managed PATH state 使用 `capsule://...` reference 而不是 drive-specific absolute path；User mode 從 `F:` 搬到 `G:` 時，Capsulenv 仍可用 capsule identity + 同 machine/user relocation fingerprint 辨識舊 User ownership，清掉舊 root entries，再由 native reset 加回新位置。
 
 這個 reversible contract 僅涵蓋 **Capsulenv 自己記錄並擁有的 integration**。在 User mode 由 Scoop manifest 建立的 Start Menu shortcuts、manifest-specific environment keys 或其他 package lifecycle side effects 屬 Scoop/package ownership；Capsulenv 沒有足夠原始狀態可安全地在 `restore-user` 時通用還原，因此不會猜測或刪除它們。
 從既有 ShellOnly capsule 執行 `install-user` 時亦不會為了補齊 UI integration 而無條件 `scoop reset *`；它先把 **Scoop root/shims/environment ownership** 切成 User。之後新 `scoop install` 依原生 User semantics 工作；若要把既有 apps 的 shortcuts/env 明確 materialize，可在 User mode 主動執行 `capsulenv.cmd reset`。真正發生 relocation 時則會自動 native reset，因為既有 User integration 的 absolute targets 已需要修復。
 
-Scoop local 與 portable-global shim directories 都會加入 Capsulenv environment plan。ShellOnly 只加入 process PATH；User 才持久加入 User PATH。為避免 capsule 缺少某個 command 時 PATH fall-through 到 host Scoop，session activation 會從**當前 process PATH**移除可由 inherited/User/Machine `SCOOP`／`SCOOP_GLOBAL`（以及 Windows 預設 Scoop roots）證明屬於其他 Scoop installation 的 shim directories；User takeover 也會暫時從 User PATH 移除原 Scoop shims，而 `restore-user` 依完整 PATH backup 精確放回。Capsulenv 會把 Scoop 自己的 `scoop.ps1`／`scoop.cmd` 正規化為以 shim 位置計算的 relative launcher；app `current` junction、app shims 與 persist links 則在 relocation reset 時重建，因此不依賴原 drive letter。`SCOOP_CACHE` 也由 mode-aware environment plan 明確指向 capsule 的 `scoop\cache`，避免 portable `config.json` 中舊的 absolute `cache_path` 在換 drive 後接管 cache。
+Scoop local 與 portable-global shim directories 都會加入 Capsulenv environment plan。ShellOnly 只加入 process PATH；User 才持久加入 User PATH。為避免 capsule 缺少某個 command 時 PATH fall-through 到 host Scoop，session activation 會從**當前 process PATH**移除可由 inherited/User/Machine `SCOOP`／`SCOOP_GLOBAL`（以及 Windows 預設 Scoop roots）證明屬於其他 Scoop installation 的 shim directories；User takeover 也會暫時從 User PATH 移除原 Scoop shims，而 `restore-user` 依完整 PATH backup 精確放回。Capsulenv 會把 Scoop 自己的 `scoop.ps1`／`scoop.cmd` 正規化為以 shim 位置計算的 relative launcher；app `current` junction、app shims 與 persist links 則在 relocation reset 時重建，因此不依賴原 drive letter。`SCOOP_CACHE` 也由 mode-aware environment plan 明確指向 capsule 的 `cache\scoop`，避免 portable `config.json` 中舊的 absolute `cache_path` 在換 drive 後接管 cache。
 
 Project-cache junction／absolute symlink 仍以 registry 的上一個 target 驗證 ownership 才重建。File hardlink 不能跨 volume：registry 現在額外保存 managed file 的 length + SHA-256 fingerprint；若跨 drive copy 把原 hardlink 變成兩份普通檔案，只有兩份內容仍與記錄 fingerprint 相同且新位置仍在同一 volume 時才會重新 hardlink。兩份內容已分岔、沒有舊 fingerprint、或新 link/store 位於不同 volume時一律拒絕覆蓋。
 
 ShellOnly 保證的是 **Capsulenv 自己的 activation/bootstrap/rehydrate/Bitwarden integration 不接管 host Scoop 或持久 user integration**；它不可能禁止使用者在 shell 中親自執行任意會改系統的程式。若直接呼叫 upstream `scoop install/reset`，manifest 本身仍可能依 Scoop 原生語意建立 User shortcut 或 env；要維持 isolation，使用 Capsulenv 的 mode-aware `reset`/`rehydrate`，並把 package action 本身視為顯式 side effect。
+
+## Offline readiness 與 drift
+
+```bat
+capsulenv.cmd offline status
+capsulenv.cmd offline prefetch
+capsulenv.cmd drift
+```
+
+`offline status` 檢查目前已安裝 Scoop runtime/apps 是否可直接從 USB 使用，並統計 portable Scoop cache；`offline prefetch` 以目前 local bucket snapshot 為準替已安裝 apps 預熱 `cache/scoop`，不把 prefetch 變成隱式 Scoop update。`drift` 則比較 installed manifest version 與 USB 上 local bucket manifest version，不連網更新 bucket。
 
 ## 驗證
 
@@ -447,4 +468,4 @@ ShellOnly 保證的是 **Capsulenv 自己的 activation/bootstrap/rehydrate/Bitw
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-Pester 6.1.0+ 是唯一測試入口；repo 不再保留第二套 smoke runner。測試會合併模組、解析 scripts，並驗證 shallow bootstrap、ShellOnly/User ownership、local/global shims、mode-aware reset/hook boundary、Git process overlay、browser profile binding、hardlink relocation ownership、prebuilt runtime 與 transactional installer；不會在測試 host 上執行真實 browser/service 或 Git global changes。
+Pester 6.1.0+ 是唯一測試入口；repo 不再保留第二套 smoke runner。測試會合併模組、解析 scripts，並驗證 shallow bootstrap、ShellOnly/User ownership、host-scoped integration ledger、capsule identity/state reference、local/global shims、mode-aware reset/hook boundary、portable Git/package-manager config、scratch、offline/drift、browser profile binding、hardlink relocation ownership、prebuilt runtime 與 transactional installer；不會在測試 host 上執行真實 browser/service 或 Git global changes。

@@ -119,6 +119,7 @@ Describe 'Capsulenv static and relocation' {
             'Get-CapsulenvInstallMode',
             'Set-CapsulenvInstallMode',
             'Install-CapsulenvUserEnvironment',
+            'Enter-CapsulenvUserShell',
             'Enable-CapsulenvUserEnvironment',
             'Restore-CapsulenvUserEnvironment',
             'Initialize-CapsulenvToolStorage',
@@ -134,7 +135,13 @@ Describe 'Capsulenv static and relocation' {
             'Register-CapsulenvToolWorkspace',
             'Unregister-CapsulenvToolWorkspace',
             'Get-CapsulenvToolWorkspaces',
-            'Get-CapsulenvToolRelocationStatus'
+            'Get-CapsulenvToolRelocationStatus',
+            'Get-CapsulenvIdentity',
+            'Get-CapsulenvScratchPath',
+            'Invoke-CapsulenvEject',
+            'Get-CapsulenvOfflineReadiness',
+            'Invoke-CapsulenvOfflinePrefetch',
+            'Get-CapsulenvVersionDrift'
         )
         foreach ($name in $required) {
             Assert-CapsulenvTest `
@@ -143,7 +150,7 @@ Describe 'Capsulenv static and relocation' {
         }
 
         $config = Get-CapsulenvConfiguration -Refresh
-        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 8) -Message 'Unexpected configuration schema.'
+        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 9) -Message 'Unexpected configuration schema.'
         Assert-CapsulenvTest -Condition ([bool]$config.Scoop.Bootstrap.Enabled) -Message 'Scoop bootstrap is not enabled by default.'
         Assert-CapsulenvTest -Condition ([int]$config.Scoop.Bootstrap.GitDepth -eq 1) -Message 'Scoop bootstrap must default to a shallow depth of one.'
         Assert-CapsulenvTest -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Scoop.Bootstrap.Scoop.Repository)) -Message 'Scoop bootstrap repository is missing.'
@@ -514,6 +521,9 @@ Describe 'Capsulenv static and relocation' {
             'GOBIN',
             'GOCACHE',
             'GOMODCACHE',
+            'GIT_CONFIG_GLOBAL',
+            'UV_CONFIG_FILE',
+            'NPM_CONFIG_USERCONFIG',
             'GOENV',
             'RUSTUP_HOME',
             'CARGO_HOME',
@@ -533,10 +543,10 @@ Describe 'Capsulenv static and relocation' {
             -Message 'Scoop-owned package cache is missing from the tool-storage plan.'
         $toolStoragePlan = & $module { Get-CapsulenvToolStoragePlan }
         Assert-CapsulenvTest `
-            -Condition (@($toolStoragePlan.Files).Count -eq 3) `
+            -Condition (@($toolStoragePlan.Files).Count -eq 7) `
             -Message 'ToolStorage file-valued configuration locations were not planned separately.'
         [void](Initialize-CapsulenvToolStorage)
-        foreach ($fileVariable in @('GOENV', 'CCACHE_CONFIGPATH', 'SCCACHE_CONF')) {
+        foreach ($fileVariable in @('GIT_CONFIG_GLOBAL', 'UV_CONFIG_FILE', 'PIXI_CONFIG_FILE', 'NPM_CONFIG_USERCONFIG', 'GOENV', 'CCACHE_CONFIGPATH', 'SCCACHE_CONF')) {
             $status = $toolStorageStatus | Where-Object { $_.Name -eq $fileVariable } | Select-Object -First 1
             if ($null -eq $status) {
                 $status = @(Get-CapsulenvToolStorageStatus) | Where-Object { $_.Name -eq $fileVariable } | Select-Object -First 1

@@ -154,7 +154,7 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                     -Condition ([string]$env:SCOOP_GLOBAL -eq [System.IO.Path]::GetFullPath((Join-Path $capsule 'scoop-global'))) `
                     -Message 'Shell-only session did not replace inherited SCOOP_GLOBAL in process scope.'
                 Assert-CapsulenvBootstrapTest `
-                    -Condition ([string]$env:SCOOP_CACHE -eq [System.IO.Path]::GetFullPath((Join-Path $capsule 'scoop/cache'))) `
+                    -Condition ([string]$env:SCOOP_CACHE -eq [System.IO.Path]::GetFullPath((Join-Path $capsule 'cache/scoop'))) `
                     -Message 'Shell-only session did not root SCOOP_CACHE inside the capsule.'
                 $sessionPaths = @($env:PATH -split ';')
                 Assert-CapsulenvBootstrapTest `

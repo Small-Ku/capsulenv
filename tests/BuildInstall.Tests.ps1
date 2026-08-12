@@ -77,10 +77,14 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition ((Get-Content -LiteralPath (Join-Path $installRoot 'scoop/config.json') -Raw).Trim() -eq '{}') `
                 -Message 'Installer did not establish the portable Scoop config boundary.'
-            $modeState = Get-Content -LiteralPath (Join-Path (Join-Path $installRoot '.capsulenv') 'install-mode.json') -Raw | ConvertFrom-Json
+            $modeStatePaths = @(Get-ChildItem -LiteralPath (Join-Path (Join-Path $installRoot '.capsulenv') 'user-integrations') -Filter 'install-mode.json' -File -Recurse -ErrorAction SilentlyContinue)
+            Assert-CapsulenvBuildInstallTest `
+                -Condition ($modeStatePaths.Count -eq 1) `
+                -Message 'Fresh installation did not create exactly one host-scoped integration ledger.'
+            $modeState = Get-Content -LiteralPath $modeStatePaths[0].FullName -Raw | ConvertFrom-Json
             Assert-CapsulenvBuildInstallTest `
                 -Condition ([string]$modeState.Mode -eq 'ShellOnly') `
-                -Message 'Fresh installation did not persist ShellOnly mode state.'
+                -Message 'Fresh installation did not persist ShellOnly mode state for the current host/user.'
 
             $unmanagedPath = Join-Path $installRoot 'unmanaged.txt'
             $localConfigPath = Join-Path (Join-Path $installRoot 'config') 'capsulenv.local.psd1'

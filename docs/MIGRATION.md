@@ -188,3 +188,18 @@ The duplicate non-Pester smoke suite was removed. `scripts/Test-Capsulenv.ps1` n
 Bitwarden process control is capsule-owned as well: setup/start/stop only accepts a Bitwarden executable under this capsule's Scoop app roots, and refuses when a foreign host Bitwarden process is present.
 
 ShellOnly session PATH isolation now removes shim directories attributable to foreign Scoop roots before prepending capsule shims. User takeover applies the same removal to User PATH under the existing exact backup/restore contract, preventing missing capsule commands from silently falling through to a host Scoop app.
+
+## v0.10.0 two-mode portable ownership
+
+v0.10.0 收斂為兩個 integration mode：`ShellOnly` 與 `User`。不再把 mode 解讀成 USB 的 machine/trust profile；同一 capsule 可在私人 Laptop 以 ShellOnly 使用，在另一台洗機共用電腦以 User takeover 使用。
+
+主要 state 變更：
+
+- capsule 新增 stable `.capsulenv/identity.json`；relocation/install state 可用 `capsule://...` reference，不再把 managed PATH ownership 綁死某個 drive letter。
+- User backup/mode ledger 改到 `.capsulenv/user-integrations/<machine-user-hash>/`。Windows runtime 以目前 User environment 判斷實際 ownership；drive relocation 時可用同 machine/user 的上一份 rehydration fingerprint 證明舊 drive 仍屬這個 User integration。
+- v0.9 的 `.capsulenv/user-environment-backup.json` 與 `.capsulenv/install-mode.json` 不會被無條件套到另一台電腦；只有目前 Windows user 能被證明正在使用該 capsule 時才遷移到 host-scoped ledger。
+- reset-on-shutdown host 若把 User environment 洗掉、USB ledger 仍在，再執行 `install-user`/`user-shell` 會重新 snapshot 乾淨 host state 後 takeover，不必先 `restore-user`。
+
+Storage 亦重新對齊 USB-as-source-of-truth：Scoop cache 移到 `cache/scoop`；Git global config、uv/Pixi config、npm user config 固定到 `tool-data/`（Pixi 以 `PIXI_CONFIG_FILE` 避免 merge host global config）。pnpm/Bun 的剩餘 global config discovery 不用 session-wide `XDG_CONFIG_HOME` 或 shim wrapper 強行接管，以免污染其他 apps／重複 Scoop ownership；現有 `PNPM_CONFIG_*`、`NPM_CONFIG_USERCONFIG` fallback 與 portable data/cache 仍保留。另新增 host-local `CAPSULENV_SCRATCH`，但不改 `TEMP`/`TMP`.
+
+新增日常入口：`user-shell`、`eject`、`offline status` / `offline prefetch`、`drift`。`eject` 只做 process/repository/scratch/session 收尾，**不**自動 `restore-user`。
