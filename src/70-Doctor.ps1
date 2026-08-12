@@ -38,7 +38,36 @@ function Invoke-CapsulenvDoctor {
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Scoop command' `
         -Passed ($null -ne $scoopExecutable) `
-        -Detail $(if ($scoopExecutable) { $scoopExecutable } else { 'Not found' })))
+        -Detail $(if ($scoopExecutable) { $scoopExecutable } else { 'Not found; bootstrap will install it on first session' })))
+
+    $portableScoopConfig = Join-Path $scoopRoot 'config.json'
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Portable Scoop config' `
+        -Passed (Test-Path -LiteralPath $portableScoopConfig -PathType Leaf) `
+        -Importance Optional `
+        -Detail $portableScoopConfig))
+
+    $installMode = Get-CapsulenvInstallMode
+    $modePassed = $true
+    $modeDetail = if ($installMode -eq 'User') {
+        try {
+            $userScoop = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+            $modePassed = [System.StringComparer]::OrdinalIgnoreCase.Equals(
+                [string]$userScoop,
+                [string]$scoopRoot
+            )
+            "User; registered SCOOP=$userScoop"
+        } catch {
+            'User; user environment could not be inspected on this host'
+        }
+    } else {
+        'ShellOnly; capsulenv does not own the persistent user Scoop environment'
+    }
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Capsulenv install mode' `
+        -Passed $modePassed `
+        -Importance Optional `
+        -Detail $modeDetail))
 
     $toolStoragePlan = Get-CapsulenvToolStoragePlan
     $toolPathValues = @($toolStoragePlan.Directories)
@@ -212,6 +241,7 @@ function Initialize-CapsulenvIntegrations {
     [CmdletBinding()]
     param()
 
+    [void](Initialize-CapsulenvScoopBootstrap)
     $configuration = Get-CapsulenvConfiguration
     if (
         $configuration.Scoop.RehydrateOnRelocation -and
@@ -235,6 +265,7 @@ function Initialize-Capsulenv {
 
     [void](Get-CapsulenvConfiguration -Refresh)
     [void](Set-CapsulenvSessionEnvironment)
+    [void](Initialize-CapsulenvScoopBootstrap)
     Invoke-CapsulenvScoopRehydrate `
         -SkipHooks:$SkipHooks `
         -SkipPersistRepairs:$SkipPersistRepairs `

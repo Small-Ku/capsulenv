@@ -1,10 +1,29 @@
 @{
-    SchemaVersion = 6
+    SchemaVersion = 7
 
     Scoop = @{
         Root = 'scoop'
         GlobalRoot = 'scoop-global'
         RehydrateOnRelocation = $true
+
+        # Fresh portable Scoop bootstrap. Git is preferred when available and
+        # uses a shallow single-branch clone; archives keep first install
+        # possible on machines that do not have Git yet.
+        Bootstrap = @{
+            Enabled = $true
+            GitDepth = 1
+            Scoop = @{
+                Repository = 'https://github.com/ScoopInstaller/Scoop.git'
+                Branch = 'master'
+                Archive = 'https://github.com/ScoopInstaller/Scoop/archive/refs/heads/master.zip'
+            }
+            Main = @{
+                Repository = 'https://github.com/ScoopInstaller/Main.git'
+                Branch = 'master'
+                Archive = 'https://github.com/ScoopInstaller/Main/archive/refs/heads/master.zip'
+            }
+        }
+
         ReplayHooks = @{
             firefox = @('post_install')
             'firefox-esr' = @('post_install')

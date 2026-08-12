@@ -144,6 +144,67 @@ function Get-CapsulenvUserEnvironmentBackupPath {
     return Join-Path $context.StateRoot 'user-environment-backup.json'
 }
 
+function Get-CapsulenvInstallModeStatePath {
+    $context = Get-CapsulenvContext
+    return Join-Path $context.StateRoot 'install-mode.json'
+}
+
+function Get-CapsulenvInstallMode {
+    [CmdletBinding()]
+    param()
+
+    $statePath = Get-CapsulenvInstallModeStatePath
+    if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+        try {
+            $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+            if ([string]$state.Mode -in @('ShellOnly', 'User')) {
+                return [string]$state.Mode
+            }
+        } catch {
+            # Fall through to the v0.8.x backup-state inference below.
+        }
+    }
+    if (Test-Path -LiteralPath (Get-CapsulenvUserEnvironmentBackupPath) -PathType Leaf) {
+        return 'User'
+    }
+    return 'ShellOnly'
+}
+
+function Set-CapsulenvInstallMode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$Mode
+    )
+
+    $statePath = Get-CapsulenvInstallModeStatePath
+    $parent = Split-Path -Parent $statePath
+    [void](New-Item -ItemType Directory -Path $parent -Force)
+    $temporary = Join-Path $parent ('.install-mode-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
+    try {
+        [ordered]@{
+            SchemaVersion = 1
+            Mode = $Mode
+            UpdatedAtUtc = [DateTime]::UtcNow.ToString('o')
+        } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $temporary -Encoding UTF8
+        if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+            try {
+                [System.IO.File]::Replace($temporary, $statePath, $null, $true)
+            } catch {
+                Remove-Item -LiteralPath $statePath -Force
+                Move-Item -LiteralPath $temporary -Destination $statePath
+            }
+        } else {
+            Move-Item -LiteralPath $temporary -Destination $statePath
+        }
+    } finally {
+        if (Test-Path -LiteralPath $temporary) {
+            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Write-CapsulenvUserEnvironmentBackup {
     [CmdletBinding()]
     param(
@@ -183,7 +244,7 @@ function Write-CapsulenvUserEnvironmentBackup {
     }
 }
 
-function Enable-CapsulenvUserEnvironment {
+function Install-CapsulenvUserEnvironment {
     [CmdletBinding()]
     param([switch]$Force)
 
@@ -195,6 +256,7 @@ function Enable-CapsulenvUserEnvironment {
     }
 
     $plan = Set-CapsulenvSessionEnvironment
+    [void](Initialize-CapsulenvScoopBootstrap)
     $configuration = Get-CapsulenvConfiguration
     if (
         $configuration.Scoop.RehydrateOnRelocation -and
@@ -250,7 +312,15 @@ function Enable-CapsulenvUserEnvironment {
     $newUserPath = Merge-CapsulenvPath -ExistingPath $oldUserPath -Prepend $plan.PathEntries
     [Environment]::SetEnvironmentVariable('PATH', $newUserPath, 'User')
 
+    Set-CapsulenvInstallMode -Mode User
     Write-CapsulenvMessage -Level Success -Message "User environment enabled. Backup: $backupPath"
+}
+
+function Enable-CapsulenvUserEnvironment {
+    [CmdletBinding()]
+    param([switch]$Force)
+
+    Install-CapsulenvUserEnvironment -Force:$Force
 }
 
 function Restore-CapsulenvUserEnvironment {
@@ -269,7 +339,8 @@ function Restore-CapsulenvUserEnvironment {
         [Environment]::SetEnvironmentVariable($property.Name, $value, 'User')
     }
     Remove-Item -LiteralPath $backupPath -Force
-    Write-CapsulenvMessage -Level Success -Message 'User environment restored from the original backup.'
+    Set-CapsulenvInstallMode -Mode ShellOnly
+    Write-CapsulenvMessage -Level Success -Message 'User environment restored from the original backup; capsulenv is shell-only again.'
 }
 
 function Invoke-CapsulenvChildShell {
@@ -307,4 +378,4 @@ function Invoke-CapsulenvExternalCommand {
     $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Set-CapsulenvSessionEnvironment, Enable-CapsulenvUserEnvironment, Restore-CapsulenvUserEnvironment
+##MOD_EXEC## Export-ModuleMember -Function Set-CapsulenvSessionEnvironment, Get-CapsulenvInstallMode, Set-CapsulenvInstallMode, Install-CapsulenvUserEnvironment, Enable-CapsulenvUserEnvironment, Restore-CapsulenvUserEnvironment

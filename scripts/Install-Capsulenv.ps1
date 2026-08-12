@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$Destination,
     [switch]$Force,
-    [switch]$IncludeDevelopmentFiles
+    [switch]$IncludeDevelopmentFiles,
+    [ValidateSet('ShellOnly', 'User')]
+    [string]$Mode,
+    [switch]$SkipScoopBootstrap
 )
 
 Set-StrictMode -Version Latest
@@ -85,18 +88,41 @@ $existingMarker = $null
 if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
     $existingMarker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
 }
-if ($null -ne $existingMarker -and ($null -eq $existingMarker.SchemaVersion -or [int]$existingMarker.SchemaVersion -ne 1)) {
+if (
+    $null -ne $existingMarker -and
+    ($null -eq $existingMarker.SchemaVersion -or [int]$existingMarker.SchemaVersion -notin @(1, 2))
+) {
     throw "Unsupported capsulenv install marker schema: $($existingMarker.SchemaVersion)"
 }
 if ($hasContents -and $null -eq $existingMarker -and -not $Force) {
     throw "Destination is not empty and was not installed by capsulenv: $destinationRoot. Pass -Force to adopt it without deleting unrelated data."
 }
 
+$modeStatePath = Join-Path (Join-Path $destinationRoot '.capsulenv') 'install-mode.json'
+$userBackupPath = Join-Path (Join-Path $destinationRoot '.capsulenv') 'user-environment-backup.json'
+$currentMode = 'ShellOnly'
+if (Test-Path -LiteralPath $modeStatePath -PathType Leaf) {
+    try {
+        $modeState = Get-Content -LiteralPath $modeStatePath -Raw | ConvertFrom-Json
+        if ([string]$modeState.Mode -in @('ShellOnly', 'User')) {
+            $currentMode = [string]$modeState.Mode
+        }
+    } catch {
+        # Fall back to the v0.8.x backup marker below.
+    }
+} elseif (Test-Path -LiteralPath $userBackupPath -PathType Leaf) {
+    $currentMode = 'User'
+} elseif ($null -ne $existingMarker -and [string]$existingMarker.InstallMode -in @('ShellOnly', 'User')) {
+    $currentMode = [string]$existingMarker.InstallMode
+}
+$effectiveMode = if ($PSBoundParameters.ContainsKey('Mode')) { [string]$Mode } else { $currentMode }
+
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-install-{0}" -f [Guid]::NewGuid().ToString('N'))
 $buildRoot = Join-Path $temporaryRoot 'runtime'
 $rollbackRoot = Join-Path $temporaryRoot 'rollback'
 $rollbackRecords = New-Object System.Collections.Generic.List[object]
 $mutationStarted = $false
+$installResult = $null
 try {
     [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
     [void](New-Item -ItemType Directory -Path $rollbackRoot -Force)
@@ -177,10 +203,11 @@ try {
     }
 
     $installMetadata = [ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = 2
         Version = [string]$build.Version
         InstalledAtUtc = [DateTime]::UtcNow.ToString('o')
         SourceCommit = $build.SourceCommit
+        InstallMode = $effectiveMode
         ManagedFiles = $newManagedFiles
     }
     $temporaryMarker = Join-Path $destinationRoot ('.capsulenv-install-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
@@ -193,12 +220,14 @@ try {
         }
     }
 
-    [pscustomobject]@{
+    $installResult = [pscustomobject]@{
         Destination = $destinationRoot
         Version = [string]$build.Version
         Launcher = Join-Path $destinationRoot 'capsulenv.cmd'
         UpdatedExistingInstallation = $null -ne $existingMarker
         DevelopmentFilesIncluded = [bool]$IncludeDevelopmentFiles
+        InstallMode = $effectiveMode
+        ScoopBootstrapSkipped = [bool]$SkipScoopBootstrap
     }
 } catch {
     $installError = $_
@@ -226,3 +255,48 @@ try {
         Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
     }
 }
+
+$previousCapsulenvRoot = $env:CAPSULENV_ROOT
+$previousScoop = $env:SCOOP
+$previousScoopGlobal = $env:SCOOP_GLOBAL
+$previousCapsulenvModules = @(Get-Module Capsulenv)
+$installedModule = Join-Path (Join-Path (Join-Path $destinationRoot 'modules') 'Capsulenv') 'Capsulenv.psd1'
+try {
+    $env:CAPSULENV_ROOT = $destinationRoot
+    Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+    Import-Module $installedModule -Force
+
+    $bootstrapOnThisHost = (-not $SkipScoopBootstrap) -and ($env:OS -eq 'Windows_NT' -or $PSVersionTable.PSVersion.Major -le 5)
+    if ($bootstrapOnThisHost) {
+        [void](Set-CapsulenvSessionEnvironment)
+        [void](Initialize-CapsulenvScoopBootstrap)
+    } else {
+        [void](Ensure-CapsulenvScoopPortableConfig)
+    }
+
+    if ($effectiveMode -eq 'User') {
+        Install-CapsulenvUserEnvironment -Force:($currentMode -eq 'User')
+    } elseif ($currentMode -eq 'User') {
+        if (-not (Test-Path -LiteralPath $userBackupPath -PathType Leaf)) {
+            throw "Cannot switch a User installation to ShellOnly because the original user-environment backup is missing: $userBackupPath"
+        }
+        Restore-CapsulenvUserEnvironment
+    } else {
+        Set-CapsulenvInstallMode -Mode ShellOnly
+    }
+} finally {
+    Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+    foreach ($previousModule in $previousCapsulenvModules) {
+        if (
+            -not [string]::IsNullOrWhiteSpace([string]$previousModule.Path) -and
+            (Test-Path -LiteralPath $previousModule.Path -PathType Leaf)
+        ) {
+            Import-Module $previousModule.Path -Force
+        }
+    }
+    $env:CAPSULENV_ROOT = $previousCapsulenvRoot
+    $env:SCOOP = $previousScoop
+    $env:SCOOP_GLOBAL = $previousScoopGlobal
+}
+
+$installResult

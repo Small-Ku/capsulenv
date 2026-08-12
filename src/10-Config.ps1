@@ -72,6 +72,33 @@ function Assert-CapsulenvConfiguration {
         throw 'Scoop.RehydrateOnRelocation must be a Boolean.'
     }
     if (
+        -not $Configuration.Scoop.ContainsKey('Bootstrap') -or
+        $Configuration.Scoop.Bootstrap -isnot [hashtable]
+    ) {
+        throw 'Scoop.Bootstrap must be a hashtable.'
+    }
+    $bootstrap = $Configuration.Scoop.Bootstrap
+    if (-not $bootstrap.ContainsKey('Enabled') -or $bootstrap.Enabled -isnot [bool]) {
+        throw 'Scoop.Bootstrap.Enabled must be a Boolean.'
+    }
+    if (-not $bootstrap.ContainsKey('GitDepth') -or [int]$bootstrap.GitDepth -le 0) {
+        throw 'Scoop.Bootstrap.GitDepth must be a positive integer.'
+    }
+    foreach ($sourceName in @('Scoop', 'Main')) {
+        if (-not $bootstrap.ContainsKey($sourceName) -or $bootstrap[$sourceName] -isnot [hashtable]) {
+            throw "Scoop.Bootstrap.$sourceName must be a hashtable."
+        }
+        foreach ($fieldName in @('Repository', 'Branch', 'Archive')) {
+            if (
+                -not $bootstrap[$sourceName].ContainsKey($fieldName) -or
+                [string]::IsNullOrWhiteSpace([string]$bootstrap[$sourceName][$fieldName])
+            ) {
+                throw "Scoop.Bootstrap.$sourceName.$fieldName must be a non-empty string."
+            }
+        }
+    }
+
+    if (
         -not $Configuration.Scoop.ContainsKey('ReplayHooks') -or
         $Configuration.Scoop.ReplayHooks -isnot [hashtable]
     ) {
@@ -373,7 +400,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 6) {
+    if ([int]$configuration.SchemaVersion -ne 7) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

@@ -6,8 +6,13 @@ function Show-CapsulenvHelp {
 capsulenv commands
 
   capsulenv.cmd shell
-      Open a child PowerShell with the portable Scoop environment active.
-      On a new host/path, rehydrate Scoop once before opening the shell.
+      Open a child PowerShell with the shell-only portable Scoop environment active.
+      Fresh installs bootstrap Scoop/Main inside the capsule; host Scoop settings
+      and user environment variables are not adopted or persisted.
+
+  capsulenv.cmd bootstrap
+      Bootstrap missing Scoop/Main repositories in the capsule. Git uses a
+      shallow single-branch clone; archive download is the no-Git fallback.
 
   capsulenv.cmd run <command> [arguments...]
       Run one command inside the portable environment.
@@ -29,10 +34,12 @@ capsulenv commands
   capsulenv.cmd reset [app...]
       Run native Scoop reset without lifecycle replay. Defaults to all apps.
 
+  capsulenv.cmd install-user [--force]
   capsulenv.cmd enable-user [--force]
   capsulenv.cmd restore-user
-      Persist or restore the complete portable environment using an exact
-      backup. --force reapplies/upgrades without replacing original values.
+      Install this capsule as the current Windows user's Scoop environment, or
+      restore the exact previous user environment and return to shell-only mode.
+      enable-user is retained as a compatibility alias for install-user.
 
 
   capsulenv.cmd cache paths
@@ -312,6 +319,13 @@ function Invoke-Capsulenv {
 
     switch ($command) {
         'shell' { Invoke-CapsulenvChildShell }
+        'bootstrap' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: bootstrap'
+            }
+            [void](Set-CapsulenvSessionEnvironment)
+            Initialize-CapsulenvScoopBootstrap | Format-List
+        }
         'run' {
             if ($remaining.Count -lt 1) {
                 throw 'Usage: run <command> [arguments...]'
@@ -377,12 +391,19 @@ function Invoke-Capsulenv {
             [void](Set-CapsulenvSessionEnvironment)
             [void](Reset-CapsulenvScoop)
         }
+        'install-user' {
+            $unknown = @($remaining | Where-Object { $_ -ne '--force' })
+            if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {
+                throw 'Usage: install-user [--force]'
+            }
+            Install-CapsulenvUserEnvironment -Force:($remaining -contains '--force')
+        }
         'enable-user' {
             $unknown = @($remaining | Where-Object { $_ -ne '--force' })
             if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {
                 throw 'Usage: enable-user [--force]'
             }
-            Enable-CapsulenvUserEnvironment -Force:($remaining -contains '--force')
+            Install-CapsulenvUserEnvironment -Force:($remaining -contains '--force')
         }
         'restore-user' {
             if ($remaining.Count -gt 0) {
