@@ -11,3 +11,6 @@
 - `capsulenv.cmd` must remain a thin launcher; environment logic belongs in the PowerShell module.
 - Windows PowerShell 5.1 compatibility is required. Avoid PowerShell 7-only syntax in module sources.
 - Never copy, reserialize, or own Bitwarden vault/app state. A setting integration may patch only source-verified top-level keys, must preserve unrelated JSON byte-for-byte, validate before replacement, and keep an exact per-key restore record.
+- ShellOnly is the default install mode. Its activation/bootstrap may set process environment but must not adopt, rewrite, or register a host/user Scoop installation.
+- Fresh Scoop bootstrap prefers shallow single-branch Git checkout of Scoop/Main with archive fallback; live Scoop repositories are mutable Scoop-owned runtime data, never Git submodules of capsulenv.
+- User installation is explicit and reversible: back up the exact User environment before registering the capsule as the user's Scoop, and keep `restore-user` capable of returning it to ShellOnly.

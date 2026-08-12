@@ -23,6 +23,7 @@ capsulenv/
 │  ├─ buckets/
 │  ├─ persist/                       manifest-declared persisted app data/profiles
 │  ├─ shims/
+│  ├─ config.json                     portable Scoop config boundary
 │  └─ cache/
 ├─ scoop-global/                     optional Scoop-owned global root
 ├─ .capsulenv/                       relocation state, link registry, reversible backups
@@ -30,7 +31,7 @@ capsulenv/
 └─ .capsulenv-runtime.json           installed runtime metadata
 ```
 
-capsulenv 同時設定 `SCOOP` 與 `SCOOP_GLOBAL`，避免 `reset *` 意外枚舉主機的 `%ProgramData%\scoop`。兩個 root 都仍由 Scoop 本體管理。
+capsulenv 同時設定 `SCOOP` 與 `SCOOP_GLOBAL`，避免 `reset *` 意外枚舉主機的 `%ProgramData%\scoop`。兩個 root 都仍由 Scoop 本體管理。`scoop\config.json` 會在第一次載入 Scoop core 前建立，強制 Scoop 使用 capsule-local portable config，而不是 `%USERPROFILE%\.config\scoop\config.json`。
 
 ## Portable PowerShell modules
 
@@ -53,7 +54,7 @@ Capsulenv 預設建立 `PowerShell/Modules/`，在 session 中 prepend 到 `PSMo
 Import-Module NyaModule
 ```
 
-而不會把 module 同時複製到 `%USERPROFILE%\Documents\PowerShell\Modules`。`PSModulePath` 只在 capsulenv session 中 prepend，不會由 `enable-user` 持久覆寫；這可保留 PowerShell 5.1／7 各自在啟動時建立 default module paths 的原生語意。`CAPSULENV_MODULE_ROOT` 本身仍可隨 `enable-user` 備份／還原。
+而不會把 module 同時複製到 `%USERPROFILE%\Documents\PowerShell\Modules`。`PSModulePath` 只在 capsulenv session 中 prepend，不會由 `enable-user` 持久覆寫；這可保留 PowerShell 5.1／7 各自在啟動時建立 default module paths 的原生語意。`CAPSULENV_MODULE_ROOT` 本身仍可隨 `install-user`（舊名 `enable-user`）備份／還原。
 
 ## Portable tool storage
 
@@ -163,9 +164,15 @@ install.cmd D:\Portable\capsulenv
 
 安裝目的地不可位於 source repository 內；source-local staging 應使用 `Build-Capsulenv.ps1`。安裝器只更新 `.capsulenv-install.json` 列出的 managed files，保留 `scoop/`、`scoop-global/`、`cache/`、`tool-data/`、`project-cache/`、`workspace/`、`PowerShell/Modules/`、`.capsulenv/`、local config 與其他未知檔案。更新失敗時會把已動過的 managed files 交易式還原。正常安裝版直接 import `modules\Capsulenv\Capsulenv.psd1`，不需要攜帶 `src/` 或 merge script。詳見 `docs/INSTALL.md`。
 
+### Fresh Scoop bootstrap
+
+不再要求預先把另一份 portable Scoop 複製到 `scoop/`。當 capsule 內沒有 Scoop core／Main bucket 時，Capsulenv 會自行 bootstrap：優先使用 capsule Git，其次借用目前 `PATH` 的 Git 作**下載 transport**，並以 `--depth 1 --single-branch` clone Scoop 與 Main；Git 不可用或 clone 失敗時才下載設定中的 archive。這些 upstream repository 都是 live Scoop data，不是 capsulenv submodule，也不會納入 capsulenv installer 的 managed-file ownership。
+
+Shell-only bootstrap 只建立／更新 capsule 自己的 `scoop/`，不會探測、搬用或更新 `%USERPROFILE%\scoop` 等 host Scoop root。`scoop\config.json` 先於 Scoop core 建立，因此 host 的 Scoop config 亦不會被採用。若使用 archive fallback，Capsulenv 不會為了補 Git metadata 而覆寫一個已健康的 Scoop；日後交由 Scoop 原生 update lifecycle 管理。
+
 ## 開始使用
 
-把完整 portable Scoop root 放在 repo 的 `scoop/`：
+Fresh install 可直接：
 
 ```bat
 capsulenv.cmd doctor
@@ -173,7 +180,7 @@ capsulenv.cmd init
 capsulenv.cmd shell
 ```
 
-`init` 會立即做一次完整 rehydrate。日後整個 repo 被搬到另一個 path、另一部電腦或另一個 Windows user 時，首次 `shell` 會自動再做一次。
+需要單獨建立缺失的 Scoop/Main 時亦可執行 `capsulenv.cmd bootstrap`。`init` 會在 bootstrap 後立即做一次完整 rehydrate。日後整個 capsule 被搬到另一個 path、另一部電腦或另一個 Windows user 時，首次 `shell` 會自動再做一次。
 
 只執行一個 command：
 
@@ -375,18 +382,28 @@ capsulenv.cmd bitwarden restore-git
 
 這個 app-setting patch 依賴 Bitwarden Desktop 目前的公開原始碼 state key，而不是官方穩定 CLI contract；未知 JSON schema、重複 key 或無法驗證的檔案會直接拒絕修改。
 
-## Session 與 User environment
+## Shell-only 與 User installation
 
-正常 `shell` environment 只影響新開的 child PowerShell。惟首次 relocation rehydrate 會執行原生 `scoop reset`；若某些 manifests 宣告 `env_add_path`／`env_set`，Scoop 會按其原生語意重新套用相應 User environment entries。
+Capsulenv 有兩個刻意分開的 ownership mode。
 
-需要讓新開的其他 terminal 也固定使用此 Scoop root 時：
+**ShellOnly（預設）**只在目前 Capsulenv process／child shell 設定 `SCOOP`、`SCOOP_GLOBAL`、PATH 與其他 Capsulenv variables。bootstrap 及 config 全部位於 capsule 內，不會把本機既有 Scoop 當成自己的 root，也不會由 Capsulenv activation 寫入 User-scope `SCOOP`／`SCOOP_GLOBAL`／PATH。這是 `install.cmd D:\Portable\capsulenv` 的預設動機。
+
+**User** 則明確把此 capsule 註冊成目前 Windows user 的 Scoop environment，使一般新 terminal 也會解析到這個 Scoop。可在安裝時直接選擇：
 
 ```bat
-capsulenv.cmd enable-user
+install.cmd D:\Portable\capsulenv -Mode User
+```
+
+或在既有 ShellOnly capsule 中切換：
+
+```bat
+capsulenv.cmd install-user
 capsulenv.cmd restore-user
 ```
 
-首次 `enable-user` 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`CAPSULENV_MODULE_ROOT`、`SSH_AUTH_SOCK`、tool cache/home variables 及自訂 variables；restore 會還原「原值」或「原本不存在」。`PSModulePath` 刻意保持 session-only，避免持久 User scope 值改變 Windows PowerShell／PowerShell 7 的預設 module-path construction。升級或搬位後可用 `capsulenv.cmd enable-user --force` 延伸舊 backup 並重套新值，既有 backup entries 不會被覆寫。
+`enable-user` 保留為 `install-user` 的 compatibility alias。首次 User install 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`CAPSULENV_MODULE_ROOT`、`SSH_AUTH_SOCK`、tool cache/home variables 及自訂 variables；`restore-user` 會還原「原值」或「原本不存在」，再把 mode 記回 ShellOnly。`PSModulePath` 刻意保持 session-only，避免持久 User scope 值改變 Windows PowerShell／PowerShell 7 的預設 module-path construction。升級或搬位後可用 `capsulenv.cmd install-user --force` 延伸舊 backup 並重套新值，既有 backup entries 不會被覆寫。
+
+ShellOnly 保證的是 **Capsulenv 自己的 activation/bootstrap 不接管 host Scoop**；它並不是把 Scoop package lifecycle 虛擬化。若使用者在 capsule shell 內明確執行會建立 shortcut、寫 `env_add_path`／`env_set` 等 manifest action 的原生 Scoop install/reset，仍依 Scoop 本身的 Windows User-scope 語意執行。
 
 ## 驗證
 

@@ -153,3 +153,18 @@ v0.7.2 將 build/install 驗證改為真正由 PowerShell runtime 執行，而�
 Scoop custom commands are dispatched by collecting trailing CLI tokens into a `string[]` and array-splatting that array into `scoop-<command>.ps1`. PowerShell array splatting binds those values positionally; a string value such as `-Hook` is not reinterpreted as a named parameter token. Earlier capsulenv releases therefore invoked the temporary lifecycle replay command with an empty mandatory `Hook` parameter during `init`/`rehydrate`.
 
 v0.8.1 makes the replay protocol explicitly positional: `scoop <temporary-command> post_install <app...>`. The runner binds `Hook` at position 0 and the remaining app names from position 1 onward. Regression coverage executes the replay runner through the same `string[]` array-splat semantics used by Scoop.
+
+## v0.9.0 self-bootstrap and installation modes
+
+v0.9.0 將配置 schema 升至 7，加入 `Scoop.Bootstrap`。Capsulenv 不再要求 source/release 以 submodule 或預先複製的方式攜帶 Scoop；fresh capsule 缺少 Scoop core／Main 時會優先以 shallow single-branch Git clone 建立 live repository，Git 不可用或 clone 失敗時再使用 archive fallback。`scoop\config.json` 會在第一次載入 Scoop 前建立，隔離 `%USERPROFILE%\.config\scoop\config.json`。
+
+安裝 ownership 現在明確分成兩個 mode：
+
+```bat
+install.cmd D:\Portable\capsulenv              rem ShellOnly，預設
+install.cmd D:\Portable\capsulenv -Mode User   rem 註冊為目前 user 的 Scoop
+```
+
+`ShellOnly` 的 Capsulenv activation/bootstrap 只改 process scope 並只管理 capsule 內的 Scoop，不接管 host Scoop。`User` mode 延續舊 `enable-user` 的 reversible backup contract；主要命令改為 `capsulenv.cmd install-user`，而 `enable-user` 仍可使用。`restore-user` 精確還原原 User environment 並回到 ShellOnly。
+
+升級 v0.8.x 時不需要先 restore：若 `.capsulenv\user-environment-backup.json` 已存在，v0.9.0 會把既有安裝推斷為 User mode；沒有 backup 的既有／fresh installation 則視為 ShellOnly。之後不帶 `-Mode` 重跑 installer 會保留目前 mode，避免 update 意外改變 machine-user ownership。
