@@ -110,7 +110,7 @@ capsulenv.cmd cache unlink cargo-target D:\src\project
 capsulenv.cmd cache unlink cargo-target D:\src\project --restore
 ```
 
-Windows 不支援 directory hardlink，因此 directory profile 預設使用不需 Administrator 的 junction；`--symlink` 可在 Developer Mode／elevated 環境使用。框架亦支援 `Kind = 'File'` 配合 `LinkType = 'HardLink'` 的自訂 profile。專案 ID 對 capsule 內的 source path 使用相對路徑計算，所以把 repository 放在 `workspace/` 後，整個 capsule與 source 一起搬移仍會找到同一份 project cache。capsule 外的專案則以 absolute path 識別；專案本身搬位後會形成新的 cache ID。File hardlink 只適合位於同一 volume 的明確檔案 profile，建立後會用 Windows file identity 驗證，而不是只比較檔名。
+Windows 不支援 directory hardlink，因此 directory profile 預設使用不需 Administrator 的 junction；`--symlink` 可在 Developer Mode／elevated 環境使用。框架亦支援 `Kind = 'File'` 配合 `LinkType = 'HardLink'` 的自訂 profile。專案 ID 對 capsule 內的 source path 使用相對路徑計算，所以把 repository 放在 `workspace/` 後，整個 capsule與 source 一起搬移仍會找到同一份 project cache。capsule 外的專案則以 absolute path 識別；專案本身搬位後會形成新的 cache ID。File hardlink 只適合同一 volume 的明確檔案 profile；正常狀態以 Windows file identity 驗證。Registry 另保存 length + SHA-256 ownership fingerprint，使整個 capsule 被跨 drive「copy + delete」而令 hardlink 退化成兩份普通檔案時仍能安全判斷是否可重建。
 
 建立 link 時會在 `.capsulenv/project-cache-links.json` 登記 capsule-relative project reference、link type 與最後一次 target。Junction／absolute symlink 搬移後仍可能保存舊 target，因此 `shell`、`init` 會自動嘗試重接；也可手動執行：
 
@@ -123,15 +123,14 @@ capsulenv.cmd cache repair --strict
 
 若 portable `scoop-global/apps` 內已有應用程式，完整 `rehydrate` 必須在 elevated terminal 執行。Scoop 對非 elevated global reset 只會略過 app；capsulenv 會在 reset 前拒絕繼續，避免 links 尚未重建便錯誤保存新的 relocation fingerprint。
 
-Scoop 原生 `reset` 會重建 app 的 `current` junction、shims、shortcuts、environment entries 與 `persist` links。它不會重跑 manifest 的 `pre_install` / `post_install`，所以 capsulenv 的 rehydrate 流程為：
+Scoop 原生 `reset` 會重建 app 的 `current` junction、shims、Start Menu shortcuts、User/Machine environment entries 與 `persist` links，所以它不能直接作為 ShellOnly relocation primitive。Capsulenv 現在依 mode 分流：
 
-1. 執行 `scoop reset *`。
-2. 從 portable local／global root 中每個已安裝版本自己的 `manifest.json` 與 `install.json` 讀取 lifecycle。
-3. 只重放 `config/capsulenv.psd1` 明確列出的 hooks。
-4. 對 `Scoop.RelocationRepairs` 明確列出的 persisted UTF text／JSON 檔案，交易式替換舊 capsule、Scoop local/global root。
-5. 全部成功後才記錄目前 root、computer 與 user；任一步失敗都不會把搬遷標記為完成。
+1. **ShellOnly** 使用 capsule-local temporary Scoop command，只執行 `link_current`、`create_shims`、`unlink_persist_data`／`persist_data` 與 persist permission；不建立 Start Menu shortcut、不寫 User/Machine environment，也不 replay manifest hook。
+2. **User** 使用原生 `scoop reset *`，因為此 mode 已明確把 capsule 當成該 user 的 Scoop；其後才可 replay `config/capsulenv.psd1` allow-list 中的 hooks。
+3. 兩種 mode 都可對 `Scoop.RelocationRepairs` allow-list 中的 persisted UTF text／JSON 做交易式 OldRoot → NewRoot 修復，並修復 tool/project links。
+4. 全部成功後才保存 relocation fingerprint。User mode 同時刷新持久 `SCOOP`／`SCOOP_GLOBAL`／managed PATH，移除 mode state 記錄的舊 drive path。
 
-預設只重放 Firefox／Zen 類 manifest 的 `post_install`，用來重新註冊 Scoop profile。`pre_install` 預設完全不重放，因為不少 manifest 會在其中 rename installer、搬檔或做一次性 migration，第二次執行並不安全。
+`capsulenv.cmd hooks ...` 在 ShellOnly 直接拒絕執行；這是刻意的，因為 manifest lifecycle code 並沒有「只許寫 capsule」的 contract。`pre_install` 在 User mode仍需明確呼叫，因為不少 manifest 會做一次性 transformation。
 
 ## PowerShell bootstrap
 
@@ -287,9 +286,9 @@ Capsulenv 不會 recursive scan `scoop\persist`，也不會碰 SQLite、binary d
 
 ## Firefox 與 Zen Browser
 
-capsulenv 不建立、複製或搬動 browser profile；profile 仍由 Scoop `persist` 保存。搬移時，預設 allow-list 只會修復 profile/distribution 中幾個已知 text/JSON 檔案內的舊 absolute root，然後重跑 manifest `post_install` 以重新註冊 Scoop profile。
+capsulenv 不建立、複製或搬動 browser profile；profile 仍由 Scoop `persist` 保存。搬移時，預設 allow-list 只修復 profile/distribution 中幾個已知 text/JSON 檔案內的舊 absolute root。User mode 可再 replay manifest `post_install` 做正常 user profile registration；ShellOnly 不 replay，避免修改 host browser `profiles.ini` 等 user integration。
 
-啟動器只找出 Scoop-installed executable 並正常啟動：
+Capsulenv browser command 會明確以 `-profile <capsule persist profile>` 啟動，不依賴 host default profile；ShellOnly 另外加入 `-no-remote`，避免命令被既有 host Firefox/Zen process 接走：
 
 ```bat
 capsulenv.cmd firefox
@@ -310,7 +309,7 @@ distribution\policies.json
 
 缺失檔案會略過；Firefox／Zen 正在執行時會拒絕修改。若不希望 capsulenv 改寫任何 browser persisted text，可在 local config 設定 `RelocationRepairs = @{}`，或使用 `rehydrate --skip-persist-repairs`。
 
-若 profile registration 因搬移而失效，執行 `rehydrate`；不要另建 capsulenv profile store。
+User mode 若 profile registration 因搬移而失效可執行 `rehydrate`；ShellOnly 的 Capsulenv launcher 不依賴該 registration。不要另建第二份 capsulenv profile store。
 
 ## Bitwarden SSH Agent
 
@@ -336,13 +335,12 @@ capsulenv.cmd bitwarden setup remember-until-lock
 
 完整 setup 會：
 
-1. 關閉 Bitwarden，並對實際 Scoop app 執行原生 `scoop reset <app>`，先重建 `current` 與 `persist` link。
-2. 在 Bitwarden persisted settings 啟用 SSH Agent。
-3. 對已出現在 `data.json` 的所有帳戶套用授權策略；未登入過時，Bitwarden 的預設值仍是 `always`。
-4. 設定 capsulenv session 的 `SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent`。
-5. 備份後令 Git 使用 Windows 內建 Microsoft OpenSSH。
-6. 若目前 terminal 已 elevated，備份後停用 Windows `ssh-agent` service。
-7. 重新啟動 Scoop-installed Bitwarden。
+1. 關閉 Bitwarden；依目前 mode 修復該 Scoop app 的 `current`／persist link（ShellOnly 使用 portable reset，User 使用 native reset）。
+2. 只在 capsule 的 Scoop-persisted `data.json` 啟用 SSH Agent 並設定授權策略。
+3. `SSH_AUTH_SOCK=\\.\pipe\openssh-ssh-agent` 永遠先在 Capsulenv process 生效；User mode亦可由 user-environment ownership 持久化。
+4. **ShellOnly** 用 `GIT_CONFIG_COUNT`／`GIT_CONFIG_KEY_n`／`GIT_CONFIG_VALUE_n` 建立 process-only Git OpenSSH overlay，不寫 `~/.gitconfig`，且不改 Windows `ssh-agent` service。
+5. **User** 才備份並寫 `git config --global core.sshCommand`／`gpg.ssh.program`；若 elevated，才可備份後停用 Windows `ssh-agent` service。
+6. 重新啟動 Scoop-installed Bitwarden。Capsulenv 只會識別／停止位於本 capsule `scoop`／`scoop-global` app roots 的 Bitwarden process；若同名但位於 host 安裝位置的 Bitwarden 正在執行，setup/start 會拒絕繼續，絕不借用或終止它。
 
 可略過個別 host integration：
 
@@ -401,9 +399,16 @@ capsulenv.cmd install-user
 capsulenv.cmd restore-user
 ```
 
-`enable-user` 保留為 `install-user` 的 compatibility alias。首次 User install 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`PATH`、`CAPSULENV_MODULE_ROOT`、`SSH_AUTH_SOCK`、tool cache/home variables 及自訂 variables；`restore-user` 會還原「原值」或「原本不存在」，再把 mode 記回 ShellOnly。`PSModulePath` 刻意保持 session-only，避免持久 User scope 值改變 Windows PowerShell／PowerShell 7 的預設 module-path construction。升級或搬位後可用 `capsulenv.cmd install-user --force` 延伸舊 backup 並重套新值，既有 backup entries 不會被覆寫。
+`enable-user` 保留為 `install-user` 的 compatibility alias。首次 User install 會精確備份原有 `SCOOP`、`SCOOP_GLOBAL`、`SCOOP_CACHE`、`PATH`、`CAPSULENV_MODULE_ROOT`、`SSH_AUTH_SOCK`、tool cache/home variables、自訂 variables，以及 Scoop `use_isolated_path` 指定的 path variable（如 `SCOOP_PATH`）；`restore-user` 會還原「原值」或「原本不存在」，再把 mode 記回 ShellOnly。`PSModulePath` 刻意保持 session-only。若 Capsulenv 的 User-mode Bitwarden integration 曾改過 global Git SSH 設定或 Windows `ssh-agent` service，`restore-user` 也會先利用既有 backup 還原它們；service 有待還原時需以 elevated terminal 執行。User mode state 另外記錄 Capsulenv 自己 prepend 的 PATH entries；整個 capsule 從 `F:` 搬到 `G:` 時，rehydrate 除了移除舊 managed entries，亦只針對 relocation context 已知的舊 `ScoopRoot`／`ScoopGlobalRoot` 清掉 manifest app PATH（或 isolated Scoop path variable）中的舊 drive entries，再由 native reset 加回新位置。
 
-ShellOnly 保證的是 **Capsulenv 自己的 activation/bootstrap 不接管 host Scoop**；它並不是把 Scoop package lifecycle 虛擬化。若使用者在 capsule shell 內明確執行會建立 shortcut、寫 `env_add_path`／`env_set` 等 manifest action 的原生 Scoop install/reset，仍依 Scoop 本身的 Windows User-scope 語意執行。
+這個 reversible contract 僅涵蓋 **Capsulenv 自己記錄並擁有的 integration**。在 User mode 由 Scoop manifest 建立的 Start Menu shortcuts、manifest-specific environment keys 或其他 package lifecycle side effects 屬 Scoop/package ownership；Capsulenv 沒有足夠原始狀態可安全地在 `restore-user` 時通用還原，因此不會猜測或刪除它們。
+從既有 ShellOnly capsule 執行 `install-user` 時亦不會為了補齊 UI integration 而無條件 `scoop reset *`；它先把 **Scoop root/shims/environment ownership** 切成 User。之後新 `scoop install` 依原生 User semantics 工作；若要把既有 apps 的 shortcuts/env 明確 materialize，可在 User mode 主動執行 `capsulenv.cmd reset`。真正發生 relocation 時則會自動 native reset，因為既有 User integration 的 absolute targets 已需要修復。
+
+Scoop local 與 portable-global shim directories 都會加入 Capsulenv environment plan。ShellOnly 只加入 process PATH；User 才持久加入 User PATH。為避免 capsule 缺少某個 command 時 PATH fall-through 到 host Scoop，session activation 會從**當前 process PATH**移除可由 inherited/User/Machine `SCOOP`／`SCOOP_GLOBAL`（以及 Windows 預設 Scoop roots）證明屬於其他 Scoop installation 的 shim directories；User takeover 也會暫時從 User PATH 移除原 Scoop shims，而 `restore-user` 依完整 PATH backup 精確放回。Capsulenv 會把 Scoop 自己的 `scoop.ps1`／`scoop.cmd` 正規化為以 shim 位置計算的 relative launcher；app `current` junction、app shims 與 persist links 則在 relocation reset 時重建，因此不依賴原 drive letter。`SCOOP_CACHE` 也由 mode-aware environment plan 明確指向 capsule 的 `scoop\cache`，避免 portable `config.json` 中舊的 absolute `cache_path` 在換 drive 後接管 cache。
+
+Project-cache junction／absolute symlink 仍以 registry 的上一個 target 驗證 ownership 才重建。File hardlink 不能跨 volume：registry 現在額外保存 managed file 的 length + SHA-256 fingerprint；若跨 drive copy 把原 hardlink 變成兩份普通檔案，只有兩份內容仍與記錄 fingerprint 相同且新位置仍在同一 volume 時才會重新 hardlink。兩份內容已分岔、沒有舊 fingerprint、或新 link/store 位於不同 volume時一律拒絕覆蓋。
+
+ShellOnly 保證的是 **Capsulenv 自己的 activation/bootstrap/rehydrate/Bitwarden integration 不接管 host Scoop 或持久 user integration**；它不可能禁止使用者在 shell 中親自執行任意會改系統的程式。若直接呼叫 upstream `scoop install/reset`，manifest 本身仍可能依 Scoop 原生語意建立 User shortcut 或 env；要維持 isolation，使用 Capsulenv 的 mode-aware `reset`/`rehydrate`，並把 package action 本身視為顯式 side effect。
 
 ## 驗證
 
@@ -413,4 +418,4 @@ ShellOnly 保證的是 **Capsulenv 自己的 activation/bootstrap 不接管 host
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-測試會合併模組、用 PowerShell AST 解析所有 scripts，檢查 exports、schema、environment plan、relocation replacement boundary、tool-storage plan、project-link contracts、prebuilt runtime、transactional installer、persisted-file repair 與 lifecycle ownership；不會執行真實 `scoop reset`、hooks、browser、service 或 Git global changes。
+Pester 6.1.0+ 是唯一測試入口；repo 不再保留第二套 smoke runner。測試會合併模組、解析 scripts，並驗證 shallow bootstrap、ShellOnly/User ownership、local/global shims、mode-aware reset/hook boundary、Git process overlay、browser profile binding、hardlink relocation ownership、prebuilt runtime 與 transactional installer；不會在測試 host 上執行真實 browser/service 或 Git global changes。

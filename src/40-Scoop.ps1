@@ -60,11 +60,21 @@ function Reset-CapsulenvScoop {
     [CmdletBinding()]
     param(
         [string[]]$Apps = @('*'),
-        [switch]$Quiet
+        [switch]$Quiet,
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
     )
 
+    if ($IntegrationMode -eq 'ShellOnly') {
+        if (-not $Quiet) {
+            Write-CapsulenvMessage -Level Info -Message 'Rebuilding capsule-owned Scoop current links, shims, and persist links without touching Start Menu or user environment...'
+        }
+        Invoke-CapsulenvPortableScoopReset -Apps $Apps
+        return $true
+    }
+
     if (-not $Quiet) {
-        Write-CapsulenvMessage -Level Info -Message 'Rebuilding Scoop current links, shims, shortcuts, environment entries, and persist links...'
+        Write-CapsulenvMessage -Level Info -Message 'Rebuilding Scoop current links, shims, shortcuts, environment entries, and persist links for the installed user...'
     }
     $arguments = @('reset') + @($Apps)
     [void](Invoke-CapsulenvScoopCommand -Arguments $arguments)
@@ -79,13 +89,23 @@ function Get-CapsulenvScoopReplayScriptPath {
     return Join-Path (Join-Path $context.Root 'scripts') 'scoop-capsulenv-replay.ps1'
 }
 
-function Install-CapsulenvScoopReplayCommand {
+function Get-CapsulenvScoopPortableResetScriptPath {
     [CmdletBinding()]
     param()
 
-    $source = Get-CapsulenvScoopReplayScriptPath
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-        throw "Missing Scoop lifecycle runner: $source"
+    $context = Get-CapsulenvContext
+    return Join-Path (Join-Path $context.Root 'scripts') 'scoop-capsulenv-portable-reset.ps1'
+}
+
+function Install-CapsulenvTemporaryScoopCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Prefix
+    )
+
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+        throw "Missing Scoop helper command: $Source"
     }
     if (-not (Get-CapsulenvScoopExecutable)) {
         throw 'Scoop is not installed in the configured portable root.'
@@ -94,12 +114,39 @@ function Install-CapsulenvScoopReplayCommand {
     $shims = Join-Path (Get-CapsulenvScoopRoot) 'shims'
     [void](New-Item -ItemType Directory -Path $shims -Force)
     $suffix = ('{0}-{1}' -f $PID, ([Guid]::NewGuid().ToString('N').Substring(0, 8)))
-    $commandName = "capsulenv-replay-$suffix"
+    $commandName = "capsulenv-$Prefix-$suffix"
     $target = Join-Path $shims ("scoop-{0}.ps1" -f $commandName)
-    Copy-Item -LiteralPath $source -Destination $target -ErrorAction Stop
+    Copy-Item -LiteralPath $Source -Destination $target -ErrorAction Stop
     return [pscustomobject]@{
         Command = $commandName
         Path = $target
+    }
+}
+
+function Install-CapsulenvScoopReplayCommand {
+    [CmdletBinding()]
+    param()
+
+    return Install-CapsulenvTemporaryScoopCommand `
+        -Source (Get-CapsulenvScoopReplayScriptPath) `
+        -Prefix 'replay'
+}
+
+function Invoke-CapsulenvPortableScoopReset {
+    [CmdletBinding()]
+    param([string[]]$Apps = @('*'))
+
+    [void](Set-CapsulenvSessionEnvironment)
+    $temporaryCommand = Install-CapsulenvTemporaryScoopCommand `
+        -Source (Get-CapsulenvScoopPortableResetScriptPath) `
+        -Prefix 'portable-reset'
+    try {
+        $arguments = @($temporaryCommand.Command) + @($Apps)
+        [void](Invoke-CapsulenvScoopCommand -Arguments $arguments)
+    } finally {
+        if (Test-Path -LiteralPath $temporaryCommand.Path -PathType Leaf) {
+            Remove-Item -LiteralPath $temporaryCommand.Path -Force
+        }
     }
 }
 
@@ -114,6 +161,9 @@ function Invoke-CapsulenvScoopHookReplay {
 
     if ($Apps.Count -eq 0) {
         return
+    }
+    if ((Get-CapsulenvInstallMode) -ne 'User') {
+        throw 'Scoop lifecycle hook replay is disabled in ShellOnly mode because manifest hooks may write host user profile or registry state. Switch to User mode to replay hooks.'
     }
 
     [void](Set-CapsulenvSessionEnvironment)
@@ -304,15 +354,25 @@ function Invoke-CapsulenvScoopRehydrate {
         [switch]$SkipHooks,
         [switch]$SkipPersistRepairs,
         [switch]$SkipToolRepairs,
-        [switch]$StrictToolRepairs
+        [switch]$StrictToolRepairs,
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
     )
 
     $relocationContext = Get-CapsulenvRelocationContext
     [void](Set-CapsulenvSessionEnvironment)
+    if ($IntegrationMode -eq 'User') {
+        $environmentPlan = Get-CapsulenvEnvironmentPlan
+        $scoopPathEnvironmentVariable = Get-CapsulenvScoopPathEnvironmentVariable
+        Ensure-CapsulenvUserEnvironmentBackupEntries `
+            -Names (@($environmentPlan.Variables.Keys) + @('PATH', $scoopPathEnvironmentVariable))
+    }
     Assert-CapsulenvGlobalScoopResetAccess
-    [void](Reset-CapsulenvScoop)
-    if (-not $SkipHooks) {
+    [void](Reset-CapsulenvScoop -IntegrationMode $IntegrationMode)
+    if (-not $SkipHooks -and $IntegrationMode -eq 'User') {
         Invoke-CapsulenvConfiguredHookReplay
+    } elseif (-not $SkipHooks -and $IntegrationMode -eq 'ShellOnly') {
+        Write-CapsulenvMessage -Level Detail -Message 'ShellOnly mode skips manifest lifecycle replay because hooks may modify host user profile/registry state.'
     }
 
     $repairResult = $null
@@ -335,8 +395,11 @@ function Invoke-CapsulenvScoopRehydrate {
             -Strict:$StrictToolRepairs)
     }
 
+    if ($IntegrationMode -eq 'User') {
+        [void](Sync-CapsulenvUserEnvironment -RelocationContext $relocationContext)
+    }
     Save-CapsulenvRehydrationState -RelocationContext $relocationContext -PersistRepairResult $repairResult
-    Write-CapsulenvMessage -Level Success -Message 'Portable Scoop rehydration completed.'
+    Write-CapsulenvMessage -Level Success -Message "Portable Scoop rehydration completed in $IntegrationMode mode."
 }
 
 function Find-CapsulenvExecutable {

@@ -52,16 +52,38 @@ function Invoke-CapsulenvDoctor {
     $modeDetail = if ($installMode -eq 'User') {
         try {
             $userScoop = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
-            $modePassed = [System.StringComparer]::OrdinalIgnoreCase.Equals(
-                [string]$userScoop,
-                [string]$scoopRoot
+            $userGlobal = [Environment]::GetEnvironmentVariable('SCOOP_GLOBAL', 'User')
+            $userCache = [Environment]::GetEnvironmentVariable('SCOOP_CACHE', 'User')
+            $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+            $environmentPlanForMode = Get-CapsulenvEnvironmentPlan
+            $missingManagedPath = @(
+                $environmentPlanForMode.PathEntries | Where-Object {
+                    $entry = [regex]::Escape(([string]$_).TrimEnd('\', '/'))
+                    -not ([string]$userPath -match "(?i)(^|;)$entry(?=;|$)")
+                }
             )
-            "User; registered SCOOP=$userScoop"
+            $modePassed = (
+                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$userScoop, [string]$scoopRoot) -and
+                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$userGlobal, [string]$scoopGlobalRoot) -and
+                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$userCache, [string](Join-Path $scoopRoot 'cache')) -and
+                $missingManagedPath.Count -eq 0
+            )
+            "User; SCOOP=$userScoop; SCOOP_GLOBAL=$userGlobal; SCOOP_CACHE=$userCache; missing managed PATH entries=$($missingManagedPath.Count)"
         } catch {
             'User; user environment could not be inspected on this host'
         }
     } else {
-        'ShellOnly; capsulenv does not own the persistent user Scoop environment'
+        try {
+            $persistentScoop = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+            $modePassed = -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$persistentScoop, [string]$scoopRoot)
+            if ($modePassed) {
+                'ShellOnly; capsule Scoop is process-scoped and persistent user Scoop ownership is untouched'
+            } else {
+                'ShellOnly state conflicts with a persistent User SCOOP pointing at this capsule; run restore-user or install-user to resolve ownership'
+            }
+        } catch {
+            'ShellOnly; persistent user environment could not be inspected on this host'
+        }
     }
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Capsulenv install mode' `
@@ -180,6 +202,17 @@ function Invoke-CapsulenvDoctor {
             -Detail $(if ($bitwarden) { $bitwarden } else { 'Not found' })))
 
         if ($bitwarden) {
+            $bitwardenProcesses = @(Get-CapsulenvBitwardenProcesses -IncludeForeign)
+            $foreignBitwardenProcesses = @($bitwardenProcesses | Where-Object { -not $_.CapsuleOwned })
+            $results.Add((New-CapsulenvCheckResult `
+                -Name 'Bitwarden process ownership' `
+                -Passed ($foreignBitwardenProcesses.Count -eq 0) `
+                -Importance Optional `
+                -Detail $(if ($foreignBitwardenProcesses.Count -eq 0) {
+                    "$(@($bitwardenProcesses | Where-Object { $_.CapsuleOwned }).Count) capsule-owned process(es); no foreign instance"
+                } else {
+                    "$($foreignBitwardenProcesses.Count) foreign Bitwarden process(es); Capsulenv start/setup will refuse while they are running"
+                })))
             try {
                 $bitwardenStatus = Get-CapsulenvBitwardenSshAgentStatus
                 $results.Add((New-CapsulenvCheckResult `
@@ -187,6 +220,16 @@ function Invoke-CapsulenvDoctor {
                     -Passed ([bool]$bitwardenStatus.DesktopSettingEnabled) `
                     -Importance Optional `
                     -Detail ("Enabled={0}; Authorization={1}" -f $bitwardenStatus.DesktopSettingEnabled, $bitwardenStatus.Authorization)))
+                $gitBoundaryPassed = if ($installMode -eq 'ShellOnly') {
+                    -not [bool]$bitwardenStatus.GitGlobalManaged
+                } else {
+                    -not [bool]$bitwardenStatus.GitSessionOverlayActive
+                }
+                $results.Add((New-CapsulenvCheckResult `
+                    -Name 'Bitwarden Git integration scope' `
+                    -Passed $gitBoundaryPassed `
+                    -Importance Optional `
+                    -Detail ("Mode={0}; Scope={1}; SessionIntent={2}; SessionOverlayActive={3}; UserGlobalManaged={4}" -f $installMode, $bitwardenStatus.GitConfigScope, $bitwardenStatus.GitSessionIntent, $bitwardenStatus.GitSessionOverlayActive, $bitwardenStatus.GitGlobalManaged)))
             } catch {
                 $results.Add((New-CapsulenvCheckResult `
                     -Name 'Bitwarden SSH Agent setting' `
@@ -205,9 +248,21 @@ function Invoke-CapsulenvDoctor {
             } else {
                 "Status=$($service.Status); StartMode=$startMode"
             }
-            $servicePassed = (-not $service) -or (
-                $service.Status -eq 'Stopped' -and $startMode -eq 'Disabled'
-            )
+            $serviceOverrideRecorded = Test-Path -LiteralPath (Get-CapsulenvSshAgentServiceStatePath) -PathType Leaf
+            $servicePassed = if ($installMode -eq 'ShellOnly') {
+                -not $serviceOverrideRecorded
+            } elseif (-not $serviceOverrideRecorded) {
+                $true
+            } else {
+                (-not $service) -or (
+                    $service.Status -eq 'Stopped' -and $startMode -eq 'Disabled'
+                )
+            }
+            if ($installMode -eq 'ShellOnly') {
+                $serviceDetail = "ShellOnly must not own a host service override; recorded Capsulenv override=$serviceOverrideRecorded; $serviceDetail"
+            } elseif (-not $serviceOverrideRecorded) {
+                $serviceDetail = "User mode permits but does not require a service override; none recorded; $serviceDetail"
+            }
             $results.Add((New-CapsulenvCheckResult `
                 -Name 'Windows ssh-agent conflict' `
                 -Passed $servicePassed `
@@ -227,6 +282,12 @@ function Invoke-CapsulenvDoctor {
             -Passed ($null -ne $executable) `
             -Importance Optional `
             -Detail $(if ($executable) { $executable } else { 'Not found' })))
+        $profile = Get-CapsulenvBrowserProfilePath -Browser $browser
+        $results.Add((New-CapsulenvCheckResult `
+            -Name "$browser capsule profile" `
+            -Passed ($null -ne $profile) `
+            -Importance Optional `
+            -Detail $(if ($profile) { $profile } else { 'No Scoop-persisted profile found' })))
     }
 
     $results | Format-Table -AutoSize | Out-Host

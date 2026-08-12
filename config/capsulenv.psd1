@@ -157,6 +157,12 @@
                 'scoop\apps\firefox\current\firefox.exe'
                 'scoop\apps\firefox-esr\current\firefox.exe'
             )
+            ProfileCandidates = @(
+                'scoop\persist\firefox\profile'
+                'scoop\persist\firefox-esr\profile'
+            )
+            ProfileArgument = '-profile'
+            ShellOnlyArguments = @('-no-remote')
         }
 
         Zen = @{
@@ -167,6 +173,13 @@
                 'scoop\apps\zen-browser-bin\current\zen.exe'
                 'scoop\apps\zen\current\zen.exe'
             )
+            ProfileCandidates = @(
+                'scoop\persist\zen-browser\profile'
+                'scoop\persist\zen-browser-bin\profile'
+                'scoop\persist\zen\profile'
+            )
+            ProfileArgument = '-profile'
+            ShellOnlyArguments = @('-no-remote')
         }
     }
 }

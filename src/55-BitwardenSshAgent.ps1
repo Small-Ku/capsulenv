@@ -702,8 +702,8 @@ function Get-CapsulenvBitwardenSshAgentStatus {
     $gitSigning = $null
     try {
         $git = Get-CapsulenvGitCommand
-        $gitCore = (& $git config --global --get core.sshCommand 2>$null) -join [Environment]::NewLine
-        $gitSigning = (& $git config --global --get gpg.ssh.program 2>$null) -join [Environment]::NewLine
+        $gitCore = (& $git config --get core.sshCommand 2>$null) -join [Environment]::NewLine
+        $gitSigning = (& $git config --get gpg.ssh.program 2>$null) -join [Environment]::NewLine
     } catch {
         $gitCore = 'Git not found'
         $gitSigning = 'Git not found'
@@ -718,15 +718,25 @@ function Get-CapsulenvBitwardenSshAgentStatus {
         $authorization = @('always (Bitwarden default)')
     }
 
+    $gitSessionIntent = Test-CapsulenvGitOpenSshSessionConfigured
+    $gitSessionOverlayActive = -not [string]::IsNullOrWhiteSpace(
+        [Environment]::GetEnvironmentVariable('CAPSULENV_GIT_CONFIG_BASE_COUNT', 'Process')
+    )
+    $gitGlobalManaged = Test-Path -LiteralPath (Get-CapsulenvGitConfigBackupPath) -PathType Leaf
+
     return [pscustomobject]@{
         DesktopSettingEnabled = $enabledValue
         Authorization = ($authorization -join ', ')
         StatePath = $statePath
-        BitwardenRunning = ($null -ne (Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue))
+        BitwardenRunning = (@(Get-CapsulenvBitwardenProcesses).Count -gt 0)
         SshAuthSock = [Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process')
         WindowsSshAgent = $serviceDetail
         GitSshCommand = $gitCore
         GitSigningProgram = $gitSigning
+        GitSessionIntent = $gitSessionIntent
+        GitSessionOverlayActive = $gitSessionOverlayActive
+        GitGlobalManaged = $gitGlobalManaged
+        GitConfigScope = $(if ($gitSessionOverlayActive -and $gitGlobalManaged) { 'SessionOverlay+UserGlobal' } elseif ($gitSessionOverlayActive) { 'SessionOverlay' } elseif ($gitGlobalManaged) { 'UserGlobal' } else { 'Inherited' })
         SettingsBackup = (Test-Path -LiteralPath (Get-CapsulenvBitwardenDesktopSettingsBackupPath) -PathType Leaf)
     }
 }
@@ -755,7 +765,9 @@ function Invoke-CapsulenvBitwardenSshAgentSetup {
         }
 
         if (-not $SkipWindowsService) {
-            if (Test-CapsulenvAdministrator) {
+            if ((Get-CapsulenvInstallMode) -eq 'ShellOnly') {
+                Write-CapsulenvMessage -Level Detail -Message 'ShellOnly mode leaves the Windows ssh-agent service unchanged.'
+            } elseif (Test-CapsulenvAdministrator) {
                 Disable-CapsulenvWindowsSshAgent -Confirm:$false
             } else {
                 Write-CapsulenvMessage -Level Warning -Message 'Windows ssh-agent was not disabled because this terminal is not elevated. Rerun `capsulenv.cmd bitwarden disable-windows-agent` as Administrator.'

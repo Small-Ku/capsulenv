@@ -207,7 +207,7 @@ try {
         Version = [string]$build.Version
         InstalledAtUtc = [DateTime]::UtcNow.ToString('o')
         SourceCommit = $build.SourceCommit
-        InstallMode = $effectiveMode
+        InstallMode = $currentMode
         ManagedFiles = $newManagedFiles
     }
     $temporaryMarker = Join-Path $destinationRoot ('.capsulenv-install-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
@@ -256,9 +256,10 @@ try {
     }
 }
 
-$previousCapsulenvRoot = $env:CAPSULENV_ROOT
-$previousScoop = $env:SCOOP
-$previousScoopGlobal = $env:SCOOP_GLOBAL
+$previousProcessEnvironment = @{}
+foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) {
+    $previousProcessEnvironment[[string]$entry.Key] = [string]$entry.Value
+}
 $previousCapsulenvModules = @(Get-Module Capsulenv)
 $installedModule = Join-Path (Join-Path (Join-Path $destinationRoot 'modules') 'Capsulenv') 'Capsulenv.psd1'
 try {
@@ -284,6 +285,21 @@ try {
     } else {
         Set-CapsulenvInstallMode -Mode ShellOnly
     }
+
+    # Commit the requested ownership mode to install metadata only after the
+    # mode transition itself succeeded. If restore-user/install-user fails,
+    # the marker therefore continues to describe the still-effective mode.
+    $committedMarker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+    $committedMarker.InstallMode = $effectiveMode
+    $temporaryModeMarker = Join-Path $destinationRoot ('.capsulenv-mode-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
+    try {
+        $committedMarker | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporaryModeMarker -Encoding UTF8
+        Copy-CapsulenvInstallFile -Source $temporaryModeMarker -Destination $markerPath
+    } finally {
+        if (Test-Path -LiteralPath $temporaryModeMarker -PathType Leaf) {
+            Remove-Item -LiteralPath $temporaryModeMarker -Force -ErrorAction SilentlyContinue
+        }
+    }
 } finally {
     Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     foreach ($previousModule in $previousCapsulenvModules) {
@@ -294,9 +310,15 @@ try {
             Import-Module $previousModule.Path -Force
         }
     }
-    $env:CAPSULENV_ROOT = $previousCapsulenvRoot
-    $env:SCOOP = $previousScoop
-    $env:SCOOP_GLOBAL = $previousScoopGlobal
+    $currentProcessEnvironment = [Environment]::GetEnvironmentVariables('Process')
+    foreach ($name in @($currentProcessEnvironment.Keys)) {
+        if (-not $previousProcessEnvironment.ContainsKey([string]$name)) {
+            [Environment]::SetEnvironmentVariable([string]$name, $null, 'Process')
+        }
+    }
+    foreach ($name in $previousProcessEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable([string]$name, [string]$previousProcessEnvironment[$name], 'Process')
+    }
 }
 
 $installResult

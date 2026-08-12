@@ -59,6 +59,7 @@ try {
         @{ Source = 'config/capsulenv.local.psd1.example'; Destination = 'config/capsulenv.local.psd1.example' }
         @{ Source = 'scripts/Invoke-Capsulenv.ps1'; Destination = 'scripts/Invoke-Capsulenv.ps1' }
         @{ Source = 'scripts/scoop-capsulenv-replay.ps1'; Destination = 'scripts/scoop-capsulenv-replay.ps1' }
+        @{ Source = 'scripts/scoop-capsulenv-portable-reset.ps1'; Destination = 'scripts/scoop-capsulenv-portable-reset.ps1' }
         @{ Source = 'docs/MIGRATION.md'; Destination = 'docs/MIGRATION.md' }
         @{ Source = 'docs/INSTALL.md'; Destination = 'docs/INSTALL.md' }
         @{ Source = 'docs/TOOLS.md'; Destination = 'docs/TOOLS.md' }

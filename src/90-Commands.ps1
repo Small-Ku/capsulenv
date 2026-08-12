@@ -19,26 +19,28 @@ capsulenv commands
 
   capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
   capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
-      Run native `scoop reset *`, replay configured safe lifecycle hooks,
-      repair allow-listed persisted text settings, then repair tool-native
-      launchers and registered environments after relocation.
+      Repair relocation according to install mode. ShellOnly rebuilds only
+      capsule-owned current/shim/persist links and never replays manifest hooks.
+      User mode uses native Scoop reset and may replay configured hooks.
 
   capsulenv.cmd repair-persist [app...] [--dry-run] [--last]
       Repair only explicitly configured persisted files. --last reuses the
       most recently completed OldRoot -> NewRoot relocation context.
 
   capsulenv.cmd hooks <pre_install|post_install> <app> [app...]
-      Explicitly replay one installed-manifest hook. pre_install is opt-in
-      because many manifests implement it as a one-shot transformation.
+      Explicitly replay an installed-manifest hook in User mode only. ShellOnly
+      blocks hook replay because a hook may write host profile/registry state.
 
   capsulenv.cmd reset [app...]
-      Run native Scoop reset without lifecycle replay. Defaults to all apps.
+      Rebuild Scoop links for the current mode. ShellOnly uses the portable
+      reset path; User mode uses native Scoop reset. Defaults to all apps.
 
   capsulenv.cmd install-user [--force]
   capsulenv.cmd enable-user [--force]
   capsulenv.cmd restore-user
       Install this capsule as the current Windows user's Scoop environment, or
-      restore the exact previous user environment and return to shell-only mode.
+      restore Capsulenv-owned User environment/Bitwarden integration and return
+      to shell-only mode. Package-manifest shortcuts/env remain Scoop-owned.
       enable-user is retained as a compatibility alias for install-user.
 
 
@@ -57,7 +59,8 @@ capsulenv commands
 
   capsulenv.cmd cache repair [--strict]
       Recreate registered junctions/symlinks whose absolute targets became
-      stale after moving the complete capsule.
+      stale. Managed file hardlinks copied across a drive move are rebuilt only
+      when both copies still match their recorded SHA-256 ownership fingerprint.
 
 
   capsulenv.cmd tools status
@@ -75,11 +78,13 @@ capsulenv commands
 
   capsulenv.cmd firefox [arguments...]
   capsulenv.cmd zen [arguments...]
-      Start the Scoop-installed browser. Its manifest/persist store owns the profile.
+      Start the Scoop-installed browser explicitly on its capsule-persisted
+      profile. ShellOnly also adds -no-remote to avoid attaching to a host process.
 
   capsulenv.cmd bitwarden setup [always|never|remember-until-lock]
-      Enable the Bitwarden Desktop SSH Agent setting, configure Git, and
-      disable the Windows ssh-agent service when running elevated.
+      Enable the capsule-persisted Bitwarden SSH Agent setting. ShellOnly uses
+      process-only Git config and leaves Windows ssh-agent unchanged; User mode
+      may write Git global config and disable the service when elevated.
 
   capsulenv.cmd bitwarden status
   capsulenv.cmd bitwarden restore

@@ -15,13 +15,13 @@ capsulenv.cmd enable-user
 capsulenv.cmd restore-user
 ```
 
-舊腳本只做 `scoop reset *`。新版在搬移後會：
+舊腳本只做 `scoop reset *`。新版按 ownership mode 分流：
 
-1. 設定 portable `SCOOP`、`SCOOP_GLOBAL` 與 shims PATH。
-2. 執行原生 `scoop reset *`，由 Scoop 重建 `current`、shims、shortcuts、environment 與 `persist` links。
-3. 按 allow-list 重放 installed manifest 的安全 hook。
+1. 設定 portable `SCOOP`、`SCOOP_GLOBAL` 與 local/global shims PATH。
+2. ShellOnly 只重建 capsule-owned `current`、shims 與 `persist` links；不建立 Start Menu shortcut、不寫 User/Machine env、不 replay manifest hook。
+3. User mode 才執行原生 `scoop reset *` 並可按 allow-list replay installed manifest hook。
 4. 以舊 relocation state（或 stale Scoop `.shim`）推斷 OldRoot，交易式修復 allow-listed persisted UTF text／JSON。
-5. 全部成功後才保存新的 relocation fingerprint。
+5. User mode 同步持久 environment，移除舊 drive 的 Capsulenv-managed PATH entries；全部成功後才保存新的 relocation fingerprint。
 
 ## 從 capsulenv v0.1.0 遷移
 
@@ -168,3 +168,23 @@ install.cmd D:\Portable\capsulenv -Mode User   rem 註冊為目前 user 的 Scoo
 `ShellOnly` 的 Capsulenv activation/bootstrap 只改 process scope 並只管理 capsule 內的 Scoop，不接管 host Scoop。`User` mode 延續舊 `enable-user` 的 reversible backup contract；主要命令改為 `capsulenv.cmd install-user`，而 `enable-user` 仍可使用。`restore-user` 精確還原原 User environment 並回到 ShellOnly。
 
 升級 v0.8.x 時不需要先 restore：若 `.capsulenv\user-environment-backup.json` 已存在，v0.9.0 會把既有安裝推斷為 User mode；沒有 backup 的既有／fresh installation 則視為 ShellOnly。之後不帶 `-Mode` 重跑 installer 會保留目前 mode，避免 update 意外改變 machine-user ownership。
+
+
+### v0.9.x mode-isolation refinement
+
+ShellOnly relocation no longer delegates to native `scoop reset`, because native reset also owns Start Menu shortcuts and manifest environment entries. It uses a temporary Scoop command that only reconnects `current`, local/global shims and persist data. Manual `capsulenv hooks` is rejected in ShellOnly.
+
+Bitwarden Git integration is now mode-aware: ShellOnly uses process `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` overrides and never disables the Windows `ssh-agent` service; User mode retains reversible global Git configuration and optional elevated service handling.
+`restore-user` now restores those Capsulenv-owned persistent Bitwarden changes as part of demotion back to ShellOnly (elevation is required if a saved service state exists). It still does not attempt to reverse arbitrary package-manifest shortcuts, environment keys, browser registrations, or other lifecycle side effects whose previous state Capsulenv did not capture.
+
+Firefox/Zen launch commands always bind the Scoop-persisted profile explicitly. ShellOnly additionally uses `-no-remote`; browser manifest `post_install` replay is reserved for User mode because profile registration is a host-user integration.
+
+Project file-hardlink records now include a content fingerprint. A drive-to-drive copy can destroy a hardlink relationship, leaving two ordinary files; repair only replaces them when both copies still match the recorded fingerprint and their new locations share a volume. Diverged files and cross-volume targets are left untouched.
+Scoop's own launcher shim is normalized to a relative `scoop.ps1`/`scoop.cmd`, local and portable-global shim directories are mode-scoped through PATH, and `SCOOP_CACHE` is explicitly rooted in the capsule so an old absolute Scoop `cache_path` cannot survive a drive-letter change. ShellOnly portable reset additionally shadows Scoop's internal `Add-Path` with a process-only implementation, because upstream shim creation otherwise persists shim directories while rebuilding them.
+User-mode relocation also scrubs stale app path entries only when they are provably nested under the recorded old local/global Scoop roots; the same rule is applied to Scoop's configured `use_isolated_path` variable, which is included in the User backup/restore set.
+
+The duplicate non-Pester smoke suite was removed. `scripts/Test-Capsulenv.ps1` now requires Pester 6.1.0+ and `tests/*.Tests.ps1` is the single test path.
+
+Bitwarden process control is capsule-owned as well: setup/start/stop only accepts a Bitwarden executable under this capsule's Scoop app roots, and refuses when a foreign host Bitwarden process is present.
+
+ShellOnly session PATH isolation now removes shim directories attributable to foreign Scoop roots before prepending capsule shims. User takeover applies the same removal to User PATH under the existing exact backup/restore contract, preventing missing capsule commands from silently falling through to a host Scoop app.

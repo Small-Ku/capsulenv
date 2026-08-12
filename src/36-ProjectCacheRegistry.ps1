@@ -122,6 +122,47 @@ function Write-CapsulenvProjectCacheRegistry {
     }
 }
 
+
+function Get-CapsulenvProjectCacheFileFingerprint {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    $hash = Get-FileHash -LiteralPath $Path -Algorithm SHA256
+    return [pscustomobject][ordered]@{
+        Length = [long]$item.Length
+        Sha256 = ([string]$hash.Hash).ToLowerInvariant()
+    }
+}
+
+function Test-CapsulenvProjectCacheFileFingerprint {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$Fingerprint
+    )
+
+    if ($null -eq $Fingerprint) {
+        return $false
+    }
+    $shaProperty = $Fingerprint.PSObject.Properties['Sha256']
+    $lengthProperty = $Fingerprint.PSObject.Properties['Length']
+    if ($null -eq $shaProperty -or $null -eq $lengthProperty) {
+        return $false
+    }
+    $current = Get-CapsulenvProjectCacheFileFingerprint -Path $Path
+    if ($null -eq $current) {
+        return $false
+    }
+    return (
+        [long]$current.Length -eq [long]$lengthProperty.Value -and
+        [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$current.Sha256, [string]$shaProperty.Value)
+    )
+}
+
 function Register-CapsulenvProjectCacheLink {
     [CmdletBinding()]
     param(
@@ -144,6 +185,11 @@ function Register-CapsulenvProjectCacheLink {
             $records.Add($record)
         }
     }
+    $managedFileFingerprint = if ($ActualLinkType -eq 'HardLink') {
+        Get-CapsulenvProjectCacheFileFingerprint -Path $Plan.LinkPath
+    } else {
+        $null
+    }
     $records.Add([pscustomobject][ordered]@{
         Profile = [string]$Plan.Profile
         ProjectScope = [string]$reference.Scope
@@ -151,6 +197,7 @@ function Register-CapsulenvProjectCacheLink {
         LinkType = $ActualLinkType
         LastLinkPath = [string]$Plan.LinkPath
         LastStorePath = [string]$Plan.StorePath
+        LastFileFingerprint = $managedFileFingerprint
     })
     Write-CapsulenvProjectCacheRegistry -Records $records.ToArray()
 }
@@ -235,6 +282,7 @@ function Repair-CapsulenvProjectCacheLinks {
             if (-not $linkInfo.Linked) {
                 $oldTarget = Get-CapsulenvReparseTarget -Path $plan.LinkPath
                 $removedRecognizedLink = $false
+                $removedRecognizedFileCopy = $false
                 if ($null -ne $oldTarget) {
                     if (
                         [string]::IsNullOrWhiteSpace([string]$record.LastStorePath) -or
@@ -245,7 +293,28 @@ function Repair-CapsulenvProjectCacheLinks {
                     Remove-Item -LiteralPath $plan.LinkPath -Force
                     $removedRecognizedLink = $true
                 } elseif (Test-Path -LiteralPath $plan.LinkPath) {
-                    throw "Refusing to replace a normal project path: $($plan.LinkPath)"
+                    if ([string]$record.LinkType -ne 'HardLink') {
+                        throw "Refusing to replace a normal project path: $($plan.LinkPath)"
+                    }
+                    $fingerprintProperty = $record.PSObject.Properties['LastFileFingerprint']
+                    if (
+                        $null -eq $fingerprintProperty -or
+                        $null -eq $fingerprintProperty.Value -or
+                        -not (Test-CapsulenvProjectCacheFileFingerprint -Path $plan.LinkPath -Fingerprint $fingerprintProperty.Value)
+                    ) {
+                        throw "Refusing to replace an unrecognized file after hard-link relocation: $($plan.LinkPath)"
+                    }
+                    if (-not (Test-CapsulenvProjectCacheFileFingerprint -Path $plan.StorePath -Fingerprint $fingerprintProperty.Value)) {
+                        throw "Managed hard-link copies diverged after relocation; refusing to discard either copy: $($plan.LinkPath) <-> $($plan.StorePath)"
+                    }
+                    $linkVolume = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($plan.LinkPath))
+                    $storeVolume = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($plan.StorePath))
+                    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($linkVolume, $storeVolume)) {
+                        throw "Managed file hardlink cannot be recreated across volumes: $linkVolume <-> $storeVolume"
+                    }
+                    Remove-Item -LiteralPath $plan.LinkPath -Force
+                    $removedRecognizedLink = $true
+                    $removedRecognizedFileCopy = $true
                 }
 
                 try {
@@ -257,7 +326,13 @@ function Repair-CapsulenvProjectCacheLinks {
                     }
                 } catch {
                     $repairError = $_
-                    if ($removedRecognizedLink -and $null -ne $oldTarget -and $null -eq (Get-CapsulenvReparseTarget -Path $plan.LinkPath)) {
+                    if ($removedRecognizedFileCopy -and -not (Test-Path -LiteralPath $plan.LinkPath)) {
+                        try {
+                            Copy-Item -LiteralPath $plan.StorePath -Destination $plan.LinkPath -Force
+                        } catch {
+                            throw "Project-cache repair failed: $($repairError.Exception.Message) Restoring the recognized file copy also failed: $($_.Exception.Message)"
+                        }
+                    } elseif ($removedRecognizedLink -and $null -ne $oldTarget -and $null -eq (Get-CapsulenvReparseTarget -Path $plan.LinkPath)) {
                         try {
                             [void](New-Item `
                                 -ItemType ([string]$record.LinkType) `
@@ -273,6 +348,13 @@ function Repair-CapsulenvProjectCacheLinks {
                 $changed = $true
             }
 
+            $newFileFingerprint = if ([string]$linkInfo.LinkType -eq 'HardLink') {
+                Get-CapsulenvProjectCacheFileFingerprint -Path $plan.LinkPath
+            } else {
+                $null
+            }
+            $oldFingerprintProperty = $record.PSObject.Properties['LastFileFingerprint']
+            $oldFileFingerprint = if ($null -ne $oldFingerprintProperty) { $oldFingerprintProperty.Value } else { $null }
             $newRecord = [pscustomobject][ordered]@{
                 Profile = $profile
                 ProjectScope = [string]$record.ProjectScope
@@ -280,13 +362,15 @@ function Repair-CapsulenvProjectCacheLinks {
                 LinkType = [string]$linkInfo.LinkType
                 LastLinkPath = [string]$plan.LinkPath
                 LastStorePath = [string]$plan.StorePath
+                LastFileFingerprint = $newFileFingerprint
             }
             $updated.Add($newRecord)
             if (
                 $changed -or
                 -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$record.LastLinkPath, [string]$plan.LinkPath) -or
                 -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$record.LastStorePath, [string]$plan.StorePath) -or
-                -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$record.LinkType, [string]$linkInfo.LinkType)
+                -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$record.LinkType, [string]$linkInfo.LinkType) -or
+                ([string]($oldFileFingerprint | ConvertTo-Json -Compress)) -ne ([string]($newFileFingerprint | ConvertTo-Json -Compress))
             ) {
                 $registryChanged = $true
             }

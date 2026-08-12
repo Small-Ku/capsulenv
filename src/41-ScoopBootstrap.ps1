@@ -236,7 +236,10 @@ if ($MyInvocation.ExpectingInput) {
 }
 exit $LASTEXITCODE
 '@
-    if (-not (Test-Path -LiteralPath $ps1Path -PathType Leaf)) {
+    # Normalize Scoop's own shim whenever its content is stale. The official
+    # installer may leave an absolute-path scoop.cmd; Capsulenv owns these two
+    # capsule-local launchers and keeps them relative so a drive-letter move is safe.
+    if (-not (Test-Path -LiteralPath $ps1Path -PathType Leaf) -or [System.IO.File]::ReadAllText($ps1Path) -ne $ps1Text) {
         [System.IO.File]::WriteAllText($ps1Path, $ps1Text, [System.Text.UTF8Encoding]::new($false))
     }
 
@@ -253,7 +256,7 @@ if not errorlevel 1 (
 )
 exit /b %ERRORLEVEL%
 '@
-    if (-not (Test-Path -LiteralPath $cmdPath -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $cmdPath -PathType Leaf) -or [System.IO.File]::ReadAllText($cmdPath) -ne $cmdText) {
         [System.IO.File]::WriteAllText($cmdPath, $cmdText, [System.Text.UTF8Encoding]::new($false))
     }
 

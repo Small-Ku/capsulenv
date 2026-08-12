@@ -8,6 +8,81 @@ function Get-CapsulenvBitwardenExecutable {
         -CommandNames @('Bitwarden.exe', 'bitwarden.exe')
 }
 
+function Get-CapsulenvBitwardenProcesses {
+    [CmdletBinding()]
+    param([switch]$IncludeForeign)
+
+    $portableRoots = New-Object System.Collections.Generic.List[string]
+    foreach ($root in @((Get-CapsulenvScoopRoot), (Get-CapsulenvScoopGlobalRoot))) {
+        foreach ($app in @('bitwarden', 'bitwarden-portable')) {
+            $portableRoots.Add(
+                ([System.IO.Path]::GetFullPath((Join-Path $root "apps\$app"))).TrimEnd('\', '/')
+            )
+        }
+    }
+
+    $result = New-Object System.Collections.Generic.List[object]
+    foreach ($process in @(Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue)) {
+        $path = $null
+        try {
+            $path = [string]$process.Path
+        } catch {
+            # If a process path cannot be inspected, it cannot be proven to
+            # belong to this capsule and is therefore treated as foreign.
+        }
+        $owned = $false
+        if (-not [string]::IsNullOrWhiteSpace($path)) {
+            try {
+                $fullPath = [System.IO.Path]::GetFullPath($path)
+                foreach ($root in $portableRoots) {
+                    if (
+                        $fullPath.StartsWith(
+                            $root + [System.IO.Path]::DirectorySeparatorChar,
+                            [System.StringComparison]::OrdinalIgnoreCase
+                        )
+                    ) {
+                        $owned = $true
+                        break
+                    }
+                }
+            } catch {
+                $owned = $false
+            }
+        }
+        if ($owned -or $IncludeForeign) {
+            $result.Add([pscustomobject]@{
+                Process = $process
+                Path = $path
+                CapsuleOwned = $owned
+            })
+        }
+    }
+    return $result.ToArray()
+}
+
+function Assert-CapsulenvNoForeignBitwardenProcess {
+    [CmdletBinding()]
+    param()
+
+    $foreign = @(
+        Get-CapsulenvBitwardenProcesses -IncludeForeign |
+            Where-Object { -not $_.CapsuleOwned }
+    )
+    if ($foreign.Count -eq 0) {
+        return
+    }
+    $details = @(
+        $foreign | ForEach-Object {
+            if ([string]::IsNullOrWhiteSpace([string]$_.Path)) {
+                "PID $($_.Process.Id) (path unavailable)"
+            } else {
+                "PID $($_.Process.Id): $($_.Path)"
+            }
+        }
+    ) -join '; '
+    throw "A non-capsule Bitwarden process is running. Capsulenv will not reuse, stop, or patch it: $details"
+}
+
 function Initialize-CapsulenvBitwarden {
     [CmdletBinding()]
     param([switch]$Start)
@@ -20,6 +95,7 @@ function Initialize-CapsulenvBitwarden {
     if ($configuration.Bitwarden.SetSshAuthSock) {
         [Environment]::SetEnvironmentVariable('SSH_AUTH_SOCK', '\\.\pipe\openssh-ssh-agent', 'Process')
     }
+    Initialize-CapsulenvGitOpenSshSession
 
     if ($Start -or $configuration.Bitwarden.StartOnEnter) {
         Start-CapsulenvBitwarden
@@ -35,9 +111,10 @@ function Start-CapsulenvBitwarden {
         return
     }
 
-    $existing = Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-CapsulenvMessage -Level Detail -Message 'Bitwarden desktop is already running.'
+    Assert-CapsulenvNoForeignBitwardenProcess
+    $existing = @(Get-CapsulenvBitwardenProcesses)
+    if ($existing.Count -gt 0) {
+        Write-CapsulenvMessage -Level Detail -Message 'Capsule-owned Bitwarden desktop is already running.'
         return
     }
 
@@ -56,10 +133,12 @@ function Stop-CapsulenvBitwarden {
     [CmdletBinding()]
     param([switch]$Force)
 
-    $processes = @(Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue)
-    if ($processes.Count -eq 0) {
+    Assert-CapsulenvNoForeignBitwardenProcess
+    $processRecords = @(Get-CapsulenvBitwardenProcesses)
+    if ($processRecords.Count -eq 0) {
         return
     }
+    $processes = @($processRecords | ForEach-Object { $_.Process })
 
     foreach ($process in $processes) {
         try {
@@ -72,7 +151,9 @@ function Stop-CapsulenvBitwarden {
     $deadline = [DateTime]::UtcNow.AddSeconds(3)
     do {
         Start-Sleep -Milliseconds 200
-        $remaining = @(Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue)
+        $remaining = @(
+            Get-CapsulenvBitwardenProcesses | ForEach-Object { $_.Process }
+        )
     } while ($remaining.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline)
 
     if ($remaining.Count -gt 0) {
@@ -95,6 +176,9 @@ function Disable-CapsulenvWindowsSshAgent {
 
     if (-not (Test-CapsulenvWindows)) {
         throw 'The Windows OpenSSH Authentication Agent service exists only on Windows.'
+    }
+    if ((Get-CapsulenvInstallMode) -ne 'User') {
+        throw 'ShellOnly mode cannot change the Windows ssh-agent service. Switch to User mode before changing machine/user integration.'
     }
 
     $service = Get-Service -Name 'ssh-agent' -ErrorAction SilentlyContinue
@@ -180,6 +264,161 @@ function Get-CapsulenvGitConfigBackupPath {
     return Join-Path $context.StateRoot 'bitwarden\git-ssh-config.json'
 }
 
+function Get-CapsulenvGitSessionConfigPath {
+    $context = Get-CapsulenvContext
+    return Join-Path $context.StateRoot 'bitwarden\git-ssh-session.json'
+}
+
+function Get-CapsulenvGitOpenSshPaths {
+    [CmdletBinding()]
+    param()
+
+    $windowsDirectory = [Environment]::GetEnvironmentVariable('WINDIR')
+    if ([string]::IsNullOrWhiteSpace($windowsDirectory)) {
+        throw 'WINDIR is not set; Microsoft OpenSSH paths cannot be resolved.'
+    }
+    $openSshRoot = Join-Path $windowsDirectory 'System32\OpenSSH'
+    $sshPath = Join-Path $openSshRoot 'ssh.exe'
+    $sshKeygenPath = Join-Path $openSshRoot 'ssh-keygen.exe'
+    if (-not (Test-Path -LiteralPath $sshPath -PathType Leaf)) {
+        throw "Microsoft OpenSSH client was not found: $sshPath"
+    }
+    if (-not (Test-Path -LiteralPath $sshKeygenPath -PathType Leaf)) {
+        throw "Microsoft OpenSSH ssh-keygen was not found: $sshKeygenPath"
+    }
+    return [pscustomobject]@{
+        Ssh = ([System.IO.Path]::GetFullPath($sshPath) -replace '\\', '/')
+        SshKeygen = ([System.IO.Path]::GetFullPath($sshKeygenPath) -replace '\\', '/')
+    }
+}
+
+function Get-CapsulenvGitConfigEnvironmentCount {
+    [CmdletBinding()]
+    param()
+
+    $raw = [Environment]::GetEnvironmentVariable('GIT_CONFIG_COUNT', 'Process')
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return 0
+    }
+    $count = 0
+    if (-not [int]::TryParse($raw, [ref]$count) -or $count -lt 0) {
+        throw "Invalid inherited GIT_CONFIG_COUNT: $raw"
+    }
+    return $count
+}
+
+function Clear-CapsulenvGitOpenSshSession {
+    [CmdletBinding()]
+    param()
+
+    $baseRaw = [Environment]::GetEnvironmentVariable('CAPSULENV_GIT_CONFIG_BASE_COUNT', 'Process')
+    if ([string]::IsNullOrWhiteSpace($baseRaw)) {
+        return
+    }
+    $baseCount = 0
+    if (-not [int]::TryParse($baseRaw, [ref]$baseCount) -or $baseCount -lt 0) {
+        throw "Invalid CAPSULENV_GIT_CONFIG_BASE_COUNT: $baseRaw"
+    }
+    $currentCount = Get-CapsulenvGitConfigEnvironmentCount
+    for ($index = $baseCount; $index -lt $currentCount; $index++) {
+        [Environment]::SetEnvironmentVariable("GIT_CONFIG_KEY_$index", $null, 'Process')
+        [Environment]::SetEnvironmentVariable("GIT_CONFIG_VALUE_$index", $null, 'Process')
+    }
+
+    $baseWasPresent = [Environment]::GetEnvironmentVariable('CAPSULENV_GIT_CONFIG_BASE_PRESENT', 'Process') -eq '1'
+    if ($baseWasPresent) {
+        [Environment]::SetEnvironmentVariable('GIT_CONFIG_COUNT', [string]$baseCount, 'Process')
+    } else {
+        [Environment]::SetEnvironmentVariable('GIT_CONFIG_COUNT', $null, 'Process')
+    }
+    [Environment]::SetEnvironmentVariable('CAPSULENV_GIT_CONFIG_BASE_COUNT', $null, 'Process')
+    [Environment]::SetEnvironmentVariable('CAPSULENV_GIT_CONFIG_BASE_PRESENT', $null, 'Process')
+}
+
+function Set-CapsulenvGitOpenSshSession {
+    [CmdletBinding()]
+    param()
+
+    Clear-CapsulenvGitOpenSshSession
+    $paths = Get-CapsulenvGitOpenSshPaths
+    $baseRaw = [Environment]::GetEnvironmentVariable('GIT_CONFIG_COUNT', 'Process')
+    $basePresent = -not [string]::IsNullOrWhiteSpace($baseRaw)
+    $baseCount = Get-CapsulenvGitConfigEnvironmentCount
+
+    [Environment]::SetEnvironmentVariable('CAPSULENV_GIT_CONFIG_BASE_COUNT', [string]$baseCount, 'Process')
+    [Environment]::SetEnvironmentVariable('CAPSULENV_GIT_CONFIG_BASE_PRESENT', $(if ($basePresent) { '1' } else { '0' }), 'Process')
+
+    $entries = @(
+        [pscustomobject]@{ Key = 'core.sshCommand'; Value = $paths.Ssh },
+        [pscustomobject]@{ Key = 'gpg.ssh.program'; Value = $paths.SshKeygen }
+    )
+    $index = $baseCount
+    foreach ($entry in $entries) {
+        [Environment]::SetEnvironmentVariable("GIT_CONFIG_KEY_$index", [string]$entry.Key, 'Process')
+        [Environment]::SetEnvironmentVariable("GIT_CONFIG_VALUE_$index", [string]$entry.Value, 'Process')
+        $index++
+    }
+    [Environment]::SetEnvironmentVariable('GIT_CONFIG_COUNT', [string]$index, 'Process')
+}
+
+function Test-CapsulenvGitOpenSshSessionConfigured {
+    [CmdletBinding()]
+    param()
+
+    return Test-Path -LiteralPath (Get-CapsulenvGitSessionConfigPath) -PathType Leaf
+}
+
+function Initialize-CapsulenvGitOpenSshSession {
+    [CmdletBinding()]
+    param()
+
+    if ((Get-CapsulenvInstallMode) -ne 'ShellOnly') {
+        Clear-CapsulenvGitOpenSshSession
+        return
+    }
+    if (Test-CapsulenvGitOpenSshSessionConfigured) {
+        Set-CapsulenvGitOpenSshSession
+    } else {
+        Clear-CapsulenvGitOpenSshSession
+    }
+}
+
+function Set-CapsulenvGitOpenSshIntent {
+    [CmdletBinding()]
+    param()
+
+    $path = Get-CapsulenvGitSessionConfigPath
+    [void](New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force)
+    [ordered]@{
+        SchemaVersion = 1
+        EnabledAtUtc = [DateTime]::UtcNow.ToString('o')
+    } | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
+function Enable-CapsulenvGitOpenSshSession {
+    [CmdletBinding()]
+    param()
+
+    Set-CapsulenvGitOpenSshSession
+    try {
+        Set-CapsulenvGitOpenSshIntent
+    } catch {
+        Clear-CapsulenvGitOpenSshSession
+        throw
+    }
+}
+
+function Disable-CapsulenvGitOpenSshSession {
+    [CmdletBinding()]
+    param()
+
+    $path = Get-CapsulenvGitSessionConfigPath
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        Remove-Item -LiteralPath $path -Force
+    }
+    Clear-CapsulenvGitOpenSshSession
+}
+
 function Get-CapsulenvGitCommand {
     [CmdletBinding()]
     param()
@@ -225,23 +464,22 @@ function Set-CapsulenvGitOpenSsh {
     [CmdletBinding()]
     param([switch]$Force)
 
-    $git = Get-CapsulenvGitCommand
-    $windowsDirectory = [Environment]::GetEnvironmentVariable('WINDIR')
-    if ([string]::IsNullOrWhiteSpace($windowsDirectory)) {
-        throw 'WINDIR is not set; Microsoft OpenSSH paths cannot be resolved.'
+    $mode = Get-CapsulenvInstallMode
+    if ($mode -eq 'ShellOnly') {
+        [void](Get-CapsulenvGitOpenSshPaths)
+        Enable-CapsulenvGitOpenSshSession
+        Write-CapsulenvMessage -Level Success -Message 'Git uses Microsoft OpenSSH through a Capsulenv process-only config overlay; host global Git config is unchanged.'
+        return
     }
-    $openSshRoot = Join-Path $windowsDirectory 'System32\OpenSSH'
-    $sshPath = Join-Path $openSshRoot 'ssh.exe'
-    $sshKeygenPath = Join-Path $openSshRoot 'ssh-keygen.exe'
-    if (-not (Test-Path -LiteralPath $sshPath -PathType Leaf)) {
-        throw "Microsoft OpenSSH client was not found: $sshPath"
-    }
-    if (-not (Test-Path -LiteralPath $sshKeygenPath -PathType Leaf)) {
-        throw "Microsoft OpenSSH ssh-keygen was not found: $sshKeygenPath"
-    }
-    $gitSshPath = ([System.IO.Path]::GetFullPath($sshPath) -replace '\\', '/')
-    $gitSshKeygenPath = ([System.IO.Path]::GetFullPath($sshKeygenPath) -replace '\\', '/')
 
+    # User mode changes the storage scope (global Git config) and clears the
+    # process overlay so Git sees a single effective value. Existing intent is
+    # preserved; a new intent marker is committed only after Git config succeeds.
+    Clear-CapsulenvGitOpenSshSession
+    $git = Get-CapsulenvGitCommand
+    $paths = Get-CapsulenvGitOpenSshPaths
+
+    $intentExisted = Test-CapsulenvGitOpenSshSessionConfigured
     $backupPath = Get-CapsulenvGitConfigBackupPath
     $backupExists = Test-Path -LiteralPath $backupPath -PathType Leaf
     if ($backupExists -and -not $Force) {
@@ -269,13 +507,14 @@ function Set-CapsulenvGitOpenSsh {
 
     try {
         Clear-CapsulenvLastExitCode
-        & $git config --global --replace-all core.sshCommand $gitSshPath
+        & $git config --global --replace-all core.sshCommand $paths.Ssh
         $exitCode = Get-CapsulenvLastExitCode -Succeeded $?
         if ($exitCode -ne 0) { throw 'Failed to set Git core.sshCommand.' }
         Clear-CapsulenvLastExitCode
-        & $git config --global --replace-all gpg.ssh.program $gitSshKeygenPath
+        & $git config --global --replace-all gpg.ssh.program $paths.SshKeygen
         $exitCode = Get-CapsulenvLastExitCode -Succeeded $?
         if ($exitCode -ne 0) { throw 'Failed to set Git gpg.ssh.program.' }
+        Set-CapsulenvGitOpenSshIntent
     } catch {
         $configurationError = $_
         try {
@@ -283,29 +522,56 @@ function Set-CapsulenvGitOpenSsh {
             if (-not $backupExists) {
                 Remove-Item -LiteralPath $backupPath -Force
             }
+            if (-not $intentExisted) {
+                $intentPath = Get-CapsulenvGitSessionConfigPath
+                if (Test-Path -LiteralPath $intentPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $intentPath -Force
+                }
+            }
         } catch {
             Write-Warning "Git configuration rollback failed; the original backup was retained at $backupPath. $($_.Exception.Message)"
         }
         throw $configurationError
     }
 
-    Write-CapsulenvMessage -Level Success -Message 'Git now uses Microsoft OpenSSH for Bitwarden SSH Agent compatibility.'
+    Write-CapsulenvMessage -Level Success -Message 'Git global configuration now uses Microsoft OpenSSH for User-mode Bitwarden SSH Agent compatibility.'
+}
+
+function Restore-CapsulenvGitOpenSshGlobal {
+    [CmdletBinding()]
+    param([switch]$IfPresent)
+
+    $backupPath = Get-CapsulenvGitConfigBackupPath
+    if (-not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
+        if ($IfPresent) {
+            return $false
+        }
+        throw 'No Git global SSH configuration backup exists.'
+    }
+    $git = Get-CapsulenvGitCommand
+    $backup = Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
+    Restore-CapsulenvGitValues -Git $git -Backup $backup
+    Remove-Item -LiteralPath $backupPath -Force
+    Write-CapsulenvMessage -Level Success -Message 'Git global SSH configuration restored.'
+    return $true
 }
 
 function Restore-CapsulenvGitOpenSsh {
     [CmdletBinding()]
     param()
 
-    $git = Get-CapsulenvGitCommand
-    $backupPath = Get-CapsulenvGitConfigBackupPath
-    if (-not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
-        throw 'No Git SSH configuration backup exists.'
+    $restored = $false
+    if (Test-CapsulenvGitOpenSshSessionConfigured) {
+        Disable-CapsulenvGitOpenSshSession
+        $restored = $true
+        Write-CapsulenvMessage -Level Success -Message 'Capsulenv process-only Git SSH overlay and persisted OpenSSH intent disabled.'
     }
-
-    $backup = Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
-    Restore-CapsulenvGitValues -Git $git -Backup $backup
-    Remove-Item -LiteralPath $backupPath -Force
-    Write-CapsulenvMessage -Level Success -Message 'Git SSH configuration restored.'
+    if (Restore-CapsulenvGitOpenSshGlobal -IfPresent) {
+        $restored = $true
+    }
+    if (-not $restored) {
+        throw 'No Capsulenv Git SSH configuration exists.'
+    }
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Start-CapsulenvBitwarden, Stop-CapsulenvBitwarden, Disable-CapsulenvWindowsSshAgent, Restore-CapsulenvWindowsSshAgent, Test-CapsulenvBitwardenSshAgent, Set-CapsulenvGitOpenSsh, Restore-CapsulenvGitOpenSsh
