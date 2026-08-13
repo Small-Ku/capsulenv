@@ -524,6 +524,22 @@ function Copy-CapsulenvShellOnlyScoopSeedSnapshot {
         throw "ShellOnly Scoop seed apply needs the original host Scoop app files so it can snapshot them without running package installers or hooks. Missing source app state: $summary"
     }
 
+    $readyApps = @($plan.Apps | Where-Object { $_.Status -eq 'Ready' })
+    if ($readyApps.Count -gt 0) {
+        # The final portable reset touches every installed app so it can rebuild a
+        # coherent local/global link set.  Fail before copying anything when an
+        # existing or planned global app would make that reset require elevation.
+        Assert-CapsulenvGlobalScoopResetAccess
+        $readyGlobalApps = @($readyApps | Where-Object { $_.Global })
+        if ($readyGlobalApps.Count -gt 0 -and -not (Test-CapsulenvAdministrator)) {
+            $summary = @($readyGlobalApps | ForEach-Object { $_.Name } | Sort-Object -Unique | Select-Object -First 8) -join ', '
+            if ($readyGlobalApps.Count -gt 8) {
+                $summary += (', ... ({0} total)' -f $readyGlobalApps.Count)
+            }
+            throw "ShellOnly Scoop seed includes global apps and must run in an elevated terminal before any snapshot is copied: $summary"
+        }
+    }
+
     [void](Set-CapsulenvSessionEnvironment)
     [void](Initialize-CapsulenvScoopBootstrap)
 

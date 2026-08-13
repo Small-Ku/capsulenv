@@ -201,4 +201,43 @@ Describe 'Capsulenv PowerShell and seed ownership' {
             }
         }
     }
+
+    It 'fails ShellOnly Scoop snapshot before mutation when a planned global app needs elevation' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-scoop-global-seed-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $hostRoot = Join-Path $temporaryRoot 'host-scoop'
+            $hostGlobalRoot = Join-Path $temporaryRoot 'host-global-scoop'
+            [void](New-Item -ItemType Directory -Path (Join-Path $hostGlobalRoot 'apps/ripgrep/14.1.0') -Force)
+            '{"version":"14.1.0"}' | Set-Content -LiteralPath (Join-Path $hostGlobalRoot 'apps/ripgrep/14.1.0/manifest.json') -Encoding UTF8
+            'rg.exe snapshot' | Set-Content -LiteralPath (Join-Path $hostGlobalRoot 'apps/ripgrep/14.1.0/rg.exe') -Encoding UTF8
+
+            $inventory = [pscustomobject]@{
+                apps = @([pscustomobject]@{ Name = 'ripgrep'; Version = '14.1.0'; Global = $true })
+                buckets = @()
+            }
+            $hostScoop = [pscustomobject]@{ Root = $hostRoot; GlobalRoot = $hostGlobalRoot; Command = 'unused' }
+
+            Mock Assert-CapsulenvGlobalScoopResetAccess {} -ModuleName Capsulenv
+            Mock Test-CapsulenvAdministrator { $false } -ModuleName Capsulenv
+            Mock Initialize-CapsulenvScoopBootstrap { throw 'Mutation must not start before elevation preflight.' } -ModuleName Capsulenv
+
+            & $script:Module {
+                param($CapsuleRoot, $Inventory, $HostScoop)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+                { Copy-CapsulenvShellOnlyScoopSeedSnapshot -Inventory $Inventory -HostScoop $HostScoop } |
+                    Should -Throw '*global apps*elevated terminal*'
+            } $temporaryRoot $inventory $hostScoop
+
+            Test-Path -LiteralPath (Join-Path $temporaryRoot 'scoop-global/apps/ripgrep/14.1.0') | Should -BeFalse
+            Should -Invoke Initialize-CapsulenvScoopBootstrap -ModuleName Capsulenv -Times 0 -Exactly
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
 }
