@@ -77,6 +77,16 @@ Describe 'Capsulenv static and relocation' {
                 -Message "PowerShell bootstrap resolver is missing required behavior: $requiredBootstrapBehavior"
         }
 
+        $doctorSource = [System.IO.File]::ReadAllText(
+            (Join-Path (Join-Path $root 'src') '70-Doctor.ps1')
+        )
+        Assert-CapsulenvTest `
+            -Condition $doctorSource.Contains('Details for checks requiring attention:') `
+            -Message 'Doctor must preserve full detail for checks that require attention.'
+        Assert-CapsulenvTest `
+            -Condition (-not $doctorSource.Contains('$results | Format-Table -AutoSize | Out-Host')) `
+            -Message 'Doctor must not put long Detail values in the summary table.'
+
         $environmentSource = [System.IO.File]::ReadAllText(
             (Join-Path (Join-Path $root 'src') '30-Environment.ps1')
         )

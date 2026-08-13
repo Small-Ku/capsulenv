@@ -14,6 +14,30 @@ function New-CapsulenvCheckResult {
     }
 }
 
+function Write-CapsulenvDoctorReport {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object[]]$Results)
+
+    $summary = @($Results | Select-Object `
+        Name, `
+        @{ Name = 'Status'; Expression = { if ($_.Passed) { 'PASS' } elseif ($_.Importance -eq 'Required') { 'FAIL' } else { 'WARN' } } }, `
+        Importance)
+    $summary | Format-Table -AutoSize | Out-Host
+
+    $attention = @($Results | Where-Object { -not $_.Passed })
+    if ($attention.Count -eq 0) {
+        return
+    }
+
+    Write-Host ''
+    Write-Host 'Details for checks requiring attention:'
+    foreach ($result in $attention) {
+        $status = if ($result.Importance -eq 'Required') { 'FAIL' } else { 'WARN' }
+        Write-Host ('[{0}] {1}' -f $status, $result.Name)
+        Write-Host ('  {0}' -f $result.Detail)
+    }
+}
+
 function Invoke-CapsulenvDoctor {
     [CmdletBinding()]
     param()
@@ -328,7 +352,7 @@ function Invoke-CapsulenvDoctor {
         $results.Add((New-CapsulenvCheckResult -Name 'Scoop version drift' -Passed $false -Importance Optional -Detail $_.Exception.Message))
     }
 
-    $results | Format-Table -AutoSize | Out-Host
+    Write-CapsulenvDoctorReport -Results $results.ToArray()
     $requiredFailures = @($results | Where-Object { -not $_.Passed -and $_.Importance -eq 'Required' })
     if ($requiredFailures.Count -gt 0) {
         throw "capsulenv doctor found $($requiredFailures.Count) required failure(s)."
