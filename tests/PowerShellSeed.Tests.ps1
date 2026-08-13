@@ -1,6 +1,7 @@
 Describe 'Capsulenv PowerShell and seed ownership' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
         $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
         Import-Module $script:Build.ModulePath -Force
         $script:Module = @(Get-Module Capsulenv)[-1]
@@ -160,11 +161,40 @@ Describe 'Capsulenv PowerShell and seed ownership' {
 
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 [void](Get-CapsulenvConfiguration -Refresh)
-                $seedDestination = Resolve-CapsulenvPath -Path 'tool-data\scoop\Scoopfile.json' -AllowMissing
-                [void](New-Item -ItemType Directory -Path (Split-Path -Parent $seedDestination) -Force)
-                Copy-Item -LiteralPath $Destination -Destination $seedDestination -Force
-                { Seed-CapsulenvScoopInventory -Apply } | Should -Throw '*User-mode only*'
             } $temporaryRoot $export $destination
+
+            $hostRoot = Join-Path $temporaryRoot 'host-scoop'
+            $hostGlobalRoot = Join-Path $temporaryRoot 'host-global-scoop'
+            foreach ($path in @(
+                'apps/git/1.0',
+                'persist/git',
+                'buckets/main/bucket'
+            )) {
+                [void](New-Item -ItemType Directory -Path (Join-Path $hostRoot $path) -Force)
+            }
+            '{"version":"1.0","persist":"settings.json"}' | Set-Content -LiteralPath (Join-Path $hostRoot 'apps/git/1.0/manifest.json') -Encoding UTF8
+            '{"bucket":"main","architecture":"64bit"}' | Set-Content -LiteralPath (Join-Path $hostRoot 'apps/git/1.0/install.json') -Encoding UTF8
+            'git.exe snapshot' | Set-Content -LiteralPath (Join-Path $hostRoot 'apps/git/1.0/git.exe') -Encoding UTF8
+            'portable-state' | Set-Content -LiteralPath (Join-Path $hostRoot 'persist/git/settings.json') -Encoding UTF8
+            '{"version":"1.0"}' | Set-Content -LiteralPath (Join-Path $hostRoot 'buckets/main/bucket/git.json') -Encoding UTF8
+
+            $hostScoop = [pscustomobject]@{ Root = $hostRoot; GlobalRoot = $hostGlobalRoot; Command = 'unused' }
+            Mock Initialize-CapsulenvScoopBootstrap { [pscustomobject]@{ Status = 'Mocked' } } -ModuleName Capsulenv
+            Mock Reset-CapsulenvScoop { $true } -ModuleName Capsulenv
+            Mock Invoke-CapsulenvScoopCommand { throw 'Native Scoop import/install must not run during ShellOnly snapshot apply.' } -ModuleName Capsulenv
+
+            $snapshot = & $script:Module {
+                param($Export, $HostScoop)
+                Copy-CapsulenvShellOnlyScoopSeedSnapshot -Inventory $Export -HostScoop $HostScoop
+            } $export $hostScoop
+            $snapshot.Strategy | Should -Be 'ShellOnlySnapshot'
+            $snapshot.CopiedApps | Should -Be 1
+            $snapshot.CopiedBuckets | Should -Be 1
+            (Get-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/apps/git/1.0/git.exe') -Raw) | Should -Match 'snapshot'
+            (Get-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/persist/git/settings.json') -Raw) | Should -Match 'portable-state'
+            Test-Path -LiteralPath (Join-Path $temporaryRoot 'scoop/buckets/main/bucket/git.json') | Should -BeTrue
+            Should -Invoke Reset-CapsulenvScoop -ModuleName Capsulenv -Times 1 -Exactly
+            Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force

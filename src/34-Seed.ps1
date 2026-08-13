@@ -204,6 +204,47 @@ function Seed-CapsulenvGitConfig {
     }
 }
 
+function Get-CapsulenvHostScoopGlobalRoot {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$HostRoot)
+
+    $hostConfig = Join-Path $HostRoot 'config.json'
+    if (Test-Path -LiteralPath $hostConfig -PathType Leaf) {
+        try {
+            $config = Get-Content -LiteralPath $hostConfig -Raw | ConvertFrom-Json
+            foreach ($name in @('global_path', 'globalPath')) {
+                $property = $config.PSObject.Properties[$name]
+                if ($null -ne $property -and -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
+                    return [System.IO.Path]::GetFullPath([string]$property.Value)
+                }
+            }
+        } catch {
+            # Fall back to environment/default discovery.
+        }
+    }
+
+    $capsuleGlobal = [System.IO.Path]::GetFullPath((Get-CapsulenvScoopGlobalRoot)).TrimEnd('\', '/')
+    foreach ($target in @('User', 'Machine', 'Process')) {
+        try {
+            $value = [Environment]::GetEnvironmentVariable('SCOOP_GLOBAL', $target)
+            if ([string]::IsNullOrWhiteSpace($value)) {
+                continue
+            }
+            $candidate = [System.IO.Path]::GetFullPath($value).TrimEnd('\', '/')
+            if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($candidate, $capsuleGlobal)) {
+                return $candidate
+            }
+        } catch {
+            # Continue to the default path when this environment target is unavailable.
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
+        return [System.IO.Path]::GetFullPath((Join-Path $env:ProgramData 'scoop'))
+    }
+    return $null
+}
+
 function Find-CapsulenvHostScoop {
     [CmdletBinding()]
     param()
@@ -247,7 +288,11 @@ function Find-CapsulenvHostScoop {
             (Join-Path (Join-Path (Join-Path (Join-Path $root 'apps') 'scoop') 'current') 'bin\scoop.ps1')
         )) {
             if (Test-Path -LiteralPath $scoop -PathType Leaf) {
-                return [pscustomobject]@{ Root = $root; Command = $scoop }
+                return [pscustomobject]@{
+                    Root = $root
+                    GlobalRoot = Get-CapsulenvHostScoopGlobalRoot -HostRoot $root
+                    Command = $scoop
+                }
             }
         }
     }
@@ -317,6 +362,220 @@ function Save-CapsulenvScoopSeedInventory {
     return $Destination
 }
 
+function Get-CapsulenvSeedObjectValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Object,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($Name)) {
+            return $Object[$Name]
+        }
+        return $null
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
+}
+
+function Test-CapsulenvSeedAppIsGlobal {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$App)
+
+    $globalValue = Get-CapsulenvSeedObjectValue -Object $App -Name 'Global'
+    if ($null -ne $globalValue) {
+        if ($globalValue -is [bool]) {
+            return [bool]$globalValue
+        }
+        $globalText = [string]$globalValue
+        if ($globalText -match '^(?i:true|false)$') {
+            return [System.Convert]::ToBoolean($globalText)
+        }
+    }
+    $info = [string](Get-CapsulenvSeedObjectValue -Object $App -Name 'Info')
+    return ($info -match '(?i)global install')
+}
+
+function New-CapsulenvShellOnlyScoopSeedPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Inventory,
+        [Parameter(Mandatory = $true)]$HostScoop
+    )
+
+    $apps = New-Object System.Collections.Generic.List[object]
+    foreach ($app in @(Get-CapsulenvSeedObjectValue -Object $Inventory -Name 'apps')) {
+        $name = [string](Get-CapsulenvSeedObjectValue -Object $app -Name 'Name')
+        if ([string]::IsNullOrWhiteSpace($name) -or $name -eq 'scoop') {
+            continue
+        }
+        $version = [string](Get-CapsulenvSeedObjectValue -Object $app -Name 'Version')
+        $global = Test-CapsulenvSeedAppIsGlobal -App $app
+        $sourceScopeRoot = if ($global) {
+            [string](Get-CapsulenvSeedObjectValue -Object $HostScoop -Name 'GlobalRoot')
+        } else {
+            [string](Get-CapsulenvSeedObjectValue -Object $HostScoop -Name 'Root')
+        }
+        $destinationScopeRoot = if ($global) { Get-CapsulenvScoopGlobalRoot } else { Get-CapsulenvScoopRoot }
+        $destinationAppRoot = Join-Path (Join-Path $destinationScopeRoot 'apps') $name
+        $destinationReady = Test-Path -LiteralPath (Join-Path (Join-Path $destinationAppRoot 'current') 'manifest.json') -PathType Leaf
+        if (-not $destinationReady -and (Test-Path -LiteralPath $destinationAppRoot -PathType Container)) {
+            $destinationReady = $null -ne (
+                Get-ChildItem -LiteralPath $destinationAppRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -ne 'current' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'manifest.json') -PathType Leaf) } |
+                    Select-Object -First 1
+            )
+        }
+
+        $sourceVersionPath = $null
+        if (-not [string]::IsNullOrWhiteSpace($sourceScopeRoot)) {
+            if (-not [string]::IsNullOrWhiteSpace($version)) {
+                $candidate = Join-Path (Join-Path (Join-Path $sourceScopeRoot 'apps') $name) $version
+                if (Test-Path -LiteralPath $candidate -PathType Container) {
+                    $sourceVersionPath = $candidate
+                }
+            }
+            if ($null -eq $sourceVersionPath) {
+                $current = Join-Path (Join-Path (Join-Path $sourceScopeRoot 'apps') $name) 'current'
+                if (Test-Path -LiteralPath $current -PathType Container) {
+                    $manifestPath = Join-Path $current 'manifest.json'
+                    if ([string]::IsNullOrWhiteSpace($version) -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+                        try {
+                            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+                            $version = [string]$manifest.version
+                        } catch {}
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($version)) {
+                        $candidate = Join-Path (Join-Path (Join-Path $sourceScopeRoot 'apps') $name) $version
+                        if (Test-Path -LiteralPath $candidate -PathType Container) {
+                            $sourceVersionPath = $candidate
+                        }
+                    }
+                }
+            }
+        }
+
+        $status = if ($destinationReady) {
+            'AlreadyInstalled'
+        } elseif ($null -eq $sourceVersionPath) {
+            'MissingSource'
+        } else {
+            'Ready'
+        }
+        $apps.Add([pscustomobject]@{
+            Name = $name
+            Version = $version
+            Global = $global
+            Status = $status
+            SourceScopeRoot = $sourceScopeRoot
+            SourceVersionPath = $sourceVersionPath
+            DestinationScopeRoot = $destinationScopeRoot
+            DestinationAppRoot = $destinationAppRoot
+        })
+    }
+
+    $buckets = New-Object System.Collections.Generic.List[object]
+    foreach ($bucket in @(Get-CapsulenvSeedObjectValue -Object $Inventory -Name 'buckets')) {
+        $name = [string](Get-CapsulenvSeedObjectValue -Object $bucket -Name 'Name')
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            continue
+        }
+        $sourcePath = Join-Path (Join-Path ([string]$HostScoop.Root) 'buckets') $name
+        $destinationPath = Join-Path (Join-Path (Get-CapsulenvScoopRoot) 'buckets') $name
+        $status = if (Test-Path -LiteralPath $destinationPath -PathType Container) {
+            'AlreadyPresent'
+        } elseif (Test-Path -LiteralPath $sourcePath -PathType Container) {
+            'Ready'
+        } else {
+            'MissingSource'
+        }
+        $buckets.Add([pscustomobject]@{
+            Name = $name
+            SourcePath = $sourcePath
+            DestinationPath = $destinationPath
+            Status = $status
+        })
+    }
+
+    return [pscustomobject]@{
+        Apps = $apps.ToArray()
+        Buckets = $buckets.ToArray()
+    }
+}
+
+function Copy-CapsulenvShellOnlyScoopSeedSnapshot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Inventory,
+        [Parameter(Mandatory = $true)]$HostScoop
+    )
+
+    $plan = New-CapsulenvShellOnlyScoopSeedPlan -Inventory $Inventory -HostScoop $HostScoop
+    $missingApps = @($plan.Apps | Where-Object { $_.Status -eq 'MissingSource' })
+    if ($missingApps.Count -gt 0) {
+        $summary = @($missingApps | ForEach-Object {
+            $scope = if ($_.Global) { 'global' } else { 'user' }
+            '{0}/{1}@{2}' -f $scope, $_.Name, $_.Version
+        }) -join ', '
+        throw "ShellOnly Scoop seed apply needs the original host Scoop app files so it can snapshot them without running package installers or hooks. Missing source app state: $summary"
+    }
+
+    [void](Set-CapsulenvSessionEnvironment)
+    [void](Initialize-CapsulenvScoopBootstrap)
+
+    $copiedBuckets = 0
+    foreach ($bucket in @($plan.Buckets | Where-Object { $_.Status -eq 'Ready' })) {
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $bucket.DestinationPath) -Force)
+        Copy-Item -LiteralPath $bucket.SourcePath -Destination $bucket.DestinationPath -Recurse -Force
+        $copiedBuckets++
+    }
+    foreach ($bucket in @($plan.Buckets | Where-Object { $_.Status -eq 'MissingSource' })) {
+        Write-CapsulenvMessage -Level Warning -Message "Scoop bucket '$($bucket.Name)' is not present in the source host and was not copied. Installed app snapshots remain usable, but future updates may require re-adding the bucket."
+    }
+
+    $copiedApps = New-Object System.Collections.Generic.List[string]
+    foreach ($app in @($plan.Apps | Where-Object { $_.Status -eq 'Ready' })) {
+        [void](New-Item -ItemType Directory -Path $app.DestinationAppRoot -Force)
+        $destinationVersion = Join-Path $app.DestinationAppRoot ([string]$app.Version)
+        if (Test-Path -LiteralPath $destinationVersion) {
+            Remove-Item -LiteralPath $destinationVersion -Recurse -Force
+        }
+        Copy-Item -LiteralPath $app.SourceVersionPath -Destination $destinationVersion -Recurse -Force
+
+        $sourcePersist = Join-Path (Join-Path ([string]$app.SourceScopeRoot) 'persist') ([string]$app.Name)
+        $destinationPersist = Join-Path (Join-Path ([string]$app.DestinationScopeRoot) 'persist') ([string]$app.Name)
+        if (
+            (Test-Path -LiteralPath $sourcePersist -PathType Container) -and
+            -not (Test-Path -LiteralPath $destinationPersist)
+        ) {
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $destinationPersist) -Force)
+            Copy-Item -LiteralPath $sourcePersist -Destination $destinationPersist -Recurse -Force
+        }
+        $scope = if ($app.Global) { 'global' } else { 'user' }
+        $copiedApps.Add(('{0}/{1}' -f $scope, $app.Name))
+    }
+
+    if ($copiedApps.Count -gt 0) {
+        # Rebuild every installed portable app in one pass so the helper can retain
+        # its exact local/global scope tuples and replace copied host current/persist
+        # links without executing package lifecycle hooks or user integration.
+        [void](Reset-CapsulenvScoop -Apps @('*') -IntegrationMode ShellOnly -Quiet)
+    }
+
+    return [pscustomobject]@{
+        Strategy = 'ShellOnlySnapshot'
+        CopiedApps = $copiedApps.Count
+        ExistingApps = @($plan.Apps | Where-Object { $_.Status -eq 'AlreadyInstalled' }).Count
+        CopiedBuckets = $copiedBuckets
+        MissingBuckets = @($plan.Buckets | Where-Object { $_.Status -eq 'MissingSource' }).Count
+        Apps = $copiedApps.ToArray()
+    }
+}
+
 function Seed-CapsulenvScoopInventory {
     [CmdletBinding()]
     param(
@@ -336,13 +595,23 @@ function Seed-CapsulenvScoopInventory {
     }
 
     $applied = $false
+    $applyStrategy = $null
+    $applyResult = $null
     if ($Apply) {
-        if ((Get-CapsulenvInstallMode) -ne 'User') {
-            throw 'Applying a Scoop seed is User-mode only because native scoop import may create shortcuts, environment entries, and other package lifecycle integration.'
+        $mode = Get-CapsulenvInstallMode
+        if ($mode -eq 'User') {
+            [void](Set-CapsulenvSessionEnvironment)
+            [void](Initialize-CapsulenvScoopBootstrap)
+            [void](Invoke-CapsulenvScoopCommand -Arguments @('import', $destination))
+            $applyStrategy = 'NativeImport'
+        } else {
+            if ($null -eq $hostScoop) {
+                throw 'ShellOnly Scoop seed apply requires the original host Scoop installation to remain available. Re-run --apply on the source host so Capsulenv can snapshot installed app state without executing installers/hooks, or use User mode for native Scoop import.'
+            }
+            $inventory = Get-Content -LiteralPath $destination -Raw | ConvertFrom-Json
+            $applyResult = Copy-CapsulenvShellOnlyScoopSeedSnapshot -Inventory $inventory -HostScoop $hostScoop
+            $applyStrategy = [string]$applyResult.Strategy
         }
-        [void](Set-CapsulenvSessionEnvironment)
-        [void](Initialize-CapsulenvScoopBootstrap)
-        [void](Invoke-CapsulenvScoopCommand -Arguments @('import', $destination))
         $applied = $true
     }
 
@@ -351,6 +620,8 @@ function Seed-CapsulenvScoopInventory {
         HostScoop = if ($null -ne $hostScoop) { [string]$hostScoop.Root } else { $null }
         Captured = $captured
         Applied = $applied
+        ApplyStrategy = $applyStrategy
+        ApplyResult = $applyResult
     }
 }
 
