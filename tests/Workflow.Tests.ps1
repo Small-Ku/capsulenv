@@ -1,6 +1,7 @@
 Describe 'Capsulenv portable workflow contracts' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
         $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
         Import-Module $script:Build.ModulePath -Force
         $script:Module = @(Get-Module Capsulenv)[-1]
@@ -126,4 +127,35 @@ Describe 'Capsulenv portable workflow contracts' {
         $lifecycleSource | Should -Not -Match "arguments \+= '-g'"
         $lifecycleSource | Should -Not -Match 'Restore-CapsulenvUserEnvironment\s*(-|\()'
     }
+
+    It 'blocks eject while capsule-owned processes remain' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-eject-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+            } $temporaryRoot
+
+            Mock Get-CapsulenvDirtyRepositories { @() } -ModuleName Capsulenv
+            Mock Stop-CapsulenvOwnedProcesses { @() } -ModuleName Capsulenv
+            Mock Get-CapsulenvOwnedProcesses {
+                @([pscustomobject]@{ Id = 4242; Name = 'test-tool'; Path = 'capsule://test-tool' })
+            } -ModuleName Capsulenv
+            Mock Write-CapsulenvEjectState { 'should-not-be-written' } -ModuleName Capsulenv
+
+            {
+                & $script:Module { Invoke-CapsulenvEject }
+            } | Should -Throw '*Eject blocked*test-tool(4242)*'
+            Should -Invoke Write-CapsulenvEjectState -ModuleName Capsulenv -Times 0 -Exactly
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
 }

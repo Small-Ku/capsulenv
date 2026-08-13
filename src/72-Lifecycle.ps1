@@ -170,6 +170,15 @@ function Invoke-CapsulenvEject {
     }
 
     $stopped = @(Stop-CapsulenvOwnedProcesses -Force:$Force)
+    $remainingProcesses = @(Get-CapsulenvOwnedProcesses)
+    if ($remainingProcesses.Count -gt 0) {
+        $summary = @($remainingProcesses | ForEach-Object { '{0}({1})' -f $_.Name, $_.Id }) -join ', '
+        if ($Force) {
+            throw "Forced eject could not stop all capsule-owned processes: $summary"
+        }
+        throw "Eject blocked because capsule-owned processes are still running: $summary. Close them or re-run eject --force."
+    }
+
     $statePath = Write-CapsulenvEjectState -DirtyRepositories $dirtyRepositories -StoppedProcesses $stopped
 
     $scratch = Get-CapsulenvScratchPath
@@ -184,9 +193,13 @@ function Invoke-CapsulenvEject {
     # Deliberately do not call Restore-CapsulenvUserEnvironment here. User mode
     # represents integration ownership for the current user session, not a
     # teardown obligation. restore-user remains an explicit reversible action.
-    Write-CapsulenvMessage -Level Success -Message "Capsulenv session ejected without changing install mode. State: $statePath"
+    $mode = Get-CapsulenvInstallMode
+    if ($mode -eq 'User') {
+        Write-CapsulenvMessage -Level Warning -Message 'User integration remains active. Run restore-user before removing the capsule from a host that will continue to be used.'
+    }
+    Write-CapsulenvMessage -Level Success -Message "Capsulenv session ejected. Install mode remains $mode. State: $statePath"
     return [pscustomobject]@{
-        Mode = Get-CapsulenvInstallMode
+        Mode = $mode
         DirtyRepositories = $dirtyRepositories.Count
         StoppedProcesses = $stopped.Count
         ScratchRemoved = -not (Test-Path -LiteralPath $scratch)
