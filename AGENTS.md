@@ -24,6 +24,6 @@
 - `README.md` is the user guide: installation, mode choice, common workflows and discoverability. Do not put implementation proofs, internal state-machine detail or test architecture back into README.
 - `docs/ARCHITECTURE.md` owns runtime invariants and mode/Scoop/PowerShell/browser/Bitwarden internals.
 - `docs/TOOLS.md` owns tool-data/cache/project-cache and uv/Pixi repair semantics.
-- `docs/INSTALL.md` owns build/deployment/installer mechanics; `docs/DEVELOPMENT.md` owns source/test contributor workflow.
+- `docs/DEPLOYMENT.md` owns build/deployment/installer mechanics; `docs/DEVELOPMENT.md` owns source/test contributor workflow.
 - `docs/MIGRATION.md` contains only upgrade actions from historical behavior. It should link to current canonical docs instead of restating them.
 - When behavior changes, update the one canonical detailed page plus the minimal README command/user-facing description if needed; do not copy the same explanation across files.

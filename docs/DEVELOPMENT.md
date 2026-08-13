@@ -48,7 +48,7 @@ The minimal runtime contains the launcher, prebuilt module, runtime scripts/conf
 
 Build output may not overwrite the repository root. A source-local output must stay under `dist/`; this is deliberately enforced because the builder replaces its output tree.
 
-Detailed managed-file/update semantics are canonical in [`INSTALL.md`](INSTALL.md).
+Detailed managed-file/update semantics are canonical in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Tests
 
@@ -87,7 +87,7 @@ To prevent the previous documentation drift, each topic has one canonical home:
 | install/use/common workflows | `README.md` |
 | runtime ownership, modes, Scoop/PowerShell/browser/Bitwarden internals | `docs/ARCHITECTURE.md` |
 | tool storage, caches, project links, uv/Pixi repair | `docs/TOOLS.md` |
-| build/deploy/installer mechanics | `docs/INSTALL.md` |
+| build/deploy/installer mechanics | `docs/DEPLOYMENT.md` |
 | source/test/contributor workflow | `docs/DEVELOPMENT.md` |
 | upgrade actions from old versions | `docs/MIGRATION.md` |
 | non-negotiable repository/agent invariants | `AGENTS.md` |

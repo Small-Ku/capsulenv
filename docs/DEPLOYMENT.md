@@ -1,6 +1,6 @@
 # Build and deployment
 
-這份文件是 source checkout -> redistributable runtime -> installed capsule 的 developer/deployment reference。一般使用者第一次安裝與兩種使用模式請從 [`../README.md`](../README.md) 開始；mode ownership 的內部 contract 見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
+這份文件是 source checkout -> installable runtime bundle -> installed capsule 的 developer/deployment reference。一般使用者第一次安裝與兩種使用模式請從 [`../README.md`](../README.md) 開始；mode ownership 的內部 contract 見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
 
 ## Runtime build
 
@@ -10,7 +10,7 @@ Development checkout 可直接從 `src/*.ps1` deterministic merge module；正�
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv
 ```
 
-Minimal runtime 包含 launcher、prebuilt `modules\Capsulenv`、runtime scripts/config、README 與 docs，不需要 `src/`、tests 或 `Merge-ModuleScripts.ps1`。需要 source/tests 的診斷包時才使用：
+Minimal runtime bundle 包含 `install.cmd`／installer、launcher、prebuilt `modules\Capsulenv`、runtime scripts/config、README 與 docs，不需要 `src/`、tests、`Merge-ModuleScripts.ps1` 或 build script。`.capsulenv-runtime.json` schema 2 列出版本、source commit 與完整 `ManagedFiles`，因此 bundle 本身就是 installer payload。需要 source/tests 的診斷包時才使用：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv-dev -IncludeDevelopmentFiles
@@ -20,7 +20,7 @@ Builder 會先清空 output tree，因此拒絕 repository root、repository anc
 
 ## Install or update a destination
 
-最簡入口：
+Source checkout 與 prebuilt bundle 都提供同一入口：
 
 ```bat
 install.cmd D:\Portable\capsulenv
@@ -32,9 +32,9 @@ install.cmd D:\Portable\capsulenv
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-Capsulenv.ps1 -Destination D:\Portable\capsulenv
 ```
 
-Destination 不可位於 source repository 內；若只想建立 source-local staging tree，使用 build script。
+從 source checkout 執行時，installer 先在 temporary directory 呼叫 builder 產生新 runtime；從 prebuilt bundle 執行時，直接驗證 `.capsulenv-runtime.json` schema 2／`ManagedFiles` 並以該 bundle 作 payload，不需要 `src/` 或 build script。Destination 不可等於、位於 installer source 內或成為其 ancestor。
 
-Installer 先在 temporary directory 建立新的 runtime，再以 `.capsulenv-install.json` 的 `ManagedFiles` 作更新邊界。舊 managed files 會先備份，新增/替換採 temporary-file replacement；若 mutation 階段失敗，installer 逆序還原已記錄的 managed files/marker。
+兩條路徑最後都以 `.capsulenv-install.json` 的 `ManagedFiles` 作 update boundary。舊 managed files 會先備份，新增/替換採 temporary-file replacement；若 mutation 階段失敗，installer 逆序還原已記錄的 managed files/marker。成功後 installer 會印出 installed/updated destination 與下一個 `capsulenv.cmd` command。
 
 Installer 不接管 mutable/user data。以下典型內容跨 update 保留：
 
@@ -51,6 +51,14 @@ config/capsulenv.local.psd1
 ```
 
 Destination 中與 install marker 無關的其他檔案同樣不會因正常 update 被刪除。對一個非空、但沒有 `.capsulenv-install.json` 的目錄，必須明確 `-Force` 才採用為 install destination；`-Force` 也不代表刪除未知內容。
+
+## Release bundle contract
+
+Release artifact 應發佈 `Build-Capsulenv.ps1` 的 minimal output，而不是 source checkout，也不是某個已經使用過、含 mutable data 的 installed capsule。使用者應把 bundle 解壓到 staging directory，再用其中的 installer 寫入長期 portable destination。
+
+更新同理：取得**新版** bundle，從新版 bundle 對既有 destination 再跑 `install.cmd`。Installed capsule 內也有 installer 檔案，是因為它們屬 runtime managed surface；但該 installer 只附帶當前版本 payload，並不自行下載新版本。
+
+`capsulenv.cmd version` 讀取 local runtime metadata；`capsulenv.cmd status` 則在版本之外提供 mode 與本地 readiness 概覽。
 
 ## Install mode request
 
@@ -78,7 +86,7 @@ Bootstrap implementation 與 host-Git transport boundary 見 [`ARCHITECTURE.md`]
 
 ## Development-file deployment
 
-`Install-Capsulenv.ps1 -IncludeDevelopmentFiles` 會令 temporary runtime 包含 source/tests/AGENTS/build scripts，再由相同 transactional managed-file mechanism 安裝。這適合需要在 target machine 直接除錯或跑完整 tests 的情境，不是一般 portable runtime 所需。
+`Install-Capsulenv.ps1 -IncludeDevelopmentFiles` 從 source checkout 執行時會令 temporary runtime 包含 source/tests/AGENTS/build scripts，再由相同 transactional managed-file mechanism 安裝。Prebuilt minimal bundle 無法憑空加入未打包的 development files；若需要它們，release/build 階段就必須使用 `-IncludeDevelopmentFiles`。這適合需要在 target machine 直接除錯或跑完整 tests 的情境，不是一般 portable runtime 所需。
 
 ## Release/update checks
 

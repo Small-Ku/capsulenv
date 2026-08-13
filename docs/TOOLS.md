@@ -180,11 +180,11 @@ capsulenv.cmd seed git
 capsulenv.cmd seed scoop
 ```
 
-`seed powershell` copies the host PowerShell 7 CurrentUserAllHosts/CurrentUserCurrentHost profiles into the Scoop `pwsh` persisted `$PSHOME` profile files. It does not bulk-copy host module directories and does not rewrite host-only absolute paths/imports. Existing non-empty portable profile files require `--force`.
+`seed powershell` copies the host PowerShell 7 CurrentUserAllHosts/CurrentUserCurrentHost profiles into the Scoop `pwsh` persisted `$PSHOME` profile files. The capsule must already have Scoop `pwsh` installed so that the persist contract exists. It does not bulk-copy host module directories and does not rewrite host-only absolute paths/imports. Existing non-empty portable profile files require `--force`.
 
 `seed git` temporarily removes Capsulenv's process Git overlay, asks Git to read/flatten the real host global config, omits `include.*`/`includeIf.*`, keeps Capsulenv-owned SSH configuration separate, and excludes `credential.*`/`http.*.extraHeader` unless `--include-sensitive` is explicit. The result is written to `tool-data/git/config`.
 
-`seed scoop` uses foreign Scoop's native export but keeps only apps+buckets in `tool-data/scoop/Scoopfile.json`; host Scoop config is not imported. Capture is allowed in either mode. `seed scoop --apply` is User-only because native import/install may create normal Scoop user integration.
+`seed scoop` uses foreign Scoop's native export but keeps only apps+buckets in `tool-data/scoop/Scoopfile.json`; host Scoop config is not imported. Capture is allowed in either mode. In ShellOnly, `seed scoop --apply` requires the source host Scoop to remain readable and snapshots each missing installed version directory plus its persist data and available bucket repo into the capsule, then invokes only the ShellOnly portable reset path. It deliberately does **not** execute native `scoop import/install`, arbitrary manifest installer/pre/post hooks, shortcuts or persistent environment integration. Existing capsule apps/persist win and are not replaced. An inventory containing global apps requires an elevated terminal, and Capsulenv checks this before copying snapshot state. If the original app files are gone, ShellOnly apply fails closed. In User mode, `--apply` uses native `scoop import`, because normal Scoop current-user lifecycle integration is allowed by that mode.
 
 ## Host-local scratch and offline cache
 

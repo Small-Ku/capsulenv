@@ -1,6 +1,6 @@
 # Architecture and ownership
 
-這份文件是 Capsulenv 目前 runtime ownership 與 isolation semantics 的權威說明。使用者操作流程放在 [`../README.md`](../README.md)；tool/cache 細節放在 [`TOOLS.md`](TOOLS.md)；build/deployment 放在 [`INSTALL.md`](INSTALL.md)。
+這份文件是 Capsulenv 目前 runtime ownership 與 isolation semantics 的權威說明。使用者操作流程放在 [`../README.md`](../README.md)；tool/cache 細節放在 [`TOOLS.md`](TOOLS.md)；build/deployment 放在 [`DEPLOYMENT.md`](DEPLOYMENT.md)。
 
 ## Core ownership rule
 

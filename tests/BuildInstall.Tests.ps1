@@ -60,7 +60,7 @@ Describe 'Capsulenv build and install' {
                 'README.md',
                 'docs/ARCHITECTURE.md',
                 'docs/DEVELOPMENT.md',
-                'docs/INSTALL.md',
+                'docs/DEPLOYMENT.md',
                 'docs/MIGRATION.md',
                 'docs/TOOLS.md'
             )) {

@@ -64,7 +64,7 @@ try {
         @{ Source = 'scripts/scoop-capsulenv-portable-reset.ps1'; Destination = 'scripts/scoop-capsulenv-portable-reset.ps1' }
         @{ Source = 'docs/ARCHITECTURE.md'; Destination = 'docs/ARCHITECTURE.md' }
         @{ Source = 'docs/DEVELOPMENT.md'; Destination = 'docs/DEVELOPMENT.md' }
-        @{ Source = 'docs/INSTALL.md'; Destination = 'docs/INSTALL.md' }
+        @{ Source = 'docs/DEPLOYMENT.md'; Destination = 'docs/DEPLOYMENT.md' }
         @{ Source = 'docs/MIGRATION.md'; Destination = 'docs/MIGRATION.md' }
         @{ Source = 'docs/TOOLS.md'; Destination = 'docs/TOOLS.md' }
     )

@@ -6,35 +6,38 @@ Capsulenv 不另造一套 app profile store：Scoop app、`persist`、browser pr
 
 ## 快速開始
 
-把 runtime 安裝到 portable drive：
+把 release bundle 解壓到任意暫存目錄，再從 bundle 內安裝到 portable drive：
 
 ```bat
 install.cmd D:\Portable\capsulenv
-cd /d D:\Portable\capsulenv
-capsulenv.cmd doctor
-capsulenv.cmd init
-capsulenv.cmd shell
+D:\Portable\capsulenv\capsulenv.cmd
 ```
 
-第一次執行時若 capsule 內還沒有 Scoop core／Main，Capsulenv 會自行 bootstrap。之後搬到另一個 drive letter 或另一台電腦，第一次 `shell` 會按需要自動 rehydrate。
+Source checkout 也使用同一個 `install.cmd <destination>` 入口。Installer 完成後會直接印出下一個 launcher command。**不需要先跑 `doctor` 或 `init`**；沒有參數的 `capsulenv.cmd` 本身就是 `shell`。
 
-日常通常只需要：
+第一次啟動若 capsule 內還沒有 Scoop core／Main，Capsulenv 會自行 bootstrap。這只建立 package-manager 基礎，**不代表 Git、pwsh、uv、Pixi、Node、Rust 等 toolset 已預裝**。全新環境可在 capsule shell 裡按需要安裝，例如：
 
-```bat
-capsulenv.cmd shell
+```powershell
+scoop install git pwsh
 ```
 
-在 shell 內直接使用 Scoop、Git、PowerShell、uv、Pixi、npm/pnpm、Bun、Go、Rust/Cargo 等工具即可。只想執行單一命令時可用：
+之後搬到另一個 drive letter 或另一台電腦，直接再執行 `capsulenv.cmd`；shell 啟動會按需要自動 rehydrate。
+
+日常常用入口：
 
 ```bat
-capsulenv.cmd run scoop status
+capsulenv.cmd
 capsulenv.cmd run git status
+capsulenv.cmd status
+capsulenv.cmd version
 ```
 
-完整命令列表：
+`status` 只讀本地狀態，快速顯示 mode、Scoop app 數量、relocation、managed project links／tool workspaces 與 offline run readiness；深入檢查才使用 `doctor`。命令概覽與分層說明：
 
 ```bat
 capsulenv.cmd help
+capsulenv.cmd help seed
+capsulenv.cmd help repair
 ```
 
 ## ShellOnly 與 User
@@ -58,7 +61,7 @@ capsulenv.cmd user-shell
 capsulenv.cmd eject
 ```
 
-`eject` 會收尾 capsule-owned process、檢查 `workspace/` 第一層 Git repository 是否 dirty，並清理 host-local scratch；**它不會自動撤銷 User mode**。真正要把目前 Windows user 還原成接管前狀態時才使用：
+`eject` 會收尾 capsule-owned process、檢查 `workspace/` 第一層 Git repository 是否 dirty，並清理 host-local scratch。若仍有 capsule-owned process，普通 `eject` 會以 blocked/failure 結束而不宣稱已完成；需要明確終止它們才用 `eject --force`。**`eject` 不會自動撤銷 User mode**，而且 User mode 下會直接提示 integration 仍然有效。真正要把目前 Windows user 還原成接管前狀態時才使用：
 
 ```bat
 capsulenv.cmd restore-user
@@ -106,13 +109,15 @@ capsulenv.cmd seed git
 capsulenv.cmd seed scoop
 ```
 
-`seed powershell` 匯入目前 user 的 PowerShell 7 profiles；`seed git` 匯入 host global Git config，預設排除 credential／HTTP header 等敏感設定；`seed scoop` 只保存 host Scoop 的 apps+buckets inventory。要在 User mode 套用已保存的 Scoop inventory：
+`seed powershell` 匯入目前 user 的 PowerShell 7 profiles；**capsule 內必須先已有 Scoop `pwsh`**。`seed git` 匯入 host global Git config，預設排除 credential／HTTP header 等敏感設定。`seed scoop` 先保存 foreign host Scoop 的 apps+buckets inventory；要同時把 app set 搬進 capsule：
 
 ```bat
 capsulenv.cmd seed scoop --apply
 ```
 
-已有 portable destination 時，seed 會要求 `--force` 才覆寫。Git credential／HTTP extra header 只有明確加入 `--include-sensitive` 才會匯入。
+在 **ShellOnly**，`--apply` 不執行 native `scoop import/install`，而是從仍存在的來源 host Scoop 複製已安裝 version state、persist data 與可用 bucket snapshot，再用 portable reset 重建 capsule-owned `current`／shim／persist links；因此不會為了 migration 執行任意 installer/hook 或建立 host shortcut/environment。若 inventory 含 global apps，請用 elevated terminal 執行，且 Capsulenv 會在複製任何 snapshot 前先檢查權限。若只剩 `Scoopfile.json`、原 host app files 已不可讀，ShellOnly 會拒絕假裝能安全重建；回來源機再跑一次，或在明確選擇 User mode 後讓 Scoop 原生 import。
+
+在 **User** mode，`--apply` 使用 Scoop 原生 import，因為該 mode 本來就允許 Scoop 正常建立 current-user integration。已有 portable seed destination 時，capture 要 `--force` 才覆寫；已存在於 capsule 的 app state 不會被 ShellOnly snapshot migration 覆蓋。Git credential／HTTP extra header 只有明確加入 `--include-sensitive` 才會匯入。
 
 ## PowerShell 私人 modules
 
@@ -208,6 +213,19 @@ capsulenv.cmd bitwarden restore
 
 Capsulenv 不複製、重建或重新序列化 Bitwarden vault/app state；更精確的 safety contract 見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
+## 更新與移除
+
+下載／建立新版 release bundle 後，**從新版 bundle** 對同一個 destination 再執行 installer：
+
+```bat
+X:\capsulenv-release\install.cmd D:\Portable\capsulenv
+D:\Portable\capsulenv\capsulenv.cmd version
+```
+
+Installer 只替換 bundle manifest 列出的 managed runtime files；`scoop/`、`tool-data/`、`cache/`、`workspace/`、`PowerShell/Modules/`、`.capsulenv/`、local config 與其他 unmanaged files 會保留，mutation 失敗時會回滾 runtime replacement。不要用舊 installed capsule 內附的 installer 當成「自動更新器」；它只帶著當時那一版 payload。
+
+Capsulenv 是 portable directory，沒有另外的 machine-wide uninstaller。要永久移除一支 capsule：先在仍使用 User mode 的 host 上執行 `restore-user`，再 `eject`；確認不再需要 USB 內的 `workspace/`、`tool-data/`、Scoop `persist` 等 user data 後，刪除整個 capsule directory。若只想移除 runtime、保留資料供之後重裝，直接保留目錄並用新版 bundle 對同一 destination 安裝即可。
+
 ## 設定
 
 預設設定在 `config\capsulenv.psd1`。不要直接把個人差異寫進預設檔；先建立 git-ignored local config：
@@ -231,6 +249,6 @@ capsulenv.cmd help
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：ownership、mode、Scoop/PowerShell/Bitwarden/relocation 的內部設計與安全邊界。
 - [`docs/TOOLS.md`](docs/TOOLS.md)：tool-data/cache/project-cache、uv/Pixi workspace repair、seed 與 offline storage semantics。
-- [`docs/INSTALL.md`](docs/INSTALL.md)：runtime build、installer/update 與 deployment contract。
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)：runtime build、installer/update 與 deployment contract。
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)：source layout、module build、測試與 contributor workflow。
 - [`docs/MIGRATION.md`](docs/MIGRATION.md)：舊 portable-scoop/capsulenv 版本升級到目前 ownership model 的必要步驟。
