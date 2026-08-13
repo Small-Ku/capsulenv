@@ -19,6 +19,7 @@ Daily commands
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
   capsulenv.cmd user-shell [--force]
   capsulenv.cmd status
+  capsulenv.cmd version
   capsulenv.cmd eject [--force]
   capsulenv.cmd doctor
 
@@ -615,6 +616,10 @@ function Invoke-Capsulenv {
         'status' {
             if ($remaining.Count -gt 0) { throw 'Usage: status' }
             Get-CapsulenvStatus | Format-List
+        }
+        'version' {
+            if ($remaining.Count -gt 0) { throw 'Usage: version' }
+            Get-CapsulenvRuntimeVersion | Write-Output
         }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
         'seed' { Invoke-CapsulenvSeedCommand -Arguments $remaining }

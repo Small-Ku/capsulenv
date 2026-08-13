@@ -52,7 +52,9 @@ try {
 
     $files = @(
         @{ Source = 'capsulenv.cmd'; Destination = 'capsulenv.cmd' }
+        @{ Source = 'install.cmd'; Destination = 'install.cmd' }
         @{ Source = 'README.md'; Destination = 'README.md' }
+        @{ Source = 'scripts/Install-Capsulenv.ps1'; Destination = 'scripts/Install-Capsulenv.ps1' }
         @{ Source = 'bin/firefox-capsulenv.cmd'; Destination = 'bin/firefox-capsulenv.cmd' }
         @{ Source = 'bin/zen-capsulenv.cmd'; Destination = 'bin/zen-capsulenv.cmd' }
         @{ Source = 'config/capsulenv.psd1'; Destination = 'config/capsulenv.psd1' }
@@ -90,9 +92,7 @@ try {
             'AGENTS.md',
             'Capsulenv.psd1',
             'Merge-ModuleScripts.ps1',
-            'install.cmd',
             'scripts/Build-Capsulenv.ps1',
-            'scripts/Install-Capsulenv.ps1',
             'scripts/Test-Capsulenv.ps1'
         )) {
             $source = Join-Path $sourceRoot $fileName
@@ -124,12 +124,20 @@ try {
         }
     }
 
+    $managedFiles = @(
+        Get-ChildItem -LiteralPath $outputRoot -File -Recurse -Force | ForEach-Object {
+            $_.FullName.Substring($outputRoot.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')
+        } | Sort-Object -Unique
+    )
+    $managedFiles = @($managedFiles + '.capsulenv-runtime.json' | Sort-Object -Unique)
+
     $metadata = [ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = 2
         Version = [string]$build.ModuleVersion
         SourceCommit = $commit
         BuiltAtUtc = [DateTime]::UtcNow.ToString('o')
         DevelopmentFilesIncluded = [bool]$IncludeDevelopmentFiles
+        ManagedFiles = $managedFiles
     }
     $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $outputRoot '.capsulenv-runtime.json') -Encoding UTF8
 
@@ -138,6 +146,7 @@ try {
         Version = [string]$build.ModuleVersion
         ModulePath = Join-Path $moduleDestination 'Capsulenv.psd1'
         SourceCommit = $commit
+        ManagedFiles = $managedFiles
     }
 } finally {
     if (Test-Path -LiteralPath $temporaryBuild) {

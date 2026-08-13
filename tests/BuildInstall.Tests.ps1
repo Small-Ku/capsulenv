@@ -18,6 +18,7 @@ Describe 'Capsulenv build and install' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-build-install-test-{0}" -f [Guid]::NewGuid().ToString('N'))
         $buildRoot = Join-Path $temporaryRoot 'build'
         $installRoot = Join-Path $temporaryRoot 'install'
+        $prebuiltInstallRoot = Join-Path $temporaryRoot 'prebuilt-install'
 
         try {
             [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
@@ -29,6 +30,32 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition (Test-Path -LiteralPath (Join-Path $buildRoot '.capsulenv-runtime.json') -PathType Leaf) `
                 -Message 'Runtime build metadata was not created.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (Test-Path -LiteralPath (Join-Path $buildRoot 'install.cmd') -PathType Leaf) `
+                -Message 'Minimal runtime is not directly installable: install.cmd is missing.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (Test-Path -LiteralPath (Join-Path $buildRoot 'scripts/Install-Capsulenv.ps1') -PathType Leaf) `
+                -Message 'Minimal runtime is not directly installable: installer script is missing.'
+            $runtimeMetadata = Get-Content -LiteralPath (Join-Path $buildRoot '.capsulenv-runtime.json') -Raw | ConvertFrom-Json
+            Assert-CapsulenvBuildInstallTest `
+                -Condition ([int]$runtimeMetadata.SchemaVersion -eq 2) `
+                -Message 'Runtime build did not write the installable runtime metadata schema.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (@($runtimeMetadata.ManagedFiles) -contains 'install.cmd') `
+                -Message 'Runtime manifest does not own its installer entry point.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (@($runtimeMetadata.ManagedFiles) -contains '.capsulenv-runtime.json') `
+                -Message 'Runtime manifest does not own its own metadata file.'
+
+            $prebuiltInstaller = Join-Path $buildRoot 'scripts/Install-Capsulenv.ps1'
+            $prebuiltInstall = & $prebuiltInstaller $prebuiltInstallRoot
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (Test-Path -LiteralPath $prebuiltInstall.Launcher -PathType Leaf) `
+                -Message 'Prebuilt runtime bundle could not install a new capsule.'
+            $prebuiltMarker = Get-Content -LiteralPath (Join-Path $prebuiltInstallRoot '.capsulenv-install.json') -Raw | ConvertFrom-Json
+            Assert-CapsulenvBuildInstallTest `
+                -Condition ([string]$prebuiltMarker.Version -eq [string]$runtimeMetadata.Version) `
+                -Message 'Prebuilt runtime installation did not preserve bundle version metadata.'
             foreach ($runtimeDoc in @(
                 'README.md',
                 'docs/ARCHITECTURE.md',

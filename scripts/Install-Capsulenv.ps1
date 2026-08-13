@@ -78,7 +78,23 @@ if ($sourceComparison.StartsWith($destinationPrefix, [System.StringComparison]::
 }
 $sourcePrefix = $sourceComparison + [System.IO.Path]::DirectorySeparatorChar
 if ($destinationComparison.StartsWith($sourcePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Install destination must not be inside the source repository. Use Build-Capsulenv.ps1 for a source-local dist directory.'
+    throw 'Install destination must not be inside the source repository/runtime bundle. Use a separate destination directory.'
+}
+
+$runtimeSourceMetadata = $null
+$runtimeSourceMetadataPath = Join-Path $sourceRoot '.capsulenv-runtime.json'
+if (Test-Path -LiteralPath $runtimeSourceMetadataPath -PathType Leaf) {
+    $runtimeSourceMetadata = Get-Content -LiteralPath $runtimeSourceMetadataPath -Raw | ConvertFrom-Json
+    if (
+        $null -eq $runtimeSourceMetadata.SchemaVersion -or
+        [int]$runtimeSourceMetadata.SchemaVersion -ne 2 -or
+        $null -eq $runtimeSourceMetadata.ManagedFiles
+    ) {
+        throw 'This prebuilt capsulenv runtime does not contain an installable runtime manifest. Rebuild it with the current Build-Capsulenv.ps1.'
+    }
+    if ($IncludeDevelopmentFiles -and -not [bool]$runtimeSourceMetadata.DevelopmentFilesIncluded) {
+        throw '-IncludeDevelopmentFiles cannot add source/tests that are not present in this prebuilt runtime bundle.'
+    }
 }
 
 $markerPath = Join-Path $destinationRoot '.capsulenv-install.json'
@@ -118,15 +134,30 @@ $installResult = $null
 try {
     [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
     [void](New-Item -ItemType Directory -Path $rollbackRoot -Force)
-    $build = & (Join-Path $PSScriptRoot 'Build-Capsulenv.ps1') `
-        -OutputPath $buildRoot `
-        -IncludeDevelopmentFiles:$IncludeDevelopmentFiles
-
-    $newManagedFiles = @(
-        Get-ChildItem -LiteralPath $buildRoot -File -Recurse -Force | ForEach-Object {
-            $_.FullName.Substring($buildRoot.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')
-        } | Sort-Object -Unique
-    )
+    if ($null -ne $runtimeSourceMetadata) {
+        $buildRoot = $sourceRoot
+        $build = [pscustomobject]@{
+            OutputPath = $sourceRoot
+            Version = [string]$runtimeSourceMetadata.Version
+            SourceCommit = $runtimeSourceMetadata.SourceCommit
+        }
+        $newManagedFiles = @(
+            $runtimeSourceMetadata.ManagedFiles | ForEach-Object { [string]$_ } | Sort-Object -Unique
+        )
+        foreach ($relative in $newManagedFiles) {
+            $sourcePath = Resolve-CapsulenvManagedInstallPath -Root $buildRoot -RelativePath $relative
+            if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+                throw "Prebuilt runtime managed file is missing: $relative"
+            }
+        }
+    } else {
+        $build = & (Join-Path $PSScriptRoot 'Build-Capsulenv.ps1') `
+            -OutputPath $buildRoot `
+            -IncludeDevelopmentFiles:$IncludeDevelopmentFiles
+        $newManagedFiles = @(
+            $build.ManagedFiles | ForEach-Object { [string]$_ } | Sort-Object -Unique
+        )
+    }
     $oldManagedFiles = if ($null -ne $existingMarker -and $null -ne $existingMarker.ManagedFiles) {
         @($existingMarker.ManagedFiles | ForEach-Object { [string]$_ } | Sort-Object -Unique)
     } else {
@@ -316,4 +347,7 @@ try {
     }
 }
 
+$action = if ($installResult.UpdatedExistingInstallation) { 'updated' } else { 'installed' }
+Write-Host ("capsulenv {0} to {1}" -f $action, $installResult.Destination)
+Write-Host ('Next: "{0}"' -f $installResult.Launcher)
 $installResult
