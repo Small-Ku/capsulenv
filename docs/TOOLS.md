@@ -1,78 +1,178 @@
 # Tool storage and native relocation
 
-## Package-manager storage ownership
+這份文件是 `tool-data/`、`cache/`、`project-cache/` 與 uv/Pixi native repair 的權威 reference。README 只保留日常命令；runtime mode/ownership 則見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
 
-Capsulenv splits tool storage into rebuildable shared cache, persistent tool data,
-and project-local state. The default environment mappings are intentionally
-process-only in ShellOnly mode and become User environment variables only after
-`install-user`.
+## Storage classes
 
-| Tool | Cache/store under `cache/` | Persistent state under `tool-data/` | Project-local policy |
-|---|---|---|---|
-| Git | — | `git/config` via `GIT_CONFIG_GLOBAL` | repository config remains project-owned |
-| PowerShell | — | `powershell/PSReadLine/ConsoleHost_history.txt` | `$PSHOME` profiles remain Scoop-persist-owned |
-| uv | `uv`, `uv-python` | managed Python, global tools, `uv/uv.toml` | `.venv` remains project-owned; registered lock-backed workspaces can be rebuilt |
-| Pixi | `pixi` | `PIXI_HOME` plus `pixi/config.toml` via `PIXI_CONFIG_FILE` | `.pixi` remains Pixi/workspace-owned |
-| npm | `npm` | global prefix plus `npm/npmrc` | `node_modules` remains project-owned |
-| pnpm | `pnpm`, `pnpm-store` | home/global/state/bin | project virtual store remains project-owned |
-| Bun | `bun` | global packages/bin | `node_modules` remains project-owned; global virtual store is not enabled by Capsulenv |
-| Go | `go-build`, `go-mod` | GOPATH/GOBIN/GOENV | temporary scratch remains OS/tool-owned |
-| Rust/Cargo | no separate Cargo-home split | rustup and Cargo home | `target` can use the `cargo-target` project-link profile |
-| ccache | `ccache` | `ccache/ccache.conf` | project `ccache.conf` remains project-owned |
-| sccache | `sccache` | `sccache/config.toml` | file-based config is capsule-owned; explicit environment overrides still apply |
+Capsulenv 不把所有 package-manager 資料都叫做 cache。預設分成：
 
-`ToolStorage.PathVariables` are directory-valued environment variables.
-`ToolStorage.FileVariables` are file-valued variables; initialization creates the
-parent directory and a missing empty file. This distinction now covers
-`GIT_CONFIG_GLOBAL`, `UV_CONFIG_FILE`, `PIXI_CONFIG_FILE`, `NPM_CONFIG_USERCONFIG`,
-`CAPSULENV_PSREADLINE_HISTORY`, `GOENV`, `CCACHE_CONFIGPATH`, and `SCCACHE_CONF`. Git/uv/Pixi/npm therefore do not
-fall back to host user/global config while inside Capsulenv. Because an npm user config can contain
-registry credentials, `tool-data/npm/npmrc` must be treated as persistent secret-bearing
-state rather than disposable cache.
+```text
+cache/                              rebuildable shared caches/stores
+├─ scoop/
+├─ uv/
+├─ uv-python/
+├─ pixi/
+├─ npm/
+├─ pnpm/
+├─ pnpm-store/
+├─ bun/
+├─ go-build/
+├─ go-mod/
+├─ ccache/
+└─ sccache/
 
-`CARGO_HOME` is deliberately **not** placed under `cache/`: it is mixed state
-containing installed binaries and potentially configuration/credentials as well
-as registry/git caches. Likewise pnpm state/global dirs and package-manager global
-installs are persistent data even though some can be reconstructed from manifests.
+tool-data/                          persistent tool state/global installs
+├─ git/config
+├─ powershell/PSReadLine/
+├─ uv/python/
+├─ uv/tools/
+├─ uv/uv.toml
+├─ pixi/
+├─ npm/
+├─ pnpm/
+├─ pnpm-state/
+├─ bun/global/
+├─ bun/bin/
+├─ go/gopath/
+├─ go/bin/
+├─ go/env
+├─ rustup/
+├─ cargo/
+├─ ccache/ccache.conf
+└─ sccache/config.toml
+```
 
-Capsulenv deliberately does not redirect `XDG_CONFIG_HOME` for the whole session.
-Current pnpm can use the portable `PNPM_CONFIG_*` settings above and honors
-`NPM_CONFIG_USERCONFIG` as a fallback for registry/auth configuration, but its newer
-global YAML configuration directory is not forcibly relocated. Bun likewise has no
-dedicated environment variable for the global `bunfig.toml` path; upstream discovers
-it through HOME/XDG (or an explicit per-command `--config`). Overriding XDG globally
-would silently change unrelated applications, while interposing package-manager shims
-would duplicate Scoop ownership, so those remain documented host-config boundaries.
-Project-local pnpm/Bun configuration stays project-owned.
+預設 environment mapping：
 
-Go has one host-owned exception that cannot be represented honestly as another
-ToolStorage path: `GOTELEMETRYDIR` is reported by the Go command but is not an
-environment-settable redirect. Capsulenv isolates `GOENV`, `GOPATH`, `GOBIN`,
-`GOCACHE`, and `GOMODCACHE`, but does not rewrite the process-wide Windows/XDG
-user-config root merely to move telemetry state. Go telemetry therefore remains
-a documented host-owned exception.
+| Tool | Rebuildable cache/store | Persistent capsule state |
+|---|---|---|
+| Scoop | `SCOOP_CACHE` -> `cache/scoop` | app/bucket/persist state under Scoop roots |
+| Git | — | `GIT_CONFIG_GLOBAL` -> `tool-data/git/config` |
+| PowerShell | — | PSReadLine history -> `tool-data/powershell/PSReadLine/ConsoleHost_history.txt` |
+| uv | `UV_CACHE_DIR`, `UV_PYTHON_CACHE_DIR` | managed Python, global tools, `UV_CONFIG_FILE`, shared `bin/` |
+| Pixi | `PIXI_CACHE_DIR` | `PIXI_HOME`, `PIXI_CONFIG_FILE` |
+| npm | `NPM_CONFIG_CACHE` | `NPM_CONFIG_PREFIX`, `NPM_CONFIG_USERCONFIG` |
+| pnpm | store/cache dirs | `PNPM_HOME`, state/global/global-bin dirs; npmrc fallback |
+| Bun | install cache | global package/bin dirs |
+| Go | `GOCACHE`, `GOMODCACHE` | `GOPATH`, `GOBIN`, `GOENV` |
+| Rust/Cargo | project `target/` is separate | `RUSTUP_HOME`, mixed `CARGO_HOME` |
+| ccache | cache/temp dirs | `CCACHE_CONFIGPATH` |
+| sccache | cache dir | `SCCACHE_CONF` |
 
-The central stores for uv, pnpm and Pixi perform best when the consuming project
-environment is on the same filesystem. A project on another drive may force copy
-fallbacks instead of hardlink/reflink materialization. Capsulenv favors portable
-isolation by default; put projects under `workspace/` (or otherwise on the same
-filesystem) when deduplication performance matters.
+`ToolStorage.PathVariables` only contains directory-valued variables. `ToolStorage.FileVariables` is separate so `cache init` creates the parent + missing empty file instead of accidentally making a directory named `config.toml`, `npmrc`, etc.
 
-Capsulenv does not expose a generic destructive `cache clean all`. Several tools
-have daemon or linking semantics, and optional modes such as Bun/pnpm global
-virtual stores or uv symlink linking can make a shared cache a live dependency.
-Use tool-native cleaning commands when required; `cache paths` shows which paths
-belong to the capsule.
+`tool-data/` is persistent state and may contain credentials/tokens. In particular `CARGO_HOME` is mixed state: installed binaries, registry/git cache and potentially config/credentials coexist, and Cargo does not expose a complete set of independent official redirects that would make the whole directory safely disposable.
 
+## Host-config boundaries
 
-Directory hardlinks do not exist on Windows, and not every portable tool link is
-a filesystem junction owned by capsulenv. Package hardlinks usually survive a
-move on the same NTFS volume, but launchers, virtual environments, Conda prefixes,
-and tool metadata can retain the previous absolute capsule path. Capsulenv repairs
-those objects through the owning tool instead of recursively rewriting binaries.
+Capsulenv does not redirect session-wide `XDG_CONFIG_HOME` merely to capture every package manager's last config file. Doing so would change unrelated child applications.
 
+Current pnpm portable data/cache paths and `NPM_CONFIG_USERCONFIG` are used, but pnpm's newer global YAML config discovery is not forcibly moved through a global XDG override. Bun likewise has no dedicated environment variable for the default global `bunfig.toml`; project-local config remains project-owned, and an explicit per-command config may still be used.
+
+Go has a similar deliberate exception: `go env GOTELEMETRYDIR` is calculated by Go and is not an environment-settable redirect. Capsulenv owns `GOENV`, `GOPATH`, `GOBIN`, `GOCACHE` and `GOMODCACHE`, but does not repoint the entire Windows/XDG user-config root solely to move telemetry state.
+
+These are documented host-owned boundaries rather than silently claiming full portability.
+
+## Cache cleaning and filesystem locality
+
+`cache/` is conceptually rebuildable, but Capsulenv does not expose a destructive `cache clean all`. Tool modes can turn a shared store/cache into a live dependency: uv symlink linking, package-manager virtual stores, daemons and active hardlinks/reflinks all have tool-specific semantics. Use native cleaning commands when required; `capsulenv.cmd cache paths` tells you which paths are capsule-owned.
+
+uv, pnpm and Pixi stores perform best when the consuming project environment is on the same filesystem. If the capsule is on `F:` while a project is on `D:`, hardlink/reflink materialization may fall back to copies. Put performance-sensitive portable projects under `workspace/` or otherwise on the same filesystem when practical.
+
+Capsulenv does not globally redirect `node_modules`, `.venv`, `.pixi` or every project's build output into one shared directory. Correct project ownership/isolation takes priority over maximum deduplication.
+
+## Project-cache links
+
+Project-local caches/build directories can be backed by `project-cache/` only through explicit profiles. The default `cargo-target` profile moves a Rust project's `target/` into capsule storage and leaves a managed directory junction:
+
+```bat
+capsulenv.cmd cache link cargo-target D:\src\project --move
+capsulenv.cmd cache status D:\src\project
+capsulenv.cmd cache unlink cargo-target D:\src\project --restore
+```
+
+Directory hardlinks do not exist on Windows. Directory profiles default to junctions; `--symlink` is available where Windows permissions/Developer Mode permit. `HardLink` is valid only for `Kind = 'File'` profiles and only when link/store remain on the same volume.
+
+Registry state is stored in `.capsulenv/project-cache-links.json`. Capsule-internal projects use a capsule-relative identity, so moving `workspace/project` with the USB keeps the same project ID. External projects are identified by absolute path and intentionally become a new cache identity when the project itself moves elsewhere.
+
+Junctions/absolute symlinks store absolute targets. After relocation Capsulenv only replaces a stale link when its current target exactly matches the previously registered target and the new target is still within the recorded ownership boundary. Ordinary directories/files or links pointing elsewhere are never replaced opportunistically.
+
+File-hardlink records also store length + SHA-256. A cross-drive copy can turn one hardlink pair into two independent regular files; repair recreates the hardlink only if both copies still match the stored fingerprint and the new paths are on the same volume. Diverged copies are left untouched.
+
+Manual repair:
+
+```bat
+capsulenv.cmd cache repair
+capsulenv.cmd cache repair --strict
+```
+
+## Registered uv/Pixi workspaces
+
+Capsulenv does not recursively discover every `.venv` or `.pixi`; only explicitly registered lock-backed workspaces are eligible for automatic native repair.
+
+```bat
+capsulenv.cmd tools register uv D:\Portable\capsulenv\workspace\python-app
+capsulenv.cmd tools register pixi D:\Portable\capsulenv\workspace\science-app
+capsulenv.cmd tools unregister uv D:\Portable\capsulenv\workspace\python-app
+capsulenv.cmd tools status
+```
+
+An uv workspace must contain `pyproject.toml` + `uv.lock`. A Pixi workspace must contain `pixi.lock` plus `pixi.toml` or `pyproject.toml`. Registry state lives in `.capsulenv/tool-workspaces.json`; paths inside the capsule are stored relative to the capsule, while external workspaces intentionally remain absolute.
+
+## uv native repair
+
+Tool metadata/launchers may contain absolute paths even when the backing directories moved successfully. uv repair is therefore native rather than a recursive text rewrite:
+
+```bat
+capsulenv.cmd tools repair uv --dry-run --last
+capsulenv.cmd tools repair uv --last --strict
+```
+
+Managed Python installs are enumerated using uv's existing installation keys and reinstalled by exact key; Capsulenv never issues a target-less reinstall that could silently select a different default Python.
+
+For global tools, Capsulenv reads each `uv-receipt.toml`, obtains the installed package version from the existing environment, relocates only known OldRoot -> NewRoot receipt metadata, and asks uv to reinstall the same tool/version. The version is supplied to the command rather than rewriting the saved requirement, preserving extras/index/local/VCS intent encoded in the receipt. An uninterpretable receipt/version is reported and left untouched.
+
+For a registered workspace, an explicit `UV_PROJECT_ENVIRONMENT` is accepted only when it resolves inside the workspace or Capsulenv root. Repair transactionally renames the old environment, creates a new environment and performs a locked reinstall:
+
+```text
+uv venv <environment> --project <workspace> --relocatable --no-progress
+uv sync --project <workspace> --locked --reinstall --no-progress
+```
+
+`--relocatable` is feature-detected. Older uv falls back to full recreation + locked sync. If native recreation/sync fails, the partial new environment is removed and the previous environment restored.
+
+## Pixi native repair
+
+Registered Pixi workspaces are rebuilt with:
+
+```text
+pixi reinstall --all --locked --manifest-path <workspace>
+```
+
+Pixi global executables are backed by state under `PIXI_HOME`, but `pixi-global.toml` may contain version ranges and Pixi has no documented global lock file that Capsulenv can rely on. `pixi global sync` can therefore re-resolve dependencies and is **not** automatic by default.
+
+Explicit opt-in:
+
+```bat
+capsulenv.cmd tools repair pixi --last --include-global
+capsulenv.cmd tools repair all --last --include-global
+```
+
+Or set `ToolStorage.Relocation.Pixi.RepairGlobal = $true` in local config if re-resolution is acceptable on every relocation.
+
+## Failure and retry
+
+Automatic tool repair may need network access or a warm package cache. Non-strict relocation reports failed components but can allow the rest of rehydration to complete. The last relocation context remains available for retry:
+
+```bat
+capsulenv.cmd tools repair all --last --strict
+```
+
+`--strict` turns a tool/workspace repair failure into relocation failure before the new fingerprint is committed. `--skip-workspaces` excludes registered project environments; `rehydrate --skip-tool-repairs` skips the entire tool-native stage.
 
 ## One-way host seeding
+
+Seeding imports selected host state into the portable ownership model once; it is not a machine profile or sync service.
 
 ```bat
 capsulenv.cmd seed powershell
@@ -80,17 +180,17 @@ capsulenv.cmd seed git
 capsulenv.cmd seed scoop
 ```
 
-Seeding is deliberately not a machine-profile or ongoing sync mechanism. `seed powershell` copies the host CurrentUser PowerShell 7 profile files into Scoop `pwsh`'s persisted `$PSHOME` profiles and never bulk-copies host module directories. `seed git` captures the host global config with Capsulenv's process overlay removed, flattens includes through Git, then filters Capsulenv-owned SSH settings; credential helpers and HTTP extra headers are excluded unless `--include-sensitive` is explicit.
+`seed powershell` copies the host PowerShell 7 CurrentUserAllHosts/CurrentUserCurrentHost profiles into the Scoop `pwsh` persisted `$PSHOME` profile files. It does not bulk-copy host module directories and does not rewrite host-only absolute paths/imports. Existing non-empty portable profile files require `--force`.
 
-`seed scoop` stores only native-exported `apps` and `buckets` in `tool-data/scoop/Scoopfile.json`; host Scoop config is intentionally not imported. Capture is safe in either integration mode. Applying the saved inventory requires `seed scoop --apply` in User mode because Scoop import/install owns package lifecycle, shortcuts and environment integration.
+`seed git` temporarily removes Capsulenv's process Git overlay, asks Git to read/flatten the real host global config, omits `include.*`/`includeIf.*`, keeps Capsulenv-owned SSH configuration separate, and excludes `credential.*`/`http.*.extraHeader` unless `--include-sensitive` is explicit. The result is written to `tool-data/git/config`.
 
-PowerShell itself remains a Scoop package. Scoop-persisted `$PSHOME` profiles are therefore the package-native portable profile store, while mutable PSReadLine history belongs under `tool-data/powershell`. ShellOnly launches the child shell with host profile auto-loading disabled and then explicitly sources only capsule-owned `$PSHOME` profiles; User mode leaves the normal profile chain intact.
+`seed scoop` uses foreign Scoop's native export but keeps only apps+buckets in `tool-data/scoop/Scoopfile.json`; host Scoop config is not imported. Capture is allowed in either mode. `seed scoop --apply` is User-only because native import/install may create normal Scoop user integration.
 
-## Host-local scratch
+## Host-local scratch and offline cache
 
-`CAPSULENV_SCRATCH` is the one deliberately non-portable storage location. It resolves to the host temporary root under `capsulenv/<capsule-id>` and is intended only for transient extraction/compiler/script working data. Capsulenv does not redirect `TEMP` or `TMP`, so Windows installers and unrelated child applications keep their normal local-temp assumptions. `eject` removes this directory when possible.
+`CAPSULENV_SCRATCH` is deliberately non-portable and resolves under host `%TEMP%\capsulenv\<capsule-id>` (or the platform temporary root in non-Windows tests). Capsulenv does not overwrite `TEMP`/`TMP`; `eject` removes this scratch when possible.
 
-## Offline cache warm-up and version drift
+Offline helpers operate on the portable Scoop state:
 
 ```bat
 capsulenv.cmd offline status
@@ -99,123 +199,4 @@ capsulenv.cmd offline prefetch git nodejs python
 capsulenv.cmd drift
 ```
 
-`offline status` checks whether Scoop core, Main, and the manifests for already-installed apps are present and reports the current `cache/scoop` population. It answers whether the existing USB environment is structurally ready to run; it does not claim that every possible future install can be completed offline.
-
-`offline prefetch` warms Scoop's portable download cache for all installed apps, or for the named installed subset. It uses the locally available bucket reference and asks Scoop not to update itself as a side effect, so a prefetch does not silently change the version snapshot being prepared. `drift` compares installed app versions against the manifests already present in the USB's local buckets and performs no network update.
-
-## Status and workspace registry
-
-```bat
-capsulenv.cmd tools status
-capsulenv.cmd tools register uv D:\Portable\capsulenv\workspace\python-app
-capsulenv.cmd tools register pixi D:\Portable\capsulenv\workspace\science-app
-capsulenv.cmd tools unregister uv D:\Portable\capsulenv\workspace\python-app
-```
-
-Registration is explicit. An uv workspace must contain `pyproject.toml` and
-`uv.lock`; a Pixi workspace must contain `pixi.lock` plus either `pixi.toml` or
-`pyproject.toml`. Capsule-relative workspace paths remain relative in
-`.capsulenv\tool-workspaces.json`, so moving the whole capsule does not turn the
-registry into stale absolute paths. External workspaces remain absolute by design.
-
-Capsulenv does not recursively discover every `.venv` or `.pixi` directory. That
-would be expensive and could rebuild unrelated environments. Only registered
-lock-backed workspaces are automatically repaired.
-
-## uv
-
-```bat
-capsulenv.cmd tools repair uv --dry-run --last
-capsulenv.cmd tools repair uv --last --strict
-```
-
-Automatic repair runs during relocation unless `--skip-tool-repairs` is used.
-Capsulenv asks uv for the exact keys of managed Python installations under the
-portable `UV_PYTHON_INSTALL_DIR`, then reinstalls each key explicitly. It never
-uses a target-less `uv python install --reinstall`, which could select a different
-default Python.
-
-For each global tool, capsulenv reads `uv-receipt.toml`, determines the installed
-package version from its environment, relocates only OldRoot -> NewRoot metadata,
-and invokes `uv tool upgrade --reinstall <name>==<installed-version>`. The exact
-version is a command argument, not a mutation of the saved requirement, so uv can
-reuse the receipt's original Python, index, extras, local path, URL, or VCS source
-settings without turning relocation into an implicit upgrade. If the receipt or
-installed version cannot be interpreted safely, the tool is reported and left
-untouched.
-
-Registered uv workspaces record their actual environment location when they are
-registered. `UV_PROJECT_ENVIRONMENT` is accepted only when the resolved path stays
-inside the workspace or the capsulenv root; capsulenv will not delete or recreate an
-arbitrary system environment outside those ownership boundaries. On relocation it
-transactionally renames the old environment, then runs:
-
-```text
-uv venv <environment> --project <workspace> --relocatable --no-progress
-uv sync --project <workspace> --locked --reinstall --no-progress
-```
-
-The `--relocatable` flag is feature-detected for compatibility with older uv builds.
-When unavailable, capsulenv still recreates the environment from scratch before the
-locked sync and reports the non-relocatable fallback. `--locked` prevents relocation
-repair from changing `uv.lock`. If either native command fails, the partial new
-environment is removed and the previous environment is restored.
-
-## Pixi
-
-```bat
-capsulenv.cmd tools repair pixi --dry-run --last
-capsulenv.cmd tools repair pixi --last --strict
-```
-
-Registered Pixi workspaces are rebuilt with:
-
-```text
-pixi reinstall --all --locked --manifest-path <workspace>
-```
-
-This asks Pixi to recreate every environment declared by the workspace while
-refusing to update a stale lock file.
-
-Pixi global executables are trampolines backed by configuration under
-`PIXI_HOME`. Their hardlinks can survive a move, while the trampoline environment
-or prefix can still require regeneration. Pixi's documented global source of
-truth is `PIXI_HOME\manifests\pixi-global.toml`, but it may contain version ranges
-and has no documented global lock file. Therefore global sync is opt-in by
-default:
-
-```bat
-capsulenv.cmd tools repair pixi --last --include-global
-capsulenv.cmd tools repair all --last --include-global
-```
-
-This runs `pixi global sync` and may resolve another version permitted by the
-global manifest. To accept that automatically on every relocation, set:
-
-```powershell
-@{
-    ToolStorage = @{
-        Relocation = @{
-            Pixi = @{
-                RepairGlobal = $true
-            }
-        }
-    }
-}
-```
-
-## Failure and retry behavior
-
-Tool repair may need the network or a warm uv/Pixi package cache. Non-strict
-automatic repair reports a failed component and lets Scoop rehydration complete.
-`LastRelocation` remains available, so repair can be retried without moving the
-capsule again:
-
-```bat
-capsulenv.cmd tools repair all --last --strict
-```
-
-With `--strict`, a tool or registered workspace failure aborts relocation before
-the new Scoop fingerprint is saved. `--skip-workspaces` repairs only global uv and
-Pixi components. `--skip-tool-repairs` skips the complete tool-native stage during
-`init` or `rehydrate`.
+`offline status` checks structural readiness of the existing installed environment and reports cache population; it does not promise arbitrary future installs will work offline. `offline prefetch` warms downloads for installed apps using the current local bucket snapshot without silently updating that snapshot. `drift` compares installed versions with local bucket manifests and performs no network update.

@@ -1,90 +1,91 @@
-# Build and install
+# Build and deployment
 
-Development checkouts compile the module on entry with `Merge-ModuleScripts.ps1`. A deployed capsulenv should instead contain the deterministic merged module under `modules\Capsulenv` and does not need `src/`, tests, or the merge script.
+這份文件是 source checkout -> redistributable runtime -> installed capsule 的 developer/deployment reference。一般使用者第一次安裝與兩種使用模式請從 [`../README.md`](../README.md) 開始；mode ownership 的內部 contract 見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
 
-Build a redistributable runtime tree:
+## Runtime build
+
+Development checkout 可直接從 `src/*.ps1` deterministic merge module；正式部署應先產生預建 runtime：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv
 ```
 
-Install or update it in a target directory:
+Minimal runtime 包含 launcher、prebuilt `modules\Capsulenv`、runtime scripts/config、README 與 docs，不需要 `src/`、tests 或 `Merge-ModuleScripts.ps1`。需要 source/tests 的診斷包時才使用：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv-dev -IncludeDevelopmentFiles
+```
+
+Builder 會先清空 output tree，因此拒絕 repository root、repository ancestor，以及不在 `dist/` 下的 source-local output。
+
+## Install or update a destination
+
+最簡入口：
 
 ```bat
 install.cmd D:\Portable\capsulenv
 ```
 
-Equivalent PowerShell invocation:
+等價 PowerShell invocation：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-Capsulenv.ps1 -Destination D:\Portable\capsulenv
 ```
 
-The destination must be separate from the source repository; use the build script for a source-local `dist` tree. The installer updates only files recorded in `.capsulenv-install.json`. It preserves `scoop/`, `scoop-global/`, `cache/`, `tool-data/`, `project-cache/`, `workspace/`, `PowerShell/Modules/`, `.capsulenv/`, `config\capsulenv.local.psd1` and every unrelated file in the destination. A non-empty directory without the install marker requires `-Force`; this adopts the directory but still does not delete unrelated content. Managed files and the install marker are backed up before mutation; a failed update rolls them back while leaving mutable/unrelated data untouched.
+Destination 不可位於 source repository 內；若只想建立 source-local staging tree，使用 build script。
 
+Installer 先在 temporary directory 建立新的 runtime，再以 `.capsulenv-install.json` 的 `ManagedFiles` 作更新邊界。舊 managed files 會先備份，新增/替換採 temporary-file replacement；若 mutation 階段失敗，installer 逆序還原已記錄的 managed files/marker。
 
-## Install modes
+Installer 不接管 mutable/user data。以下典型內容跨 update 保留：
 
-The installer has two deliberately different ownership modes.
+```text
+scoop/
+scoop-global/
+cache/
+tool-data/
+project-cache/
+workspace/
+PowerShell/Modules/
+.capsulenv/
+config/capsulenv.local.psd1
+```
 
-The default is **ShellOnly**:
+Destination 中與 install marker 無關的其他檔案同樣不會因正常 update 被刪除。對一個非空、但沒有 `.capsulenv-install.json` 的目錄，必須明確 `-Force` 才採用為 install destination；`-Force` 也不代表刪除未知內容。
+
+## Install mode request
+
+Installer 預設請求 ShellOnly：
 
 ```bat
 install.cmd D:\Portable\capsulenv
 ```
 
-Capsulenv creates and bootstraps only `D:\Portable\capsulenv\scoop`, establishes its own `scoop\config.json`, and injects `SCOOP`, `SCOOP_GLOBAL` and PATH only into Capsulenv processes. It does not adopt or update an existing user Scoop installation and does not persist Capsulenv's Scoop variables into the Windows User environment.
-
-To make this capsule the current Windows user's Scoop installation, opt in explicitly:
+要在安裝完成後把 capsule 接管為目前 Windows user 的 Scoop：
 
 ```bat
 install.cmd D:\Portable\capsulenv -Mode User
 ```
 
-The same transition can be made after installation with `capsulenv.cmd install-user`; `enable-user` remains a compatibility alias. `capsulenv.cmd user-shell` is the convenience entrypoint for an ephemeral/resetting shared PC: it installs or synchronizes User ownership, performs relocation repair when required, and opens the capsule shell. User mode backs up the exact pre-existing User environment under `.capsulenv\user-integrations\<machine-user-hash>\environment-backup.json` before changing it. `capsulenv.cmd restore-user` restores only that current host/user snapshot and returns that user to ShellOnly ownership. It also restores Capsulenv-owned Bitwarden global Git SSH configuration and any Windows `ssh-agent` service state previously changed by Capsulenv; restoring the latter requires elevation.
+不帶 `-Mode` 的 update 會讓 runtime 根據目前 machine/user ownership 決定有效模式，而不是把 USB 上「上次在哪台機器使用的 mode」當成全域 profile。詳細判定與 backup contract 只在 [`ARCHITECTURE.md`](ARCHITECTURE.md) 定義。
 
-Mode is deliberately **not** a capsule-global profile. At runtime Capsulenv determines User ownership from the current Windows User environment, accepting the previous relocation fingerprint when the same machine/user still points at the capsule's old drive letter. The host-scoped ledger exists to make backup/restore and reset-host re-entry safe; it is not a Personal/EphemeralShared trust profile. A reset-on-shutdown machine can therefore erase its User environment, leave the USB ledger intact, and run `install-user`/`user-shell` again; Capsulenv refreshes that host's backup from the clean session instead of requiring `restore-user`. Legacy capsule-global v0.9 backup/state is migrated only when the current Windows user can be proven to own that active integration. Re-running the installer without `-Mode` follows the **current host/user ownership**, not the last mode used by the USB on another computer.
+## Scoop bootstrap during install
 
-`restore-user` is intentionally not a generic undo engine for Scoop manifests. Start Menu shortcuts, manifest-defined environment keys, profile registrations, and other package lifecycle side effects explicitly created while operating in User mode remain Scoop/package-owned state unless that package provides its own reversible operation. Capsulenv only promises exact restoration for state it captured before changing.
-Converting an existing ShellOnly capsule with `install-user` therefore does not unconditionally run `scoop reset *`. The transition installs the Scoop root/shims/environment at User scope first; future `scoop install` actions use normal User semantics. Run `capsulenv.cmd reset` explicitly in User mode when existing apps should materialize their shortcuts/environment integration. An actual relocation does run native reset automatically because already-owned User integration contains absolute targets that must be repaired.
-Optional integration is not silently promoted just because the ownership mode changes. For example, a Bitwarden Git/OpenSSH setup created in ShellOnly remains an explicit session intent; after `install-user`, run `capsulenv.cmd bitwarden configure-git` (or `bitwarden setup`) if persistent User Git configuration is desired. When later running `restore-user`, a User-global Git configuration created by Capsulenv is restored and that recorded intent becomes process-only again.
+正常 Windows install 在 runtime files 到位後初始化 capsule session，確保 capsule-local Scoop config 存在，並在缺少 Scoop/Main 時進行 bootstrap。Bootstrap source/depth 由 `config\capsulenv.psd1` 的 `Scoop.Bootstrap` 控制。
 
-Mode-sensitive integration is intentionally asymmetric:
+`-SkipScoopBootstrap` 只供 development/offline packaging checks 等已知情境；它不應成為一般 fresh Windows install 的預設。即使略過 bootstrap，installer 仍建立 portable Scoop config boundary，避免之後直接載入 host user config。
 
-| Integration | ShellOnly | User |
-| --- | --- | --- |
-| `SCOOP`, `SCOOP_GLOBAL`, `SCOOP_CACHE`, tool vars | Process only | Windows User environment |
-| local/global Scoop shim dirs | Process PATH; proven foreign Scoop shim dirs removed from the session | User PATH + process PATH; original host shims backed up/restored |
-| relocation reset | current/shims/persist only | native Scoop reset, including shortcuts/env |
-| manifest hook replay | blocked | allow-listed replay permitted |
-| Git for Bitwarden | process `GIT_CONFIG_*` overlay | reversible `git config --global` |
-| Windows `ssh-agent` service | never changed | explicit/elevated setup may change it |
-| Bitwarden desktop process | only capsule-owned executable; foreign instance causes refusal | same ownership check |
-| Capsulenv browser command | explicit capsule profile + `-no-remote` | explicit capsule profile |
+Bootstrap implementation 與 host-Git transport boundary 見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
 
-When a User-mode capsule changes drive letter, relocation also refreshes persistent User variables and removes Capsulenv-managed PATH entries from the previous drive. ShellOnly activation also strips only shim directories that can be attributed to a different inherited/User/Machine Scoop root, preventing command fall-through into a host Scoop while leaving the host PATH itself unchanged. It additionally removes only path entries nested under the relocation context's known old `ScoopRoot`/`ScoopGlobalRoot`, covering manifest `env_add_path` entries that native Scoop reset cannot remove once it only knows the new app directory. If Scoop `use_isolated_path` selects `SCOOP_PATH` or another path variable, that variable is backed up/restored and receives the same old-root cleanup. Capsulenv's own `scoop.ps1`/`scoop.cmd` launchers are relative to their shim directory and are normalized if an older installer left an absolute launcher. App `current`/persist junctions and app shims are recreated from the new roots. ShellOnly's temporary portable-reset command also overrides Scoop's internal `Add-Path`: upstream shim creation normally persists the shim directory to User/Machine PATH, but Capsulenv limits that helper to the current process during ShellOnly repair. Scoop-owned file persist links are delegated to Scoop's persist logic; Capsulenv-owned project-cache hardlinks use the stricter fingerprint rule and are repaired only when recorded content fingerprints prove ownership and the new link/store paths are still on the same volume.
+## Development-file deployment
 
+`Install-Capsulenv.ps1 -IncludeDevelopmentFiles` 會令 temporary runtime 包含 source/tests/AGENTS/build scripts，再由相同 transactional managed-file mechanism 安裝。這適合需要在 target machine 直接除錯或跑完整 tests 的情境，不是一般 portable runtime 所需。
 
-### Session eject
+## Release/update checks
 
-`capsulenv.cmd eject` is intentionally separate from `restore-user`. It checks first-level Git repositories under `workspace/` for dirty state, asks capsule-owned processes to close (and terminates remaining ones only with `--force`), records `.capsulenv\eject-state.json`, and removes `CAPSULENV_SCRATCH`. It does **not** undo User ownership. This makes shutdown/reset-host workflows cheap while retaining `restore-user` as an explicit reversible operation.
+在提交 installer/build 改動前，至少執行：
 
-## Scoop bootstrap
-
-A fresh destination no longer needs a pre-copied Scoop tree. Before Scoop is first loaded, Capsulenv creates `scoop\config.json` so Scoop uses its portable config rather than `%USERPROFILE%\.config\scoop\config.json`. If Scoop core or Main is missing, bootstrap prefers Git and creates shallow single-branch repositories (`--depth 1 --single-branch`). It looks for capsule Git first and only then a Git executable inherited through PATH; host Git is transport only and does not select or modify a host Scoop root. If Git is unavailable or clone fails, the configured Scoop/Main archives are downloaded and expanded instead.
-
-Bootstrap source URLs and depth live under `Scoop.Bootstrap` in `config\capsulenv.psd1`. `-SkipScoopBootstrap` exists for development/offline packaging checks; normal Windows installs should leave bootstrap enabled.
-
-`PowerShell/Modules/` is the default portable private-module store. Capsulenv prepends it to `PSModulePath` and exposes its first configured module root as `CAPSULENV_MODULE_ROOT`; module repositories can consume that variable in their own build/install scripts without becoming capsulenv-managed runtime content.
-
-The `pwsh` executable and its `$PSHOME` profiles remain Scoop-owned. In ShellOnly, the interactive child PowerShell starts with `-NoProfile` and Capsulenv explicitly dot-sources only the capsule `pwsh` installation's `$PSHOME\profile.ps1` and `$PSHOME\Microsoft.PowerShell_profile.ps1`; host CurrentUser profiles are not loaded. User mode keeps PowerShell's normal profile chain. Capsulenv does not persist `PSModulePath` at User scope. PSReadLine history in either mode is redirected after profile initialization to `tool-data\powershell\PSReadLine\ConsoleHost_history.txt`.
-
-Daily-machine configuration can be copied into the USB explicitly with `capsulenv.cmd seed powershell`, `seed git`, and `seed scoop`. These are one-way seed operations rather than a synchronization profile. PowerShell profile source is copied verbatim and existing non-empty portable profiles require `--force`; Git is flattened into `tool-data/git/config` while Capsulenv-owned SSH keys and, by default, sensitive credential/header settings are excluded; Scoop captures only an apps+buckets inventory. `seed scoop --apply` is User-mode only because native Scoop import can perform package lifecycle and user-integration work.
-
-Use `-IncludeDevelopmentFiles` only when the destination should remain able to rebuild the module itself:
-
-```bat
-install.cmd D:\Portable\capsulenv -IncludeDevelopmentFiles
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-Normal installed runtimes import `modules\Capsulenv\Capsulenv.psd1` directly. In a development checkout, set `CAPSULENV_FORCE_REBUILD=1` to ignore a prebuilt module and regenerate from `src/`.
+Build/install tests 必須持續驗證：minimal runtime 可直接 import/執行、source-local destructive output guard 有效、重複 update 保留 local config/mutable directories/unmanaged files，以及 failed managed-file mutation 可回滾。

@@ -1,0 +1,153 @@
+# Architecture and ownership
+
+這份文件是 Capsulenv 目前 runtime ownership 與 isolation semantics 的權威說明。使用者操作流程放在 [`../README.md`](../README.md)；tool/cache 細節放在 [`TOOLS.md`](TOOLS.md)；build/deployment 放在 [`INSTALL.md`](INSTALL.md)。
+
+## Core ownership rule
+
+Capsulenv 是 orchestration/repair layer，不是第二個 application data manager。
+
+Scoop 是以下內容的 source of truth：app files、installed-version `manifest.json`／`install.json`、`persist` data、browser profiles、local/global shims、shortcuts，以及 manifest lifecycle scripts。Capsulenv 不新增平行的 `data/bitwarden`、browser profile tree 或另一份 PowerShell profile tree。
+
+Capsulenv 自己只擁有四類狀態：
+
+1. process/User environment integration 與其 reversible backup；
+2. relocation identity/fingerprint、link/workspace registry；
+3. 明確配置的 portable tool storage/project cache；
+4. 對已知 Scoop-persisted text/config 的窄範圍 repair metadata。
+
+因此「能由 owning tool 重建的 object」優先交回 Scoop、uv、Pixi 等 native lifecycle，而不是遞迴改寫 binary、shortcut、virtual environment 或 app data。
+
+## Runtime layout
+
+```text
+capsulenv/
+├─ capsulenv.cmd                    thin launcher
+├─ modules/Capsulenv/               installed merged runtime module
+├─ config/                          default + local override
+├─ bin/                             capsule launch helpers / common tool bins
+├─ PowerShell/Modules/              private user modules
+├─ scoop/                           portable local Scoop root
+├─ scoop-global/                    optional portable global Scoop root
+├─ cache/                           rebuildable shared caches
+├─ tool-data/                       persistent toolchains/config/global tools
+├─ project-cache/                   backing store for explicit project links
+├─ workspace/                       recommended portable source workspace
+├─ .capsulenv/                      identity, relocation/user/link registries
+└─ .capsulenv-runtime.json          built-runtime metadata
+```
+
+Development-only `src/`, `tests/`, `.build/` and merge/build scripts are not required by the minimal installed runtime. See [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+## Two integration modes
+
+Capsulenv has exactly two integration modes: **ShellOnly** and **User**. The mode is resolved for the current machine/user; it is not a global trust profile stored on the USB.
+
+### ShellOnly
+
+ShellOnly is the default. Activation sets `CAPSULENV_ROOT`, `SCOOP`, `SCOOP_GLOBAL`, `SCOOP_CACHE`, tool variables, module paths and PATH only in the Capsulenv process tree. It does not adopt, rewrite or update a foreign `%USERPROFILE%\scoop` installation.
+
+PATH isolation removes only shim directories that can be attributed to another inherited/User/Machine Scoop root (including the conventional Windows Scoop roots), then prepends the capsule local/global shim directories. This prevents command fall-through into a host Scoop without replacing the rest of host PATH.
+
+ShellOnly is not a sandbox. A user can still explicitly run software that changes the host. The guarantee is narrower: Capsulenv's own activation/bootstrap/rehydrate/Bitwarden integration does not persistently take over host Scoop/User integration.
+
+### User
+
+User mode explicitly registers this capsule as the current Windows user's Scoop environment. Capsulenv snapshots every environment value it owns before changing it and stores the backup under:
+
+```text
+.capsulenv/user-integrations/<machine-user-hash>/
+```
+
+The backup distinguishes "variable absent" from "variable present with value", so `restore-user` can restore the exact prior state for Capsulenv-owned variables/PATH entries. This scope includes Scoop roots/cache, tool-storage variables, `CAPSULENV_MODULE_ROOT`, `SSH_AUTH_SOCK`, configured custom variables, and the path variable selected by Scoop `use_isolated_path` when applicable. `PSModulePath` deliberately remains session-only.
+
+The ledger is host-scoped. A reset-on-shutdown machine can erase its User environment while the USB keeps the previous ledger; a later `install-user`/`user-shell` snapshots the newly clean host state and takes ownership again. A ledger from another machine/user is never treated as proof that the current user is already integrated.
+
+`restore-user` only reverses state Capsulenv actually captured or explicitly owns. It is not a generic undo mechanism for arbitrary Scoop manifest side effects such as package-specific shortcuts, registry entries or environment keys whose original state was never recorded.
+
+## Capsule identity and relocation context
+
+`.capsulenv/identity.json` provides a stable capsule identity independent of drive letter. Relocation state records the previous root/Scoop roots and is used to decide whether stale paths belong to this same capsule before mutation.
+
+Managed references that live inside the capsule should prefer capsule-relative or `capsule://...` identity-based references. Host-scoped integration may also require the current machine/user fingerprint. This prevents a copied ledger or stale absolute path from becoming authority to overwrite unrelated host state.
+
+A relocation is committed only after all required reset/repair stages succeed. Failed strict repairs therefore do not save a new fingerprint that would erase evidence of the old root.
+
+## Scoop bootstrap boundary
+
+Before Scoop core is loaded for the first time, Capsulenv creates capsule-local `scoop/config.json`. This prevents Scoop from silently falling back to `%USERPROFILE%\.config\scoop\config.json`.
+
+If Scoop core or Main is missing, bootstrap prefers Git and performs shallow single-branch clones; capsule Git is preferred, with inherited host Git accepted only as transport. If Git is unavailable or clone fails, configured archives are used as fallback. These repositories are live Scoop-owned runtime data, not Git submodules or Capsulenv source files.
+
+`SCOOP` and `SCOOP_GLOBAL` are always explicit in a Capsulenv session. This also prevents operations such as reset from accidentally discovering `%ProgramData%\scoop` as an unrelated global root.
+
+## PowerShell bootstrap and profile isolation
+
+`capsulenv.cmd` first searches capsule Scoop installations for a physical PowerShell 7 executable, preferring local Scoop over portable-global Scoop and avoiding stale `current` links when possible. Only then does it fall back through capsule shims/inherited PATH and finally Windows PowerShell 5.1.
+
+Entry points use process-scope `-ExecutionPolicy Bypass`; Capsulenv never calls `Set-ExecutionPolicy` or writes execution-policy registry values. Group Policy remains authoritative.
+
+PowerShell package ownership remains with Scoop. The portable private-module root defaults to `PowerShell/Modules/`; it is prepended to the session `PSModulePath`, while its first entry is exposed as `CAPSULENV_MODULE_ROOT`.
+
+ShellOnly starts its child PowerShell with `-NoProfile`, then explicitly dot-sources only capsule-owned Scoop `pwsh` `$PSHOME\profile.ps1` and `$PSHOME\Microsoft.PowerShell_profile.ps1`. It never treats a fallback host PowerShell executable's `$PSHOME` profile as capsule data. This prevents host CurrentUser profiles from running after Capsulenv has established isolation.
+
+User mode keeps PowerShell's normal profile chain because User mode intentionally integrates with that Windows user. Both modes redirect PSReadLine history to `tool-data/powershell/PSReadLine/ConsoleHost_history.txt` after profile initialization.
+
+## Relocation lifecycle
+
+Scoop native `reset` is not suitable as a ShellOnly primitive because it may create Start Menu shortcuts and manifest-defined User/Machine environment integration. Capsulenv therefore branches by mode.
+
+### ShellOnly portable reset
+
+ShellOnly uses a capsule-local temporary Scoop command that rebuilds only app `current` links, local/global shims and `persist` links/permissions. It intentionally skips Start Menu shortcuts, manifest environment integration and lifecycle hook replay.
+
+During this reset Capsulenv shadows Scoop's internal path persistence helper with a process-only implementation. Rebuilding a shim must not cause upstream Scoop to persist the shim directory into User/Machine PATH merely because ShellOnly is repairing itself.
+
+### User native reset
+
+User mode may call native `scoop reset` because the current Windows user has explicitly delegated Scoop integration ownership to this capsule. On drive relocation, persistent Capsulenv-managed User variables/PATH references are refreshed from the old capsule root to the new one.
+
+Converting an existing ShellOnly capsule with `install-user` does **not** automatically run `scoop reset *` only to materialize existing UI integration. New package installs then use normal User semantics; `capsulenv.cmd reset` is the explicit operation when existing apps should materialize their native shortcuts/environment. Actual relocation does require automatic reset because existing User integration contains stale absolute targets.
+
+### Manifest hook replay
+
+Lifecycle hooks are always read from each app's **installed version** metadata, never substituted with a potentially newer bucket manifest.
+
+Automatic replay is an allow-list in `Scoop.ReplayHooks`. `pre_install` is never automatically assumed safe or idempotent. ShellOnly rejects hook replay completely because arbitrary manifest code has no contract limiting writes to the capsule. User mode can explicitly replay approved hooks.
+
+### Persisted text repair
+
+Some persisted UTF text/JSON files contain absolute paths that the owning app does not repair itself. `Scoop.RelocationRepairs` is an exact allow-list of app-relative files. Repairs are bounded by path, format and maximum size; missing optional files are skipped, configured processes must be closed, JSON must parse before replacement, and the write is transactional.
+
+Capsulenv never recursively scans all of `persist` and never applies blind OldRoot -> NewRoot replacement to binaries. The built-in browser rules exist only for known Firefox/Zen text/config files.
+
+## Shortcut-aware app launcher
+
+`capsulenv.cmd app list/run` exists so ShellOnly can launch apps whose Scoop manifest only defines `shortcuts` without creating Start Menu `.lnk` files.
+
+The launcher reads `manifest.json` and `install.json` under the installed app's `current` directory, selects architecture-specific shortcut metadata, expands Scoop shortcut variables such as `$dir`, `$original_dir` and `$persist_dir`, and starts the target directly. It does not read the latest bucket manifest and does not mutate Start Menu state.
+
+If the same app exists in both local and portable-global roots, scope must be explicit (`user/<app>` or `global/<app>`). If an installed manifest has multiple shortcuts, the shortcut name must be selected explicitly.
+
+## Browser ownership
+
+Firefox/Firefox ESR/Zen profiles stay in Scoop `persist`. Capsulenv never creates a second browser profile tree.
+
+The dedicated browser commands bind the capsule-persisted profile explicitly. ShellOnly also uses `-no-remote`, preventing the request from being handed to a foreign host browser process. User mode may rely on normal Scoop integration, but the explicit Capsulenv launcher remains available.
+
+Browser persisted-file relocation uses only the configured `Scoop.RelocationRepairs` allow-list. User-mode manifest `post_install` replay may repair normal user profile registration; ShellOnly does not perform that host-user registration.
+
+## Bitwarden SSH ownership
+
+Bitwarden app-data and vault state remain completely Scoop-persisted. Bitwarden is intentionally excluded from generic OldRoot text replacement.
+
+Capsulenv's SSH Agent integration changes only the known top-level Desktop setting keys required to enable the agent and remember-authorization policy. Before mutation it stops only a Bitwarden executable proven to live under this capsule's Scoop app roots, records the previous literal/presence of each owned key, validates the JSON object, writes via a same-directory temporary file, and later restores/removes only those owned keys. It does not wholesale deserialize/reserialize or restore an old `data.json` over newer vault state.
+
+Mode behavior is asymmetric: ShellOnly sets `SSH_AUTH_SOCK` and Git OpenSSH configuration only for the process tree and never changes the Windows `ssh-agent` service. User mode may create reversible global Git configuration and, when elevated and explicitly requested, back up/change the Windows service state. `restore-user`/Bitwarden restore use those exact backups; service restoration still requires elevation.
+
+A foreign host Bitwarden process is not borrowed or terminated. Setup/start refuses instead of crossing the capsule ownership boundary.
+
+## Tool and project storage
+
+Tool-data/cache separation, package-manager environment mapping, project-cache hardlink/junction ownership, uv/Pixi native repair and workspace registration are intentionally specified only in [`TOOLS.md`](TOOLS.md). Do not duplicate those tables here or in README.
+
+The architecture-level rule is simple: persistent tool state is not cache, shared caches may still have tool-specific linking semantics, and any object whose relocation semantics are owned by a tool should be repaired through that tool when possible.
