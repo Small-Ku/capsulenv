@@ -17,6 +17,11 @@ capsulenv commands
   capsulenv.cmd run <command> [arguments...]
       Run one command inside the portable environment.
 
+  capsulenv.cmd app list [app]
+  capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
+      List or launch shortcuts from the installed Scoop manifest without creating
+      Start Menu .lnk files. Use user/<app> or global/<app> when both scopes exist.
+
   capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
   capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
       Repair relocation according to install mode. ShellOnly rebuilds only
@@ -402,6 +407,64 @@ function Invoke-CapsulenvBitwardenCommand {
     }
 }
 
+function Invoke-CapsulenvAppCommand {
+    [CmdletBinding()]
+    param([string[]]$Arguments)
+
+    if ($Arguments.Count -lt 1) {
+        throw 'Usage: app <list|run> [...]'
+    }
+
+    $action = $Arguments[0].ToLowerInvariant()
+    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    switch ($action) {
+        'list' {
+            if ($remaining.Count -gt 1) {
+                throw 'Usage: app list [app]'
+            }
+            $items = if ($remaining.Count -eq 1) {
+                @(Get-CapsulenvScoopAppShortcuts -App ([string]$remaining[0]))
+            } else {
+                @(Get-CapsulenvScoopShortcutCatalog)
+            }
+            $items | Select-Object Scope, App, Name, Target, Arguments, Architecture | Format-Table -AutoSize
+        }
+        'run' {
+            if ($remaining.Count -lt 1) {
+                throw 'Usage: app run <app> ["shortcut name"] [-- runtime arguments...]'
+            }
+            $selector = [string]$remaining[0]
+            $tail = if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
+            $separatorIndex = -1
+            for ($index = 0; $index -lt $tail.Count; $index++) {
+                if ([string]$tail[$index] -eq '--') {
+                    $separatorIndex = $index
+                    break
+                }
+            }
+
+            $before = @(
+                if ($separatorIndex -ge 0) {
+                    if ($separatorIndex -gt 0) { $tail[0..($separatorIndex - 1)] }
+                } else {
+                    $tail
+                }
+            )
+            if ($before.Count -gt 1) {
+                throw 'Usage: app run <app> ["shortcut name"] [-- runtime arguments...]'
+            }
+            $runtime = @(
+                if ($separatorIndex -ge 0 -and $separatorIndex -lt ($tail.Count - 1)) {
+                    $tail[($separatorIndex + 1)..($tail.Count - 1)]
+                }
+            )
+            $shortcutName = if ($before.Count -eq 1) { [string]$before[0] } else { $null }
+            [void](Start-CapsulenvScoopShortcut -App $selector -ShortcutName $shortcutName -Arguments $runtime)
+        }
+        default { throw "Unknown app action: $action. Use list or run." }
+    }
+}
+
 function Invoke-Capsulenv {
     [CmdletBinding()]
     param(
@@ -436,6 +499,7 @@ function Invoke-Capsulenv {
             $externalArguments = if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
             Invoke-CapsulenvExternalCommand -Command $remaining[0] -Arguments $externalArguments
         }
+        'app' { Invoke-CapsulenvAppCommand -Arguments $remaining }
         'init' {
             $allowed = @('--skip-hooks', '--skip-persist-repairs', '--skip-tool-repairs', '--strict-tool-repairs')
             $unknown = @($remaining | Where-Object { $_ -notin $allowed })
