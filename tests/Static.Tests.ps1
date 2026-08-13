@@ -80,13 +80,22 @@ Describe 'Capsulenv static and relocation' {
         $environmentSource = [System.IO.File]::ReadAllText(
             (Join-Path (Join-Path $root 'src') '30-Environment.ps1')
         )
-        foreach ($requiredLaunch in @(
-            '& $shellPath -NoLogo -NoExit -ExecutionPolicy Bypass',
-            '& $shellPath -NoLogo -ExecutionPolicy Bypass -Command $Command'
+        $powerShellSource = [System.IO.File]::ReadAllText(
+            (Join-Path (Join-Path $root 'src') '32-PowerShell.ps1')
+        )
+        Assert-CapsulenvTest `
+            -Condition $environmentSource.Contains('Get-CapsulenvPowerShellChildLaunchPlan') `
+            -Message 'Child PowerShell launch must be delegated to the mode-aware launch plan.'
+        foreach ($requiredLaunchBehavior in @(
+            "`$arguments.Add('-ExecutionPolicy')",
+            "`$arguments.Add('Bypass')",
+            "`$arguments.Add('-NoProfile')",
+            'Get-CapsulenvPortablePowerShellProfilePaths',
+            'CAPSULENV_PSREADLINE_HISTORY'
         )) {
             Assert-CapsulenvTest `
-                -Condition $environmentSource.Contains($requiredLaunch) `
-                -Message "Child PowerShell launch must explicitly use Process-scope ExecutionPolicy Bypass: $requiredLaunch"
+                -Condition $powerShellSource.Contains($requiredLaunchBehavior) `
+                -Message "PowerShell launch plan is missing required isolation behavior: $requiredLaunchBehavior"
         }
 
         $generatedManifestText = [System.IO.File]::ReadAllText($build.ModulePath)
@@ -150,7 +159,7 @@ Describe 'Capsulenv static and relocation' {
         }
 
         $config = Get-CapsulenvConfiguration -Refresh
-        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 9) -Message 'Unexpected configuration schema.'
+        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 10) -Message 'Unexpected configuration schema.'
         Assert-CapsulenvTest -Condition ([bool]$config.Scoop.Bootstrap.Enabled) -Message 'Scoop bootstrap is not enabled by default.'
         Assert-CapsulenvTest -Condition ([int]$config.Scoop.Bootstrap.GitDepth -eq 1) -Message 'Scoop bootstrap must default to a shallow depth of one.'
         Assert-CapsulenvTest -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Scoop.Bootstrap.Scoop.Repository)) -Message 'Scoop bootstrap repository is missing.'
@@ -543,10 +552,10 @@ Describe 'Capsulenv static and relocation' {
             -Message 'Scoop-owned package cache is missing from the tool-storage plan.'
         $toolStoragePlan = & $module { Get-CapsulenvToolStoragePlan }
         Assert-CapsulenvTest `
-            -Condition (@($toolStoragePlan.Files).Count -eq 7) `
+            -Condition (@($toolStoragePlan.Files).Count -eq 8) `
             -Message 'ToolStorage file-valued configuration locations were not planned separately.'
         [void](Initialize-CapsulenvToolStorage)
-        foreach ($fileVariable in @('GIT_CONFIG_GLOBAL', 'UV_CONFIG_FILE', 'PIXI_CONFIG_FILE', 'NPM_CONFIG_USERCONFIG', 'GOENV', 'CCACHE_CONFIGPATH', 'SCCACHE_CONF')) {
+        foreach ($fileVariable in @('GIT_CONFIG_GLOBAL', 'UV_CONFIG_FILE', 'PIXI_CONFIG_FILE', 'NPM_CONFIG_USERCONFIG', 'CAPSULENV_PSREADLINE_HISTORY', 'GOENV', 'CCACHE_CONFIGPATH', 'SCCACHE_CONF')) {
             $status = $toolStorageStatus | Where-Object { $_.Name -eq $fileVariable } | Select-Object -First 1
             if ($null -eq $status) {
                 $status = @(Get-CapsulenvToolStorageStatus) | Where-Object { $_.Name -eq $fileVariable } | Select-Object -First 1

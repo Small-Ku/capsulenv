@@ -56,6 +56,8 @@ Import-Module NyaModule
 
 而不會把 module 同時複製到 `%USERPROFILE%\Documents\PowerShell\Modules`。`PSModulePath` 只在 capsulenv session 中 prepend，不會由 `enable-user` 持久覆寫；這可保留 PowerShell 5.1／7 各自在啟動時建立 default module paths 的原生語意。`CAPSULENV_MODULE_ROOT` 本身仍可隨 `install-user`（舊名 `enable-user`）備份／還原。
 
+PowerShell executable 與 `$PSHOME` profile 仍由 Scoop package ownership 管理。Scoop `pwsh` 的 persisted `profile.ps1`、`Microsoft.PowerShell_profile.ps1`、`Microsoft.VSCode_profile.ps1` 不會另複製到 Capsulenv-specific profile tree。ShellOnly child shell 以 `-NoProfile` 啟動，然後只明確 dot-source capsule-owned `$PSHOME\profile.ps1` 與 `$PSHOME\Microsoft.PowerShell_profile.ps1`；host CurrentUser profiles 因而不會在 isolation 完成後重新污染 session。若 bootstrap 只能使用 host PowerShell/pwsh，ShellOnly 不會把該 host executable 的 `$PSHOME` profile 當成 capsule profile。User mode則保留 PowerShell 正常 profile chain，符合 convenience-first ownership。兩個 mode 都會把 PSReadLine history 指向 `tool-data\powershell\PSReadLine\ConsoleHost_history.txt`。
+
 ## Portable tool storage
 
 工具儲存現在分成三種 ownership class，而不是把所有內容都當 cache：
@@ -76,6 +78,7 @@ cache/                              rebuildable shared caches
 
 tool-data/                          persistent tool state/global installs
 ├─ git/config                      portable Git global config
+├─ powershell/PSReadLine/           portable PowerShell mutable history/state
 ├─ uv/python/                       installed managed Python runtimes
 ├─ uv/tools/                        uv global tools
 ├─ uv/uv.toml                       uv user config
@@ -100,6 +103,7 @@ tool-data/                          persistent tool state/global installs
 | Tool | Rebuildable cache/store | Persistent capsule state |
 |---|---|---|
 | Git | — | `GIT_CONFIG_GLOBAL` → `tool-data/git/config` |
+| PowerShell | — | PSReadLine history → `tool-data/powershell/PSReadLine/ConsoleHost_history.txt` |
 | uv | `UV_CACHE_DIR`, `UV_PYTHON_CACHE_DIR` | managed Python、global tools、`UV_CONFIG_FILE`、共同 `bin/` |
 | Pixi | `PIXI_CACHE_DIR` | `PIXI_HOME` |
 | npm | `NPM_CONFIG_CACHE` | `NPM_CONFIG_PREFIX`, `NPM_CONFIG_USERCONFIG` |
@@ -110,7 +114,7 @@ tool-data/                          persistent tool state/global installs
 | ccache | `CCACHE_DIR`, `CCACHE_TEMPDIR` | `CCACHE_CONFIGPATH` |
 | sccache | `SCCACHE_DIR` | `SCCACHE_CONF` |
 
-`PathVariables` 只代表 directory-valued environment variables；`FileVariables` 專門代表 `GIT_CONFIG_GLOBAL`、`UV_CONFIG_FILE`、`NPM_CONFIG_USERCONFIG`、`GOENV`、`CCACHE_CONFIGPATH`、`SCCACHE_CONF` 這類 file-valued setting。`cache init` 會建立 directory、file parent 以及缺少的空 config file，不會把 config filename 誤建立成 directory。Git/uv/npm 的 user/global config 因而跟 USB 搬移；ccache/sccache 的 config 亦特別移出 `cache/`，所以刪除 compiler cache 不會同時丟掉持久設定，也不會因 cache 被重建而退回 host user config。
+`PathVariables` 只代表 directory-valued environment variables；`FileVariables` 專門代表 `GIT_CONFIG_GLOBAL`、`UV_CONFIG_FILE`、`PIXI_CONFIG_FILE`、`NPM_CONFIG_USERCONFIG`、`CAPSULENV_PSREADLINE_HISTORY`、`GOENV`、`CCACHE_CONFIGPATH`、`SCCACHE_CONF` 這類 file-valued setting。`cache init` 會建立 directory、file parent 以及缺少的空 config file，不會把 config filename 誤建立成 directory。Git/uv/npm 的 user/global config 因而跟 USB 搬移；ccache/sccache 的 config 亦特別移出 `cache/`，所以刪除 compiler cache 不會同時丟掉持久設定，也不會因 cache 被重建而退回 host user config。
 
 `cache/` 原則上是可重建資料，但並不代表任何時候都應直接 `rmdir /s`：Capsulenv 不會預設開啟 Bun global virtual store、pnpm experimental global virtual store，也不會強制 uv symlink cache mode；若 local config 主動開啟會讓 project environment 對 shared store/cache 形成更強 linkage，清理時應使用相應 tool-native command。Capsulenv 因而暫不提供一個粗暴的 `cache clean all`。
 
@@ -123,6 +127,22 @@ Go 有一個刻意保留的例外：`go env GOTELEMETRYDIR` 是 Go 自己計算�
 ShellOnly 只把上述 environment mapping 放進 Capsulenv process tree；User mode才持久寫到目前 Windows user environment，並由 host-scoped backup/restore contract 管理。一般 `git config --global`、uv user config 與 npm/pnpm 共用的 user config 會寫入 USB-owned file；因此若 `npmrc` 內包含 registry token，它也會跟 capsule 一起攜帶，應按 secret 處理。Bun 的一般 `bunfig.toml` 暫不另造 Capsulenv abstraction。Scoop download cache 則透過 `SCOOP_CACHE` 明確放在頂層 `cache/scoop`，與其他可重用 cache 一起搬移。
 
 Capsulenv 另提供 `CAPSULENV_SCRATCH`，位置為 host `%TEMP%\capsulenv\<capsule-id>`（非 Windows test host 則使用該平台 temporary directory）。它只供 Capsulenv/scripts 放真正 transient、高寫入的工作資料；Capsulenv 不改寫 `TEMP`/`TMP`。`eject` 會嘗試清掉這個 scratch。
+
+## 從日用機一次性 seed
+
+`seed` 是明確的一次性匯入，不是 Laptop/USB 的持續同步。成功 seed 後，USB 上既有的 Scoop persist／`tool-data/` state 成為 source of truth：
+
+```bat
+capsulenv.cmd seed powershell
+capsulenv.cmd seed git
+capsulenv.cmd seed scoop
+```
+
+`seed powershell` 把 host 的 `CurrentUserAllHosts` 與 `CurrentUserCurrentHost` profile 原樣複製到 capsule Scoop `pwsh` 的 persisted `profile.ps1` 與 `Microsoft.PowerShell_profile.ps1`。Manifest 建立但仍為空的 destination 可直接 seed；已有內容則要求 `--force`。Capsulenv 不嘗試 regex rewrite profile 內的 absolute path、host-only module import 或 secret，seed 後應自行檢視。私人 module 本體仍應部署到 `PowerShell/Modules/`，而不是盲目複製 host 整個 module search path。
+
+`seed git` 讀取真正的 host global Git config（暫時排除 Capsulenv `GIT_CONFIG_*` overlay），以 Git 自己的 parser 展開 includes，再寫成獨立的 `tool-data/git/config`。`include.*` / `includeIf.*` 不會重新寫入；`core.sshCommand` 與 `gpg.ssh.program` 留給 Capsulenv SSH ownership。`credential.*` 與 `http.*.extraHeader` 預設亦不匯入，只有明確 `--include-sensitive` 才保留後兩類。已有 portable Git config 時要求 `--force`。
+
+`seed scoop` 使用 foreign host Scoop 的 native `export` 取得 inventory，但只保存 `apps` 與 `buckets` 到 `tool-data/scoop/Scoopfile.json`，不搬 host Scoop config。預設只 capture；`seed scoop --apply` 才用 capsule Scoop native `import` 套用，而且只允許 User mode，因 package install/import 可能產生 shortcuts、environment entries 及其他 user integration。洗機共用電腦若沒有 foreign host Scoop，也可直接 `--apply` USB 上之前保存的 inventory。
 
 建立及查看 capsulenv-owned storage 位置：
 

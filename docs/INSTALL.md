@@ -77,6 +77,10 @@ Bootstrap source URLs and depth live under `Scoop.Bootstrap` in `config\capsulen
 
 `PowerShell/Modules/` is the default portable private-module store. Capsulenv prepends it to `PSModulePath` and exposes its first configured module root as `CAPSULENV_MODULE_ROOT`; module repositories can consume that variable in their own build/install scripts without becoming capsulenv-managed runtime content.
 
+The `pwsh` executable and its `$PSHOME` profiles remain Scoop-owned. In ShellOnly, the interactive child PowerShell starts with `-NoProfile` and Capsulenv explicitly dot-sources only the capsule `pwsh` installation's `$PSHOME\profile.ps1` and `$PSHOME\Microsoft.PowerShell_profile.ps1`; host CurrentUser profiles are not loaded. User mode keeps PowerShell's normal profile chain. Capsulenv does not persist `PSModulePath` at User scope. PSReadLine history in either mode is redirected after profile initialization to `tool-data\powershell\PSReadLine\ConsoleHost_history.txt`.
+
+Daily-machine configuration can be copied into the USB explicitly with `capsulenv.cmd seed powershell`, `seed git`, and `seed scoop`. These are one-way seed operations rather than a synchronization profile. PowerShell profile source is copied verbatim and existing non-empty portable profiles require `--force`; Git is flattened into `tool-data/git/config` while Capsulenv-owned SSH keys and, by default, sensitive credential/header settings are excluded; Scoop captures only an apps+buckets inventory. `seed scoop --apply` is User-mode only because native Scoop import can perform package lifecycle and user-integration work.
+
 Use `-IncludeDevelopmentFiles` only when the destination should remain able to rebuild the module itself:
 
 ```bat

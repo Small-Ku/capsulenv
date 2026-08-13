@@ -203,3 +203,11 @@ v0.10.0 收斂為兩個 integration mode：`ShellOnly` 與 `User`。不再把 mo
 Storage 亦重新對齊 USB-as-source-of-truth：Scoop cache 移到 `cache/scoop`；Git global config、uv/Pixi config、npm user config 固定到 `tool-data/`（Pixi 以 `PIXI_CONFIG_FILE` 避免 merge host global config）。pnpm/Bun 的剩餘 global config discovery 不用 session-wide `XDG_CONFIG_HOME` 或 shim wrapper 強行接管，以免污染其他 apps／重複 Scoop ownership；現有 `PNPM_CONFIG_*`、`NPM_CONFIG_USERCONFIG` fallback 與 portable data/cache 仍保留。另新增 host-local `CAPSULENV_SCRATCH`，但不改 `TEMP`/`TMP`.
 
 新增日常入口：`user-shell`、`eject`、`offline status` / `offline prefetch`、`drift`。`eject` 只做 process/repository/scratch/session 收尾，**不**自動 `restore-user`。
+
+## v0.12.0 PowerShell profile isolation and host seeding
+
+配置 schema 升至 10。PowerShell executable、`$PSHOME\profile.ps1`、`$PSHOME\Microsoft.PowerShell_profile.ps1` 與 `Microsoft.VSCode_profile.ps1` 繼續由 Scoop package/persist ownership 管理，Capsulenv 不新增另一個 PowerShell profile tree。
+
+ShellOnly child PowerShell 現在以 `-NoProfile` 啟動，再只明確載入能證明屬於 capsule Scoop `pwsh` 的 `$PSHOME\profile.ps1` 與 `$PSHOME\Microsoft.PowerShell_profile.ps1`；若 bootstrap 使用 foreign host PowerShell/pwsh，則不載入該 executable 的 `$PSHOME` profiles。如此 host CurrentUser profile 不會在 Capsulenv environment 建立後重新污染 session。User mode則維持 PowerShell 原生 profile chain。兩個 mode 都在 profile 初始化後把 PSReadLine history 指到 `tool-data/powershell/PSReadLine/ConsoleHost_history.txt`，而 `PSModulePath` 仍只在 Capsulenv process tree prepend。
+
+新增一次性 `seed` workflow：`seed powershell` 將 host CurrentUser profiles 原樣 seed 到 Scoop pwsh persist；`seed git` 在排除 Capsulenv process overlay 後讀 host global config，flatten includes 並預設過濾 Capsulenv-owned SSH、credential 與 HTTP extra-header 設定；`seed scoop` 只保存 native export 的 apps+buckets inventory，不匯入 host Scoop config。這些命令不是 machine profile 或雙向 sync；已有 non-empty portable destination 時要求 `--force`。`seed scoop --apply` 只允許 User mode，避免 ShellOnly 透過 native Scoop import 間接取得 shortcuts/environment/package lifecycle side effects。

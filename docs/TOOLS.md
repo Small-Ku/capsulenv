@@ -10,6 +10,7 @@ process-only in ShellOnly mode and become User environment variables only after
 | Tool | Cache/store under `cache/` | Persistent state under `tool-data/` | Project-local policy |
 |---|---|---|---|
 | Git | — | `git/config` via `GIT_CONFIG_GLOBAL` | repository config remains project-owned |
+| PowerShell | — | `powershell/PSReadLine/ConsoleHost_history.txt` | `$PSHOME` profiles remain Scoop-persist-owned |
 | uv | `uv`, `uv-python` | managed Python, global tools, `uv/uv.toml` | `.venv` remains project-owned; registered lock-backed workspaces can be rebuilt |
 | Pixi | `pixi` | `PIXI_HOME` plus `pixi/config.toml` via `PIXI_CONFIG_FILE` | `.pixi` remains Pixi/workspace-owned |
 | npm | `npm` | global prefix plus `npm/npmrc` | `node_modules` remains project-owned |
@@ -24,7 +25,7 @@ process-only in ShellOnly mode and become User environment variables only after
 `ToolStorage.FileVariables` are file-valued variables; initialization creates the
 parent directory and a missing empty file. This distinction now covers
 `GIT_CONFIG_GLOBAL`, `UV_CONFIG_FILE`, `PIXI_CONFIG_FILE`, `NPM_CONFIG_USERCONFIG`,
-`GOENV`, `CCACHE_CONFIGPATH`, and `SCCACHE_CONF`. Git/uv/Pixi/npm therefore do not
+`CAPSULENV_PSREADLINE_HISTORY`, `GOENV`, `CCACHE_CONFIGPATH`, and `SCCACHE_CONF`. Git/uv/Pixi/npm therefore do not
 fall back to host user/global config while inside Capsulenv. Because an npm user config can contain
 registry credentials, `tool-data/npm/npmrc` must be treated as persistent secret-bearing
 state rather than disposable cache.
@@ -70,6 +71,20 @@ move on the same NTFS volume, but launchers, virtual environments, Conda prefixe
 and tool metadata can retain the previous absolute capsule path. Capsulenv repairs
 those objects through the owning tool instead of recursively rewriting binaries.
 
+
+## One-way host seeding
+
+```bat
+capsulenv.cmd seed powershell
+capsulenv.cmd seed git
+capsulenv.cmd seed scoop
+```
+
+Seeding is deliberately not a machine-profile or ongoing sync mechanism. `seed powershell` copies the host CurrentUser PowerShell 7 profile files into Scoop `pwsh`'s persisted `$PSHOME` profiles and never bulk-copies host module directories. `seed git` captures the host global config with Capsulenv's process overlay removed, flattens includes through Git, then filters Capsulenv-owned SSH settings; credential helpers and HTTP extra headers are excluded unless `--include-sensitive` is explicit.
+
+`seed scoop` stores only native-exported `apps` and `buckets` in `tool-data/scoop/Scoopfile.json`; host Scoop config is intentionally not imported. Capture is safe in either integration mode. Applying the saved inventory requires `seed scoop --apply` in User mode because Scoop import/install owns package lifecycle, shortcuts and environment integration.
+
+PowerShell itself remains a Scoop package. Scoop-persisted `$PSHOME` profiles are therefore the package-native portable profile store, while mutable PSReadLine history belongs under `tool-data/powershell`. ShellOnly launches the child shell with host profile auto-loading disabled and then explicitly sources only capsule-owned `$PSHOME` profiles; User mode leaves the normal profile chain intact.
 
 ## Host-local scratch
 
