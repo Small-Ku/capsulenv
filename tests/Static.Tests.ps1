@@ -150,7 +150,10 @@ Describe 'Capsulenv static and relocation' {
             'Invoke-CapsulenvEject',
             'Get-CapsulenvOfflineReadiness',
             'Invoke-CapsulenvOfflinePrefetch',
-            'Get-CapsulenvVersionDrift'
+            'Get-CapsulenvVersionDrift',
+            'Get-CapsulenvScoopAppShortcuts',
+            'Get-CapsulenvScoopShortcutCatalog',
+            'Start-CapsulenvScoopShortcut'
         )
         foreach ($name in $required) {
             Assert-CapsulenvTest `

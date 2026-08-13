@@ -243,6 +243,22 @@ capsulenv.cmd run scoop status
 capsulenv.cmd run git status
 ```
 
+### ShellOnly GUI app launcher
+
+ShellOnly 不會把 Scoop manifest 的 `shortcuts` materialize 到 Windows Start Menu；有 `bin` 的 app 仍直接使用 Scoop shim。只有 shortcut、或想按 manifest shortcut 語意啟動 GUI app 時，可直接讀已安裝版本的 metadata：
+
+```bat
+capsulenv.cmd app list
+capsulenv.cmd app list <app>
+capsulenv.cmd app run <app>
+capsulenv.cmd app run <app> "<shortcut name>"
+capsulenv.cmd app run <app> -- <runtime arguments...>
+```
+
+launcher 只讀 `scoop/apps/<app>/current/manifest.json` / `scoop-global/apps/<app>/current/manifest.json` 與同目錄 `install.json`，遵循已安裝 architecture-specific `shortcuts`，並展開 Scoop shortcut arguments 使用的 `$dir`、`$original_dir`、`$persist_dir`。它直接 `Start-Process` manifest target，不建立 `.lnk`、不修改 Start Menu，也不讀 bucket 中可能已更新的 manifest。
+
+若同一 app 同時存在 user/global portable roots，plain `<app>` 不會猜測；明確使用 `user/<app>` 或 `global/<app>`。若 manifest 有多個 shortcuts，`app run` 亦要求指定 shortcut name。需要把額外 arguments 傳給 app 時，以 `--` 分隔，避免和 shortcut name 混淆。User mode 仍可使用 Scoop 原生 Start Menu shortcuts；這個 launcher 在兩個 mode 都可用。
+
 ## Scoop lifecycle
 
 完整重建 links 並重放設定中的安全 hooks：
