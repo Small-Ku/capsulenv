@@ -85,6 +85,16 @@ Describe 'Capsulenv portable workflow contracts' {
                 $offline.InstalledApps | Should -Be 1
                 $offline.MissingInstalledManifests | Should -Be 0
                 $offline.CacheFiles | Should -Be 1
+
+                '{"Version":"0.13.0-test"}' | Set-Content -LiteralPath (Join-Path $CapsuleRoot '.capsulenv-runtime.json') -Encoding UTF8
+                $status = Get-CapsulenvStatus
+                $status.Version | Should -Be '0.13.0-test'
+                $status.Root | Should -Be ([System.IO.Path]::GetFullPath($CapsuleRoot))
+                $status.ScoopApps | Should -Be 1
+                $status.Relocation | Should -Be 'Pending'
+                $status.ProjectLinks | Should -Be 0
+                $status.ToolWorkspaces | Should -Be 0
+                $status.OfflineRunReady | Should -BeTrue
             } $temporaryRoot
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {
@@ -106,6 +116,9 @@ Describe 'Capsulenv portable workflow contracts' {
         $environmentSource | Should -Match 'Install-CapsulenvUserEnvironment -Force:\$Force -RefreshBackup:\$refreshBackup'
         $environmentSource | Should -Match 'Invoke-CapsulenvChildShell'
         $commandsSource | Should -Match "'eject'"
+        $commandsSource | Should -Match "'status'"
+        $commandsSource | Should -Match 'help <topic>'
+        $commandsSource | Should -Match 'No separate init step is required'
         $lifecycleSource | Should -Match 'Get-CapsulenvDirtyRepositories'
         $lifecycleSource | Should -Match 'Stop-CapsulenvOwnedProcesses'
         $lifecycleSource | Should -Match 'CAPSULENV_SCRATCH|Get-CapsulenvScratchPath'

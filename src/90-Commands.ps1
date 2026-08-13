@@ -1,139 +1,161 @@
 function Show-CapsulenvHelp {
     [CmdletBinding()]
-    param()
+    param([string]$Topic)
 
-    @'
-capsulenv commands
+    $topicName = if ([string]::IsNullOrWhiteSpace($Topic)) { '' } else { $Topic.ToLowerInvariant() }
+    switch ($topicName) {
+        '' {
+@'
+capsulenv — portable Windows development environment
 
+Getting started
+  capsulenv.cmd
   capsulenv.cmd shell
-      Open a child PowerShell with the capsule environment active. In ShellOnly
-      mode host Scoop settings/user environment are untouched; in User mode the
-      current user-owned integration remains active.
+      Open the capsule shell. No separate init step is required.
 
-  capsulenv.cmd bootstrap
-      Bootstrap missing Scoop/Main repositories in the capsule. Git uses a
-      shallow single-branch clone; archive download is the no-Git fallback.
-
+Daily commands
   capsulenv.cmd run <command> [arguments...]
-      Run one command inside the portable environment.
-
   capsulenv.cmd app list [app]
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
-      List or launch shortcuts from the installed Scoop manifest without creating
-      Start Menu .lnk files. Use user/<app> or global/<app> when both scopes exist.
+  capsulenv.cmd user-shell [--force]
+  capsulenv.cmd status
+  capsulenv.cmd eject [--force]
+  capsulenv.cmd doctor
 
-  capsulenv.cmd init [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
-  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]
-      Repair relocation according to install mode. ShellOnly rebuilds only
-      capsule-owned current/shim/persist links and never replays manifest hooks.
-      User mode uses native Scoop reset and may replay configured hooks.
+Setup and maintenance
+  capsulenv.cmd bootstrap
+  capsulenv.cmd seed ...
+  capsulenv.cmd cache ...
+  capsulenv.cmd tools ...
+  capsulenv.cmd bitwarden ...
+  capsulenv.cmd rehydrate ...
 
-  capsulenv.cmd repair-persist [app...] [--dry-run] [--last]
-      Repair only explicitly configured persisted files. --last reuses the
-      most recently completed OldRoot -> NewRoot relocation context.
+Use "capsulenv.cmd help <topic>" for details.
+Topics: app, user, eject, seed, cache, tools, repair, offline, bitwarden
+'@ | Write-Host
+        }
+        'app' {
+@'
+app commands
+  capsulenv.cmd app list [app]
+      List launchable shortcuts declared by installed Scoop manifests.
 
-  capsulenv.cmd hooks <pre_install|post_install> <app> [app...]
-      Explicitly replay an installed-manifest hook in User mode only. ShellOnly
-      blocks hook replay because a hook may write host profile/registry state.
-
-  capsulenv.cmd reset [app...]
-      Rebuild Scoop links for the current mode. ShellOnly uses the portable
-      reset path; User mode uses native Scoop reset. Defaults to all apps.
+  capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
+      Launch a shortcut without creating a Start Menu .lnk. Use user/<app> or
+      global/<app> when both scopes contain the same app.
+'@ | Write-Host
+        }
+        'user' {
+@'
+user integration commands
+  capsulenv.cmd user-shell [--force]
+      Take over/synchronize current-user integration and open a shell.
 
   capsulenv.cmd install-user [--force]
-  capsulenv.cmd user-shell [--force]
   capsulenv.cmd enable-user [--force]
+      Install this capsule as the current Windows user's Scoop environment.
+      enable-user is retained as a compatibility alias.
+
   capsulenv.cmd restore-user
-      Install this capsule as the current Windows user's Scoop environment, or
-      restore Capsulenv-owned User environment/Bitwarden integration and return
-      to shell-only mode. Package-manifest shortcuts/env remain Scoop-owned.
-      install-user is idempotent while the same capsule already owns User mode.
-      user-shell performs that takeover/synchronization and opens a shell in one step.
-      enable-user is retained as a compatibility alias for install-user.
-
+      Restore Capsulenv-owned current-user settings and return to ShellOnly.
+'@ | Write-Host
+        }
+        'eject' {
+@'
+eject
   capsulenv.cmd eject [--force]
-      Stop capsule-owned processes, report dirty workspace repositories, record
-      eject state, and remove host-local scratch. It never calls restore-user.
+      Report dirty workspace repositories, stop capsule-owned processes, record
+      eject state, and remove host-local scratch. If processes remain, eject is
+      blocked unless --force is used.
 
-  capsulenv.cmd offline status
-  capsulenv.cmd offline prefetch [installed-app ...]
-      Check offline run readiness or ask Scoop to populate its portable download
-      cache for installed apps while a network connection is available.
-
-  capsulenv.cmd drift
-      Compare installed Scoop versions with the manifests in the capsule's local
-      buckets. This is an offline drift check; it does not update buckets.
-
+      Eject never changes install mode. In User mode, run restore-user before
+      removing the capsule from a host that will continue to be used.
+'@ | Write-Host
+        }
+        'seed' {
+@'
+seed commands
   capsulenv.cmd seed powershell [--force]
-      Copy the host CurrentUser PowerShell 7 profiles into Scoop pwsh's persisted
-      profile files. Existing non-empty portable profiles require --force.
+      Copy CurrentUser PowerShell 7 profiles into Scoop pwsh's persisted profile
+      files. Scoop pwsh must already be installed in the capsule.
 
   capsulenv.cmd seed git [--force] [--include-sensitive]
-      Flatten the host global Git config into tool-data/git/config. Include
-      directives and Capsulenv-owned SSH keys are excluded; credential.* and
-      http.*.extraHeader are excluded unless --include-sensitive is explicit.
+      Flatten host global Git config into tool-data/git/config. Credential and
+      extraHeader entries are excluded unless --include-sensitive is explicit.
 
   capsulenv.cmd seed scoop [--force] [--apply]
-      Capture a foreign host Scoop apps+buckets inventory into
-      tool-data/scoop/Scoopfile.json. --apply imports that inventory only in
-      User mode because native Scoop import may create host user integration.
-
-
+      Capture a foreign Scoop apps+buckets inventory in
+      tool-data/scoop/Scoopfile.json. --apply installs it according to the
+      current Capsulenv ownership mode.
+'@ | Write-Host
+        }
+        'cache' {
+@'
+cache commands
   capsulenv.cmd cache paths
   capsulenv.cmd cache init
   capsulenv.cmd cache status [project-path]
-      Show or initialize portable cache, tool-data, bin, and config locations.
-
   capsulenv.cmd cache link <profile> [project-path] [--move]
       [--junction|--symlink|--hardlink]
-      Link a project-local build/cache path to capsule storage. Directory
-      profiles default to junctions; hardlink is valid for file profiles only.
-
   capsulenv.cmd cache unlink <profile> [project-path] [--restore]
-      Remove a managed project link. --restore moves stored data back.
-
   capsulenv.cmd cache repair [--strict]
-      Recreate registered junctions/symlinks whose absolute targets became
-      stale. Managed file hardlinks copied across a drive move are rebuilt only
-      when both copies still match their recorded SHA-256 ownership fingerprint.
-
-
+'@ | Write-Host
+        }
+        'tools' {
+@'
+tool relocation commands
   capsulenv.cmd tools status
   capsulenv.cmd tools register <uv|pixi> [workspace]
   capsulenv.cmd tools unregister <uv|pixi> [workspace]
-      Inspect or explicitly register lock-backed workspaces for native repair.
-
   capsulenv.cmd tools repair [uv|pixi|all] [--dry-run] [--last] [--strict]
       [--skip-workspaces] [--include-global]
-      Rebuild uv-managed installations and registered uv/Pixi workspace
-      environments. Pixi global sync is opt-in because its manifest may contain
-      version ranges that are re-resolved during sync.
+'@ | Write-Host
+        }
+        'repair' {
+@'
+repair commands
+  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs]
+      [--skip-tool-repairs] [--strict-tool-repairs]
+      Repair relocation according to install mode. Normal shell startup invokes
+      relocation repair automatically when required.
 
-  capsulenv.cmd doctor
+  capsulenv.cmd init [...]
+      Compatibility/advanced alias for explicit full initialization.
 
-  capsulenv.cmd firefox [arguments...]
-  capsulenv.cmd zen [arguments...]
-      Start the Scoop-installed browser explicitly on its capsule-persisted
-      profile. ShellOnly also adds -no-remote to avoid attaching to a host process.
-
+  capsulenv.cmd repair-persist [app...] [--dry-run] [--last]
+  capsulenv.cmd hooks <pre_install|post_install> <app> [app...]
+  capsulenv.cmd reset [app...]
+'@ | Write-Host
+        }
+        'offline' {
+@'
+offline commands
+  capsulenv.cmd offline status
+  capsulenv.cmd offline prefetch [installed-app ...]
+  capsulenv.cmd drift
+      Check local/offline readiness, populate Scoop's portable download cache,
+      or compare installed versions with local bucket manifests.
+'@ | Write-Host
+        }
+        'bitwarden' {
+@'
+Bitwarden SSH Agent commands
   capsulenv.cmd bitwarden setup [always|never|remember-until-lock]
-      Enable the capsule-persisted Bitwarden SSH Agent setting. ShellOnly uses
-      process-only Git config and leaves Windows ssh-agent unchanged; User mode
-      may write Git global config and disable the service when elevated.
-
   capsulenv.cmd bitwarden status
   capsulenv.cmd bitwarden restore
-      Inspect or precisely restore the settings changed by setup.
-
   capsulenv.cmd bitwarden start
   capsulenv.cmd bitwarden agent-test
-  capsulenv.cmd bitwarden disable-windows-agent
-  capsulenv.cmd bitwarden restore-windows-agent
-  capsulenv.cmd bitwarden configure-git
-  capsulenv.cmd bitwarden restore-git
-'@ | Write-Host
-}
 
+Advanced: disable-windows-agent, restore-windows-agent, configure-git, restore-git.
+ShellOnly keeps Git/service changes process-only; User mode may own reversible
+current-user integration.
+'@ | Write-Host
+        }
+        default {
+            throw "Unknown help topic: $Topic. Run capsulenv.cmd help for available topics."
+        }
+    }
+}
 
 function Invoke-CapsulenvCacheCommand {
     param([string[]]$Arguments)
@@ -590,6 +612,10 @@ function Invoke-Capsulenv {
             if ($remaining.Count -gt 0) { throw 'Usage: drift' }
             Get-CapsulenvVersionDrift | Format-Table -AutoSize
         }
+        'status' {
+            if ($remaining.Count -gt 0) { throw 'Usage: status' }
+            Get-CapsulenvStatus | Format-List
+        }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
         'seed' { Invoke-CapsulenvSeedCommand -Arguments $remaining }
         'cache' { Invoke-CapsulenvCacheCommand -Arguments $remaining }
@@ -597,7 +623,12 @@ function Invoke-Capsulenv {
         'firefox' { Start-CapsulenvBrowser -Browser Firefox -Arguments $remaining }
         'zen' { Start-CapsulenvBrowser -Browser Zen -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }
-        'help' { Show-CapsulenvHelp }
+        'help' {
+            $helpArguments = @($remaining)
+            if ($helpArguments.Count -gt 1) { throw 'Usage: help [topic]' }
+            $topic = if ($helpArguments.Count -eq 1) { [string]$helpArguments[0] } else { $null }
+            Show-CapsulenvHelp -Topic $topic
+        }
         '--help' { Show-CapsulenvHelp }
         '-h' { Show-CapsulenvHelp }
         default { throw "Unknown capsulenv command: $command. Run capsulenv.cmd help." }

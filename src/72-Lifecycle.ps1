@@ -319,6 +319,64 @@ function Get-CapsulenvVersionDrift {
     return $results.ToArray()
 }
 
+function Get-CapsulenvRuntimeVersion {
+    [CmdletBinding()]
+    param()
+
+    $root = (Get-CapsulenvContext).Root
+    foreach ($relativePath in @('.capsulenv-runtime.json', '.capsulenv-install.json')) {
+        $path = Join-Path $root $relativePath
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            continue
+        }
+        try {
+            $metadata = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            $versionProperty = $metadata.PSObject.Properties['Version']
+            if ($null -ne $versionProperty -and -not [string]::IsNullOrWhiteSpace([string]$versionProperty.Value)) {
+                return [string]$versionProperty.Value
+            }
+        } catch {
+            # Fall through to the next local metadata source.
+        }
+    }
+
+    $manifestPath = Join-Path $root 'Capsulenv.psd1'
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+        try {
+            $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
+            if ($manifest.ContainsKey('ModuleVersion')) {
+                return [string]$manifest.ModuleVersion
+            }
+        } catch {
+            # A prebuilt runtime normally has no source manifest at its root.
+        }
+    }
+    return 'unknown'
+}
+
+function Get-CapsulenvStatus {
+    [CmdletBinding()]
+    param()
+
+    $context = Get-CapsulenvContext
+    $installedApps = @(Get-CapsulenvInstalledScoopApps)
+    $projectLinks = @(Read-CapsulenvProjectCacheRegistry)
+    $toolWorkspaces = @(Read-CapsulenvToolWorkspaceRegistry)
+    $offline = Get-CapsulenvOfflineReadiness
+    $relocationRequired = Test-CapsulenvScoopRehydrationRequired
+
+    return [pscustomobject]@{
+        Version = Get-CapsulenvRuntimeVersion
+        Root = $context.Root
+        Mode = Get-CapsulenvInstallMode
+        ScoopApps = $installedApps.Count
+        Relocation = if ($relocationRequired) { 'Pending' } else { 'Ready' }
+        ProjectLinks = $projectLinks.Count
+        ToolWorkspaces = $toolWorkspaces.Count
+        OfflineRunReady = [bool]$offline.RunReady
+    }
+}
+
 function Get-CapsulenvOfflineReadiness {
     [CmdletBinding()]
     param()
