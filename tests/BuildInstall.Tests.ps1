@@ -29,6 +29,18 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition (Test-Path -LiteralPath (Join-Path $buildRoot '.capsulenv-runtime.json') -PathType Leaf) `
                 -Message 'Runtime build metadata was not created.'
+            foreach ($runtimeDoc in @(
+                'README.md',
+                'docs/ARCHITECTURE.md',
+                'docs/DEVELOPMENT.md',
+                'docs/INSTALL.md',
+                'docs/MIGRATION.md',
+                'docs/TOOLS.md'
+            )) {
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition (Test-Path -LiteralPath (Join-Path $buildRoot $runtimeDoc) -PathType Leaf) `
+                    -Message "Runtime build did not include documentation: $runtimeDoc"
+            }
 
             $installerPath = Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'
             $environmentSentinels = [ordered]@{

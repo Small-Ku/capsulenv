@@ -60,8 +60,10 @@ try {
         @{ Source = 'scripts/Invoke-Capsulenv.ps1'; Destination = 'scripts/Invoke-Capsulenv.ps1' }
         @{ Source = 'scripts/scoop-capsulenv-replay.ps1'; Destination = 'scripts/scoop-capsulenv-replay.ps1' }
         @{ Source = 'scripts/scoop-capsulenv-portable-reset.ps1'; Destination = 'scripts/scoop-capsulenv-portable-reset.ps1' }
-        @{ Source = 'docs/MIGRATION.md'; Destination = 'docs/MIGRATION.md' }
+        @{ Source = 'docs/ARCHITECTURE.md'; Destination = 'docs/ARCHITECTURE.md' }
+        @{ Source = 'docs/DEVELOPMENT.md'; Destination = 'docs/DEVELOPMENT.md' }
         @{ Source = 'docs/INSTALL.md'; Destination = 'docs/INSTALL.md' }
+        @{ Source = 'docs/MIGRATION.md'; Destination = 'docs/MIGRATION.md' }
         @{ Source = 'docs/TOOLS.md'; Destination = 'docs/TOOLS.md' }
     )
     foreach ($entry in $files) {
