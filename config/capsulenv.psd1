@@ -1,5 +1,5 @@
 @{
-    SchemaVersion = 9
+    SchemaVersion = 10
 
     Scoop = @{
         Root = 'scoop'
@@ -127,6 +127,10 @@
             UV_CONFIG_FILE = 'tool-data\uv\uv.toml'
             PIXI_CONFIG_FILE = 'tool-data\pixi\config.toml'
             NPM_CONFIG_USERCONFIG = 'tool-data\npm\npmrc'
+
+            # Capsulenv explicitly points PSReadLine at this file when opening
+            # a child shell. PowerShell itself has no equivalent history env var.
+            CAPSULENV_PSREADLINE_HISTORY = 'tool-data\powershell\PSReadLine\ConsoleHost_history.txt'
 
             GOENV = 'tool-data\go\env'
             CCACHE_CONFIGPATH = 'tool-data\ccache\ccache.conf'

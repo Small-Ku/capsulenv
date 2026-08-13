@@ -59,6 +59,20 @@ capsulenv commands
       Compare installed Scoop versions with the manifests in the capsule's local
       buckets. This is an offline drift check; it does not update buckets.
 
+  capsulenv.cmd seed powershell [--force]
+      Copy the host CurrentUser PowerShell 7 profiles into Scoop pwsh's persisted
+      profile files. Existing non-empty portable profiles require --force.
+
+  capsulenv.cmd seed git [--force] [--include-sensitive]
+      Flatten the host global Git config into tool-data/git/config. Include
+      directives and Capsulenv-owned SSH keys are excluded; credential.* and
+      http.*.extraHeader are excluded unless --include-sensitive is explicit.
+
+  capsulenv.cmd seed scoop [--force] [--apply]
+      Capture a foreign host Scoop apps+buckets inventory into
+      tool-data/scoop/Scoopfile.json. --apply imports that inventory only in
+      User mode because native Scoop import may create host user integration.
+
 
   capsulenv.cmd cache paths
   capsulenv.cmd cache init
@@ -290,6 +304,49 @@ function Invoke-CapsulenvOfflineCommand {
     }
 }
 
+function Invoke-CapsulenvSeedCommand {
+    param([string[]]$Arguments)
+
+    if ($Arguments.Count -lt 1) {
+        throw 'Usage: seed <powershell|git|scoop> [...]'
+    }
+    $action = $Arguments[0].ToLowerInvariant()
+    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+
+    switch ($action) {
+        'powershell' {
+            $unknown = @($remaining | Where-Object { $_ -ne '--force' })
+            if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {
+                throw 'Usage: seed powershell [--force]'
+            }
+            Seed-CapsulenvPowerShellProfiles -Force:($remaining -contains '--force') | Format-Table -AutoSize
+        }
+        'git' {
+            $allowed = @('--force', '--include-sensitive')
+            $unknown = @($remaining | Where-Object { $_ -notin $allowed })
+            if ($unknown.Count -gt 0) {
+                throw 'Usage: seed git [--force] [--include-sensitive]'
+            }
+            Seed-CapsulenvGitConfig `
+                -Force:($remaining -contains '--force') `
+                -IncludeSensitive:($remaining -contains '--include-sensitive') |
+                Format-List
+        }
+        'scoop' {
+            $allowed = @('--force', '--apply')
+            $unknown = @($remaining | Where-Object { $_ -notin $allowed })
+            if ($unknown.Count -gt 0) {
+                throw 'Usage: seed scoop [--force] [--apply]'
+            }
+            Seed-CapsulenvScoopInventory `
+                -Force:($remaining -contains '--force') `
+                -Apply:($remaining -contains '--apply') |
+                Format-List
+        }
+        default { throw "Unknown seed action: $($Arguments[0])" }
+    }
+}
+
 function Invoke-CapsulenvBitwardenCommand {
     param([string[]]$Arguments)
 
@@ -470,6 +527,7 @@ function Invoke-Capsulenv {
             Get-CapsulenvVersionDrift | Format-Table -AutoSize
         }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
+        'seed' { Invoke-CapsulenvSeedCommand -Arguments $remaining }
         'cache' { Invoke-CapsulenvCacheCommand -Arguments $remaining }
         'tools' { Invoke-CapsulenvToolsCommand -Arguments $remaining }
         'firefox' { Start-CapsulenvBrowser -Browser Firefox -Arguments $remaining }

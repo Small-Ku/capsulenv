@@ -413,7 +413,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 9) {
+    if ([int]$configuration.SchemaVersion -ne 10) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

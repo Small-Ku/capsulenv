@@ -1,6 +1,6 @@
 @{
     RootModule = 'Capsulenv.psm1'
-    ModuleVersion = '0.10.0'
+    ModuleVersion = '0.12.0'
     GUID = 'fd343cc9-98c9-4ddf-bff5-89de07a77ee9'
     Author = 'capsulenv contributors'
     CompanyName = 'Community'

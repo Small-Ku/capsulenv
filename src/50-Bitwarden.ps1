@@ -423,14 +423,14 @@ function Get-CapsulenvGitCommand {
     [CmdletBinding()]
     param()
 
-    $git = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
-    if (-not $git) {
-        $git = Get-Command git -CommandType Application -ErrorAction SilentlyContinue
+    $git = @(Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($git.Count -eq 0) {
+        $git = @(Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)
     }
-    if (-not $git) {
+    if ($git.Count -eq 0) {
         throw 'Git was not found.'
     }
-    return $git.Source
+    return [string]$git[0].Source
 }
 
 function Restore-CapsulenvGitValues {

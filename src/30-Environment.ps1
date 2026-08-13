@@ -756,14 +756,21 @@ function Invoke-CapsulenvChildShell {
     Initialize-CapsulenvIntegrations
 
     $shellPath = (Get-Process -Id $PID).Path
+    $launchPlan = Get-CapsulenvPowerShellChildLaunchPlan `
+        -ShellPath $shellPath `
+        -IntegrationMode (Get-CapsulenvInstallMode) `
+        -Command $Command
+    $childShell = [string]$launchPlan.ShellPath
+    $childArguments = @($launchPlan.Arguments)
+
     if ([string]::IsNullOrWhiteSpace($Command)) {
         Write-CapsulenvMessage -Level Success -Message "capsulenv active at $env:CAPSULENV_ROOT"
-        & $shellPath -NoLogo -NoExit -ExecutionPolicy Bypass
+        & $childShell @childArguments
         return
     }
 
     Clear-CapsulenvLastExitCode
-    & $shellPath -NoLogo -ExecutionPolicy Bypass -Command $Command
+    & $childShell @childArguments
     $succeeded = $?
     $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
 }
