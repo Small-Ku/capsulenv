@@ -288,7 +288,7 @@ $installedModule = Join-Path (Join-Path (Join-Path $destinationRoot 'modules') '
 try {
     $env:CAPSULENV_ROOT = $destinationRoot
     Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-    Import-Module $installedModule -Force
+    Import-Module $installedModule -Force -DisableNameChecking
 
     $bootstrapOnThisHost = (-not $SkipScoopBootstrap) -and ($env:OS -eq 'Windows_NT' -or $PSVersionTable.PSVersion.Major -le 5)
     if ($bootstrapOnThisHost) {
@@ -333,7 +333,7 @@ try {
             -not [string]::IsNullOrWhiteSpace([string]$previousModule.Path) -and
             (Test-Path -LiteralPath $previousModule.Path -PathType Leaf)
         ) {
-            Import-Module $previousModule.Path -Force
+            Import-Module $previousModule.Path -Force -DisableNameChecking
         }
     }
     $currentProcessEnvironment = [Environment]::GetEnvironmentVariables('Process')

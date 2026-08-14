@@ -27,5 +27,5 @@ if ((Test-Path -LiteralPath $prebuiltModule -PathType Leaf) -and -not $forceRebu
     $modulePath = $build.ModulePath
 }
 
-Import-Module $modulePath -Force
+Import-Module $modulePath -Force -DisableNameChecking
 Invoke-Capsulenv @CapsulenvArguments

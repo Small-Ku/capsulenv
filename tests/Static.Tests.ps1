@@ -785,6 +785,13 @@ Describe 'Capsulenv static and relocation' {
                 -Message 'Installer update changed mutable workspace data.'
 
             $installerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
+            $invokeSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Invoke-Capsulenv.ps1'))
+            Assert-CapsulenvTest `
+                -Condition $invokeSource.Contains('Import-Module $modulePath -Force -DisableNameChecking') `
+                -Message 'Runtime launcher must suppress unapproved-verb warnings from its internal Capsulenv import.'
+            Assert-CapsulenvTest `
+                -Condition $installerSource.Contains('Import-Module $installedModule -Force -DisableNameChecking') `
+                -Message 'Installer must suppress unapproved-verb warnings from its internal Capsulenv import.'
             foreach ($requiredInstallerBehavior in @(
                 'rollbackRecords',
                 'Copy-CapsulenvInstallFile',
