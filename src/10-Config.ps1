@@ -117,6 +117,22 @@ function Assert-CapsulenvConfiguration {
     ) {
         throw 'Scoop.RelocationRepairs must be a hashtable.'
     }
+    if (
+        -not $Configuration.Scoop.ContainsKey('ShellOnlyLifecyclePolicy') -or
+        $Configuration.Scoop.ShellOnlyLifecyclePolicy -isnot [hashtable]
+    ) {
+        throw 'Scoop.ShellOnlyLifecyclePolicy must be a hashtable.'
+    }
+    foreach ($fingerprint in $Configuration.Scoop.ShellOnlyLifecyclePolicy.Keys) {
+        $fingerprintText = [string]$fingerprint
+        if ($fingerprintText -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "Scoop.ShellOnlyLifecyclePolicy contains an invalid SHA-256 fingerprint: $fingerprintText"
+        }
+        $action = [string]$Configuration.Scoop.ShellOnlyLifecyclePolicy[$fingerprint]
+        if ($action -notin @('Allow', 'Skip')) {
+            throw "Scoop.ShellOnlyLifecyclePolicy action must be Allow or Skip for fingerprint $fingerprintText."
+        }
+    }
     foreach ($app in $Configuration.Scoop.ReplayHooks.Keys) {
         if ([string]::IsNullOrWhiteSpace([string]$app)) {
             throw 'Scoop.ReplayHooks contains an empty application name.'
@@ -395,7 +411,7 @@ function Import-CapsulenvConfiguration {
         # Scoop repair maps are allow-lists and must be replaceable as one unit.
         # Empty local hashtables therefore disable their automatic behavior.
         if ($local.ContainsKey('Scoop') -and $local.Scoop -is [hashtable]) {
-            foreach ($allowListName in @('ReplayHooks', 'RelocationRepairs')) {
+            foreach ($allowListName in @('ReplayHooks', 'RelocationRepairs', 'ShellOnlyLifecyclePolicy')) {
                 if ($local.Scoop.ContainsKey($allowListName)) {
                     $configuration.Scoop[$allowListName] = $local.Scoop[$allowListName]
                 }

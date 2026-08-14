@@ -60,6 +60,8 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'Get-CapsulenvScoopPathEnvironmentVariable'
         $script:EnvironmentSource | Should -Match "'ScoopRoot', 'ScoopGlobalRoot'"
         $script:EnvironmentSource | Should -Match 'SCOOP_CACHE'
+        $script:EnvironmentSource | Should -Match 'ShellOnlyLifecyclePolicy \| ConvertTo-Json -Compress'
+        $script:EnvironmentSource | Should -Match "CAPSULENV_SCOOP_LIFECYCLE_POLICY.*'Process'"
         $script:BootstrapSource.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"') | Should -BeTrue
         $script:BootstrapSource | Should -Match 'ReadAllText\(\$cmdPath\)'
     }

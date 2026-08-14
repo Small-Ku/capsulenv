@@ -78,6 +78,46 @@ Describe 'Capsulenv ShellOnly Scoop lifecycle policy' {
             Should -Not -Throw
     }
 
+
+    It 'executes an exact reviewed hook and skips an exact reviewed host cleanup hook' {
+        $installScript = 'Set-Content "$dir\portable.txt" ok'
+        $installFingerprint = Get-CapsulenvScoopLifecycleFingerprint -Kind pre_install -Value $installScript
+        $script:CapsulenvScoopPolicyMap[$installFingerprint] = 'Allow'
+        $manifest = [pscustomobject]@{
+            version = '1.0'
+            pre_install = $installScript
+        }
+
+        Invoke-HookScript -HookType pre_install -Manifest $manifest -ProcessorArchitecture 64bit
+        $script:OriginalHookCalled | Should -BeTrue
+
+        $script:OriginalHookCalled = $false
+        $uninstallScript = 'reg import "$dir\cleanup.reg"'
+        $uninstallFingerprint = Get-CapsulenvScoopLifecycleFingerprint -Kind uninstaller -Value $uninstallScript
+        $script:CapsulenvScoopPolicyMap[$uninstallFingerprint] = 'Skip'
+        $uninstallManifest = [pscustomobject]@{
+            version = '1.0'
+            uninstaller = [pscustomobject]@{ script = $uninstallScript }
+        }
+
+        Invoke-HookScript -HookType pre_uninstall -Manifest $uninstallManifest -ProcessorArchitecture 64bit
+        Invoke-HookScript -HookType uninstaller -Manifest $uninstallManifest -ProcessorArchitecture 64bit
+        $script:OriginalHookCalled | Should -BeFalse
+    }
+
+    It 'does not permit Skip to bypass an actual installer script' {
+        $installerScript = 'Start-Process setup.exe -Wait'
+        $fingerprint = Get-CapsulenvScoopLifecycleFingerprint -Kind installer -Value $installerScript
+        $script:CapsulenvScoopPolicyMap[$fingerprint] = 'Skip'
+        $manifest = [pscustomobject]@{
+            version = '1.0'
+            installer = [pscustomobject]@{ script = $installerScript }
+        }
+
+        { Invoke-HookScript -HookType pre_install -Manifest $manifest -ProcessorArchitecture 64bit } |
+            Should -Throw '*ShellOnly blocked unreviewed Scoop lifecycle*installer*'
+    }
+
     It 'keeps Scoop environment mutations process-only' {
         $name = 'CAPSULENV_PESTER_SCOOP_ENV'
         $pathName = 'CAPSULENV_PESTER_SCOOP_PATH'

@@ -348,7 +348,7 @@ Describe 'Capsulenv static and relocation' {
             $tempConfigRoot = Join-Path $tempRoot 'config'
             [void](New-Item -ItemType Directory -Path $tempConfigRoot -Force)
             Copy-Item -LiteralPath (Join-Path (Join-Path $root 'config') 'capsulenv.psd1') -Destination $tempConfigRoot
-'@{ Scoop = @{ ReplayHooks = @{}; RelocationRepairs = @{} } }' |
+'@{ Scoop = @{ ReplayHooks = @{}; RelocationRepairs = @{}; ShellOnlyLifecyclePolicy = @{} } }' |
                 Set-Content -LiteralPath (Join-Path $tempConfigRoot 'capsulenv.local.psd1') -Encoding UTF8
 
             $replacementConfig = & $module {
@@ -362,6 +362,9 @@ Describe 'Capsulenv static and relocation' {
             Assert-CapsulenvTest `
                 -Condition ($replacementConfig.Scoop.RelocationRepairs.Count -eq 0) `
                 -Message 'Local RelocationRepairs must replace the default allow-list as one unit.'
+            Assert-CapsulenvTest `
+                -Condition ($replacementConfig.Scoop.ShellOnlyLifecyclePolicy.Count -eq 0) `
+                -Message 'Local ShellOnlyLifecyclePolicy must replace the default allow-list as one unit.'
 
             [void](New-Item -ItemType Directory -Path (Join-Path $tempRoot '.capsulenv') -Force)
             '{}' | Set-Content -LiteralPath (Join-Path (Join-Path $tempRoot '.capsulenv') 'scoop-rehydration.json') -Encoding UTF8
@@ -499,6 +502,14 @@ Describe 'Capsulenv static and relocation' {
         Assert-CapsulenvTest `
             -Condition (-not $config.Scoop.ReplayHooks.ContainsKey('zen')) `
             -Message 'Ambiguous app aliases must not receive automatic lifecycle replay.'
+        Assert-CapsulenvTest `
+            -Condition ($config.Scoop.ShellOnlyLifecyclePolicy.Count -gt 0) `
+            -Message 'Default ShellOnly lifecycle policy must contain reviewed content fingerprints.'
+        foreach ($policyAction in @($config.Scoop.ShellOnlyLifecyclePolicy.Values)) {
+            Assert-CapsulenvTest `
+                -Condition ([string]$policyAction -in @('Allow', 'Skip')) `
+                -Message "Unexpected ShellOnly lifecycle policy action: $policyAction"
+        }
         foreach ($browser in @('Firefox', 'Zen', 'LibreWolf')) {
             Assert-CapsulenvTest `
                 -Condition (-not $config.Browsers[$browser].ContainsKey('ProfileDir')) `

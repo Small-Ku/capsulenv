@@ -220,7 +220,8 @@ function Set-CapsulenvSessionEnvironment {
     # Process-only control plane for the capsule-owned Scoop shim. These are
     # intentionally not part of the User environment plan or reversible ledger.
     [Environment]::SetEnvironmentVariable('CAPSULENV_MODE', (Get-CapsulenvInstallMode), 'Process')
-    [Environment]::SetEnvironmentVariable('CAPSULENV_SCOOP_LIFECYCLE_POLICY', $null, 'Process')
+    $scoopLifecyclePolicyJson = $configuration.Scoop.ShellOnlyLifecyclePolicy | ConvertTo-Json -Compress
+    [Environment]::SetEnvironmentVariable('CAPSULENV_SCOOP_LIFECYCLE_POLICY', $scoopLifecyclePolicyJson, 'Process')
     $sessionPath = Remove-CapsulenvPathEntries `
         -ExistingPath $env:PATH `
         -Remove $foreignScoopShimPaths

@@ -31,6 +31,30 @@
             'zen-browser' = @('post_install')
         }
 
+        # ShellOnly executes arbitrary Scoop lifecycle code only when the exact
+        # hook content has been reviewed. Keys are SHA-256 fingerprints over
+        # "<hook-kind>\n<hook-text>"; changed upstream scripts fail closed.
+        ShellOnlyLifecyclePolicy = @{
+            # Git for Windows: pre/post install and pre-uninstall only touch
+            # the portable app/persist trees; host registry cleanup is skipped.
+            'd6857b7f6285519dc3533297dcb7a65a87caa1609649fcbfab58ae953c3a1bb3' = 'Allow' # git pre_install
+            '6b042340f965a08bd8ea56e9539323209be35a04b87b8443d641c6810dc5c014' = 'Allow' # git post_install
+            '42d82cee7bdb43f03b9b03f248fdde9fb75ac7f813f0c15cf888fd3dd6972314' = 'Allow' # git pre_uninstall
+            '3aa480bdaf42fb9d71b9461f4dcc94d15a0a85b2b2050bb0646c0003a951f45e' = 'Skip'  # git uninstaller registry import
+
+            # PowerShell Core: create portable profile/reg files, but never
+            # import host Explorer/file-context registry state in ShellOnly.
+            'c920d94bd74d5db22ee044c0bea6b526f680e633953832d224bf9aabb350d97d' = 'Allow' # pwsh pre_install
+            'dddc13ba33b5873c2a6b828c66e2a0aa7fb87ae8044e6d82e5d21dd91e1cfadb' = 'Allow' # pwsh post_install
+            'f999bc68d63c37ea6a85909141fb3a88ac2dea05181e55075ddebbdd32e32c1c' = 'Skip'  # pwsh uninstaller registry import
+
+            # 7-Zip: generated registry files remain capsule-local; the ARM64
+            # extraction hook is content-pinned; host context-menu cleanup skips.
+            '0d041655dbee067bfc7c9a953da35d1bfbbfa4c514f78a338e52b9eb24d059b7' = 'Allow' # 7zip ARM64 pre_install
+            '1c06af011c6f4abe1ef55c23b5804841e5579d6ac384a431bf5966721911fa6a' = 'Allow' # 7zip post_install
+            '3206ade55d362efb7245555b43c9a205f6dff093f0599b18660e9a4ea1af68b5' = 'Skip'  # 7zip uninstaller registry import
+        }
+
         # Exact allow-list of Scoop-persisted text files that may contain
         # the previous capsule path. Missing files are ignored; running apps
         # must be closed before any matching file is changed.
