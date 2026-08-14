@@ -240,6 +240,33 @@ Describe 'Capsulenv PowerShell and seed ownership' {
         }
     }
 
+    It 'dispatches seed weasel with no trailing options as an empty argument array' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-weasel-dispatch-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
+            Mock Save-CapsulenvWeaselSeed {
+                [pscustomobject]@{ Action = 'Backup'; Source = 'host'; Destination = 'seed' }
+            } -ModuleName Capsulenv
+
+            & $script:Module {
+                param($CapsuleRoot)
+                $previousRoot = $env:CAPSULENV_ROOT
+                try {
+                    $env:CAPSULENV_ROOT = $CapsuleRoot
+                    { Invoke-Capsulenv -Arguments @('seed', 'weasel') | Out-String | Out-Null } | Should -Not -Throw
+                } finally {
+                    $env:CAPSULENV_ROOT = $previousRoot
+                }
+            } $temporaryRoot
+
+            Should -Invoke Save-CapsulenvWeaselSeed -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { -not $Force }
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
     It 'backs up and restores Weasel only through a registry-confirmed installation contract' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-weasel-seed-' + [Guid]::NewGuid().ToString('N'))
         try {

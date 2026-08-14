@@ -186,7 +186,7 @@ function Invoke-CapsulenvCacheCommand {
     }
 
     $action = $Arguments[0].ToLowerInvariant()
-    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    $remaining = @($Arguments | Select-Object -Skip 1)
     switch ($action) {
         'paths' {
             if ($remaining.Count -gt 0) {
@@ -271,7 +271,7 @@ function Invoke-CapsulenvToolsCommand {
         throw 'Usage: tools <status|register|unregister|repair> [...]'
     }
     $action = $Arguments[0].ToLowerInvariant()
-    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    $remaining = @($Arguments | Select-Object -Skip 1)
 
     switch ($action) {
         'status' {
@@ -339,7 +339,7 @@ function Invoke-CapsulenvOfflineCommand {
     param([string[]]$Arguments)
 
     $action = if ($Arguments.Count -gt 0) { $Arguments[0].ToLowerInvariant() } else { 'status' }
-    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    $remaining = @($Arguments | Select-Object -Skip 1)
     switch ($action) {
         'status' {
             if ($remaining.Count -gt 0) { throw 'Usage: offline status' }
@@ -359,7 +359,7 @@ function Invoke-CapsulenvSeedCommand {
         throw 'Usage: seed <powershell|git|scoop|weasel> [...]'
     }
     $action = $Arguments[0].ToLowerInvariant()
-    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    $remaining = @($Arguments | Select-Object -Skip 1)
 
     switch ($action) {
         'powershell' {
@@ -397,10 +397,9 @@ function Invoke-CapsulenvSeedCommand {
             } else {
                 'backup'
             }
-            $options = if ($remaining.Count -gt 0 -and $remaining[0] -notlike '--*') {
-                if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
-            } else {
-                @($remaining)
+            $options = @($remaining)
+            if ($remaining.Count -gt 0 -and $remaining[0] -notlike '--*') {
+                $options = @($remaining | Select-Object -Skip 1)
             }
             switch ($operation) {
                 'backup' {
@@ -487,7 +486,7 @@ function Invoke-CapsulenvAppCommand {
     }
 
     $action = $Arguments[0].ToLowerInvariant()
-    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    $remaining = @($Arguments | Select-Object -Skip 1)
     switch ($action) {
         'list' {
             if ($remaining.Count -gt 1) {
@@ -505,7 +504,7 @@ function Invoke-CapsulenvAppCommand {
                 throw 'Usage: app run <app> ["shortcut name"] [-- runtime arguments...]'
             }
             $selector = [string]$remaining[0]
-            $tail = if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
+            $tail = @($remaining | Select-Object -Skip 1)
             $separatorIndex = -1
             for ($index = 0; $index -lt $tail.Count; $index++) {
                 if ([string]$tail[$index] -eq '--') {
@@ -545,7 +544,7 @@ function Invoke-Capsulenv {
 
     [void](Initialize-CapsulenvContext -Root $env:CAPSULENV_ROOT)
     $command = if ($Arguments.Count -gt 0) { $Arguments[0].ToLowerInvariant() } else { 'shell' }
-    $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
+    $remaining = @($Arguments | Select-Object -Skip 1)
 
     switch ($command) {
         'shell' { Invoke-CapsulenvChildShell }
@@ -567,7 +566,7 @@ function Invoke-Capsulenv {
             if ($remaining.Count -lt 1) {
                 throw 'Usage: run <command> [arguments...]'
             }
-            $externalArguments = if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
+            $externalArguments = @($remaining | Select-Object -Skip 1)
             Invoke-CapsulenvExternalCommand -Command $remaining[0] -Arguments $externalArguments
         }
         'app' { Invoke-CapsulenvAppCommand -Arguments $remaining }
