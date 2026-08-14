@@ -118,7 +118,7 @@ Automatic replay is an allow-list in `Scoop.ReplayHooks`. `pre_install` is never
 
 Some persisted UTF text/JSON files contain absolute paths that the owning app does not repair itself. `Scoop.RelocationRepairs` is an exact allow-list of app-relative files. Repairs are bounded by path, format and maximum size; missing optional files are skipped, configured processes must be closed, JSON must parse before replacement, and the write is transactional.
 
-Capsulenv never recursively scans all of `persist` and never applies blind OldRoot -> NewRoot replacement to binaries. The built-in browser rules exist only for known Firefox/Zen text/config files.
+Capsulenv never recursively scans all of `persist` and never applies blind OldRoot -> NewRoot replacement to binaries. The built-in browser rules exist only for known Firefox/Firefox ESR/Zen/LibreWolf text/config files.
 
 ## Shortcut-aware app launcher
 
@@ -130,11 +130,17 @@ If the same app exists in both local and portable-global roots, scope must be ex
 
 ## Browser ownership
 
-Firefox/Firefox ESR/Zen profiles stay in Scoop `persist`. Capsulenv never creates a second browser profile tree.
+Firefox/Firefox ESR/Zen/LibreWolf profiles stay in Scoop `persist`. Capsulenv never creates a second browser profile tree. LibreWolf follows the Scoop Extras portable layout and binds `scoop/persist/librewolf/Profiles/Default`; Capsulenv launches the actual Gecko executable rather than creating another profile store.
 
-The dedicated browser commands bind the capsule-persisted profile explicitly. ShellOnly also uses `-no-remote`, preventing the request from being handed to a foreign host browser process. User mode may rely on normal Scoop integration, but the explicit Capsulenv launcher remains available.
+The dedicated browser commands bind the capsule-persisted profile explicitly. ShellOnly also uses `-no-remote`, preventing the request from being handed to a foreign host browser process. `--host` is the sole opt-in path for borrowing a machine-installed executable; resolution is product-specific, excludes both capsule Scoop roots, and never falls back across Firefox, Zen, and LibreWolf. Host-executable launches always apply the configured `-no-remote` isolation argument even in User mode, so they cannot silently hand the request to an already-running host-profile process. The profile remains capsule-owned, so browser/profile format compatibility is deliberately left visible to Gecko rather than bypassed with downgrade flags. User mode may rely on normal Scoop integration, but the explicit Capsulenv launcher remains available.
 
 Browser persisted-file relocation uses only the configured `Scoop.RelocationRepairs` allow-list. User-mode manifest `post_install` replay may repair normal user profile registration; ShellOnly does not perform that host-user registration.
+
+## Weasel seed ownership
+
+Weasel is intentionally not a Capsulenv-managed application. `seed weasel` is allowed only when machine-level Weasel installation registry evidence resolves to an installation containing both `WeaselServer.exe` and `WeaselDeployer.exe`; merely finding `%APPDATA%\Rime` or a loose executable is insufficient. The current user data directory is resolved from `HKCU\Software\Rime\Weasel\RimeUserDir` when present, otherwise the normal `%APPDATA%\Rime` location is used.
+
+Backup/restore treats the Rime user directory as a tree because dictionaries and generated state are not limited to YAML files. Capsulenv refuses to traverse reparse points, stops a running Weasel server before copying, and restarts it only if it had been running. Restore first snapshots the host tree under the machine/user-scoped `.capsulenv/user-integrations/<host-key>/weasel/restore-backups/`, swaps the portable tree into place, then invokes `WeaselDeployer.exe /deploy`. Failed deployment restores the pre-restore tree before returning an error.
 
 ## Bitwarden SSH ownership
 

@@ -90,14 +90,15 @@ capsulenv.cmd app run <app> -- <runtime arguments...>
 
 Launcher 讀取**已安裝版本**的 Scoop `manifest.json`／`install.json`，直接啟動 shortcut target，不建立 `.lnk`。同一 app 同時存在 local/global root 時，使用 `user/<app>` 或 `global/<app>` 明確指定。
 
-Firefox 與 Zen 另有 profile-aware 入口：
+Firefox、Zen 與 LibreWolf 另有 profile-aware 入口：
 
 ```bat
 capsulenv.cmd firefox
 capsulenv.cmd zen
+capsulenv.cmd librewolf
 ```
 
-它們使用 Scoop `persist` 中的 capsule profile；ShellOnly 會額外避免把請求交給主機既有 browser process。
+它們使用 Scoop `persist` 中的 capsule profile；ShellOnly 會額外避免把請求交給主機既有 browser process。若只想借用這台機器**同一 browser product** 的 Gecko executable，而仍打開 capsule profile，可明示 `--host`，例如 `capsulenv.cmd firefox --host`。Capsulenv 不會自動用 Firefox 代開 LibreWolf/Zen（或反向），亦不會在普通 browser command 中偷偷 fallback 到 host browser。
 
 ## 從日用機一次性匯入
 
@@ -107,9 +108,10 @@ capsulenv.cmd zen
 capsulenv.cmd seed powershell
 capsulenv.cmd seed git
 capsulenv.cmd seed scoop
+capsulenv.cmd seed weasel
 ```
 
-`seed powershell` 匯入目前 user 的 PowerShell 7 profiles；**capsule 內必須先已有 Scoop `pwsh`**。`seed git` 匯入 host global Git config，預設排除 credential／HTTP header 等敏感設定。`seed scoop` 先保存 foreign host Scoop 的 apps+buckets inventory；要同時把 app set 搬進 capsule：
+`seed powershell` 匯入目前 user 的 PowerShell 7 profiles；**capsule 內必須先已有 Scoop `pwsh`**。`seed git` 匯入 host global Git config，預設排除 credential／HTTP header 等敏感設定。`seed scoop` 先保存 foreign host Scoop 的 apps+buckets inventory。`seed weasel` 只在偵測到正式 machine-installed 小狼毫時，冷備份目前 Rime user data 到 `tool-data/weasel`；要把該備份寫回另一台已安裝小狼毫的 Windows，使用 `capsulenv.cmd seed weasel restore`，Capsulenv 會先保存該 host 的 rollback snapshot。要同時把 Scoop app set 搬進 capsule：
 
 ```bat
 capsulenv.cmd seed scoop --apply
