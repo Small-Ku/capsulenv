@@ -21,6 +21,8 @@ Source checkout 也使用同一個 `install.cmd <destination>` 入口。Installe
 scoop install git pwsh
 ```
 
+ShellOnly 中的 `scoop` 入口會保持安裝資料、`persist`、shims 在 capsule 內，但不把 Scoop/app PATH 寫入 Windows User/Machine environment，也不建立 Start Menu shortcuts。Manifest 若帶有 `pre_install`／`post_install`／installer 等任意 lifecycle code，只有內容與已審核 fingerprint 完全一致才會執行；未知或已變更的 script 會在 mutation 前停止並印出 fingerprint。不要直接執行 `scoop\apps\scoop\current\bin\scoop.ps1` 來繞過這層 ShellOnly policy。
+
 之後搬到另一個 drive letter 或另一台電腦，直接再執行 `capsulenv.cmd`；shell 啟動會按需要自動 rehydrate。
 
 日常常用入口：

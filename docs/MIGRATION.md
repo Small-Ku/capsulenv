@@ -133,3 +133,9 @@ capsulenv.cmd offline status
 ```
 
 若 capsule 剛換過 path/drive，再執行一次 `capsulenv.cmd rehydrate`。不要為了「清乾淨」而先手動刪 `.capsulenv/`：identity、上一個 relocation context、User backup 和 link registries 正是新版用來安全判斷 ownership 的證據。
+
+## ShellOnly Scoop host-state cleanup (0.14.1)
+
+Older Capsulenv builds exposed Scoop's raw shim in ShellOnly. A direct `scoop install/update/reset/shim` could therefore let upstream Scoop persist capsule paths into the Windows User PATH and create `Scoop Apps` Start Menu shortcuts. 0.14.1 routes those commands through the ShellOnly Scoop gateway, but it does **not** blindly delete historical host state during upgrade because Capsulenv cannot prove that every existing shortcut or user variable was created by the old bug.
+
+After upgrading, inspect User PATH for entries under the current capsule root and remove only entries that actually point into this capsule. Likewise remove only Start Menu `.lnk` files whose resolved target is under the capsule. Existing `scoop/apps`, `scoop/persist`, shims and installed manifests do not need to be deleted or reinstalled. See the ShellOnly Scoop command gateway section in [`ARCHITECTURE.md`](ARCHITECTURE.md#shellonly-scoop-command-gateway) for the new behavior.

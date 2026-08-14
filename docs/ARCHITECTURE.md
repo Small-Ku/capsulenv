@@ -96,6 +96,16 @@ User mode keeps PowerShell's normal profile chain because User mode intentionall
 
 Scoop native `reset` is not suitable as a ShellOnly primitive because it may create Start Menu shortcuts and manifest-defined User/Machine environment integration. Capsulenv therefore branches by mode.
 
+### ShellOnly Scoop command gateway
+
+The capsule-owned `scoop.ps1`/`scoop.cmd` shims do not point directly at Scoop core in ShellOnly. They enter a Capsulenv gateway. Read-only/package-metadata commands still delegate to upstream Scoop, while commands that can create host integration (`install`, `update`, `uninstall`, `reset`, and `shim`) execute the exact upstream libexec implementation with a process-local policy layer injected after Scoop's libraries load. `import` is also intercepted because it invokes `scoop-install.ps1` internally; `install`, `download`, and `virustotal` have their automatic nested `scoop-update.ps1` calls routed back through the gateway. If an expected upstream insertion/dispatch boundary no longer matches, the gateway fails closed. It never patches the Scoop checkout on disk.
+
+The ShellOnly policy shadows Scoop's `Set-EnvVar`, `Add-Path`, and `Remove-Path` so environment effects are process-only. Start Menu shortcut create/remove functions are no-ops. Capsule-owned app directories, installed manifests, `current` links, shims and `persist` remain Scoop-owned and continue to use upstream implementation. `scoop update` may recreate its own shim, so the gateway reasserts the capsule-owned shim after an intercepted command. Capsulenv's internal Scoop calls resolve the canonical upstream executable directly where a controlled internal primitive must avoid recursively entering the public gateway.
+
+Arbitrary manifest lifecycle code is fail-closed. Before an install mutates app state, the policy preflights install-side `pre_install`, `post_install`, installer script and external-installer descriptors. Before uninstall/update removes old state, it separately preflights uninstall-side hooks. Approval is keyed by SHA-256 over the hook kind plus exact script/descriptor content in `Scoop.ShellOnlyLifecyclePolicy`; an upstream text change therefore becomes unreviewed automatically. `Allow` executes the exact reviewed code. `Skip` is available for reviewed optional hooks/cleanup (for example host registry teardown that ShellOnly never installed), but cannot bypass an actual installer script/external installer. The built-in policy contains narrowly reviewed fingerprints needed by the default Git, PowerShell Core and 7-Zip portable flows; local policy replacement may tighten or extend it after source review.
+
+User mode continues to use normal upstream Scoop semantics because that mode explicitly delegates current-user integration to the capsule. The ShellOnly gateway is an isolation boundary, not a Scoop fork and not a second package-manager implementation.
+
 ### ShellOnly portable reset
 
 ShellOnly uses a capsule-local temporary Scoop command that rebuilds only app `current` links, local/global shims and `persist` links/permissions. It intentionally skips Start Menu shortcuts, manifest environment integration and lifecycle hook replay.

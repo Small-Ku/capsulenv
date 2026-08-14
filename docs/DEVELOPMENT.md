@@ -74,7 +74,7 @@ For operations that mutate host/User state, first define an explicit ownership p
 
 `config/capsulenv.psd1` is the default schema. User overrides belong in git-ignored `config/capsulenv.local.psd1` and should be represented in `config/capsulenv.local.psd1.example` when they are intended public extension points.
 
-`Scoop.ReplayHooks`, `Scoop.RelocationRepairs` and `ToolStorage.ProjectLinks` are allow-list style configuration and have replacement semantics where documented by the loader/config example; do not casually change them to recursive merge semantics without migration coverage.
+`Scoop.ReplayHooks`, `Scoop.RelocationRepairs`, `Scoop.ShellOnlyLifecyclePolicy` and `ToolStorage.ProjectLinks` are allow-list style configuration and have replacement semantics where documented by the loader/config example; do not casually change them to recursive merge semantics without migration coverage.
 
 Directory-valued and file-valued tool variables are intentionally separate. File variables must not be initialized as directories.
 
