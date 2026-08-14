@@ -97,7 +97,20 @@ function Initialize-CapsulenvBitwarden {
     }
     Initialize-CapsulenvGitOpenSshSession
 
-    if ($Start -or $configuration.Bitwarden.StartOnEnter) {
+    if ($Start) {
+        Start-CapsulenvBitwarden
+        return
+    }
+
+    if ($configuration.Bitwarden.StartOnEnter) {
+        $foreign = @(
+            Get-CapsulenvBitwardenProcesses -IncludeForeign |
+                Where-Object { -not $_.CapsuleOwned }
+        )
+        if ($foreign.Count -gt 0) {
+            Write-CapsulenvMessage -Level Warning -Message 'Automatic capsule Bitwarden start skipped because a non-capsule Bitwarden process is already running. Close the host Bitwarden and run `capsulenv.cmd bitwarden start` if you want the capsule copy.'
+            return
+        }
         Start-CapsulenvBitwarden
     }
 }

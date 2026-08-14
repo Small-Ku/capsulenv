@@ -196,7 +196,7 @@
 
     Bitwarden = @{
         Enabled = $true
-        StartOnEnter = $true
+        StartOnEnter = $false
         SetSshAuthSock = $true
         Authorization = 'always'
         ExecutableCandidates = @(

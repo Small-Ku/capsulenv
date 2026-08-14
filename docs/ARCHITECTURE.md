@@ -150,7 +150,7 @@ Capsulenv's SSH Agent integration changes only the known top-level Desktop setti
 
 Mode behavior is asymmetric: ShellOnly sets `SSH_AUTH_SOCK` and Git OpenSSH configuration only for the process tree and never changes the Windows `ssh-agent` service. User mode may create reversible global Git configuration and, when elevated and explicitly requested, back up/change the Windows service state. `restore-user`/Bitwarden restore use those exact backups; service restoration still requires elevation.
 
-A foreign host Bitwarden process is not borrowed or terminated. Setup/start refuses instead of crossing the capsule ownership boundary.
+A foreign host Bitwarden process is not borrowed or terminated. Explicit setup/start refuses instead of crossing the capsule ownership boundary. Automatic Bitwarden startup is disabled by default; if a user explicitly enables `StartOnEnter`, activation treats a foreign host Bitwarden as a non-fatal conflict, skips only the automatic capsule launch, and still enters the Capsulenv shell.
 
 ## Tool and project storage
 
