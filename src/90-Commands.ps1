@@ -32,7 +32,7 @@ Setup and maintenance
   capsulenv.cmd rehydrate ...
 
 Use "capsulenv.cmd help <topic>" for details.
-Topics: app, user, eject, seed, cache, tools, repair, offline, bitwarden
+Topics: app, browser, user, eject, seed, cache, tools, repair, offline, bitwarden
 '@ | Write-Host
         }
         'app' {
@@ -44,6 +44,17 @@ app commands
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
       Launch a shortcut without creating a Start Menu .lnk. Use user/<app> or
       global/<app> when both scopes contain the same app.
+'@ | Write-Host
+        }
+        'browser' {
+@'
+browser commands
+  capsulenv.cmd firefox [--host] [browser arguments...]
+  capsulenv.cmd zen [--host] [browser arguments...]
+
+      By default the browser executable and profile both come from capsule
+      Scoop state. --host is explicit and uses only the same Gecko product's
+      machine executable with the capsule Scoop-persisted profile.
 '@ | Write-Host
         }
         'user' {
@@ -625,8 +636,8 @@ function Invoke-Capsulenv {
         'seed' { Invoke-CapsulenvSeedCommand -Arguments $remaining }
         'cache' { Invoke-CapsulenvCacheCommand -Arguments $remaining }
         'tools' { Invoke-CapsulenvToolsCommand -Arguments $remaining }
-        'firefox' { Start-CapsulenvBrowser -Browser Firefox -Arguments $remaining }
-        'zen' { Start-CapsulenvBrowser -Browser Zen -Arguments $remaining }
+        'firefox' { Invoke-CapsulenvBrowserCommand -Browser Firefox -Arguments $remaining }
+        'zen' { Invoke-CapsulenvBrowserCommand -Browser Zen -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }
         'help' {
             $helpArguments = @($remaining)

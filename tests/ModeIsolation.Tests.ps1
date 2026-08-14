@@ -87,7 +87,10 @@ Describe 'Capsulenv install-mode isolation contracts' {
         @($config.Browsers.Firefox.ShellOnlyArguments) | Should -Contain '-no-remote'
         @($config.Browsers.Zen.ShellOnlyArguments) | Should -Contain '-no-remote'
         $script:BrowserSource | Should -Match 'never fall back to an unrelated host profile'
-        $script:BrowserSource | Should -Match '\$modeArguments = if \(\(Get-CapsulenvInstallMode\) -eq ''ShellOnly''\)'
+        $script:BrowserSource | Should -Match '--host never falls back to a different Gecko product'
+        $script:BrowserSource | Should -Match 'Test-CapsulenvPathUnderPortableScoop'
+        $script:BrowserSource | Should -Match 'App Paths'
+        $script:BrowserSource | Should -Match '\$modeArguments = if \(\$UseHostExecutable -or \(Get-CapsulenvInstallMode\) -eq ''ShellOnly''\)'
         $script:BrowserSource | Should -Match 'foreach \(\$modeArgument in @\(\$modeArguments\)\)'
     }
 

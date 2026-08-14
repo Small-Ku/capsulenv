@@ -215,6 +215,12 @@
             )
             ProfileArgument = '-profile'
             ShellOnlyArguments = @('-no-remote')
+            HostExecutableCandidates = @(
+                '%ProgramFiles%\Mozilla Firefox\firefox.exe'
+                '%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe'
+            )
+            HostAppPathNames = @('firefox.exe')
+            HostCommandNames = @('firefox.exe')
         }
 
         Zen = @{
@@ -232,6 +238,14 @@
             )
             ProfileArgument = '-profile'
             ShellOnlyArguments = @('-no-remote')
+            HostExecutableCandidates = @(
+                '%LocalAppData%\Programs\Zen Browser\zen.exe'
+                '%ProgramFiles%\Zen Browser\zen.exe'
+                '%ProgramFiles(x86)%\Zen Browser\zen.exe'
+            )
+            HostAppPathNames = @('zen.exe')
+            HostCommandNames = @('zen.exe')
         }
+
     }
 }

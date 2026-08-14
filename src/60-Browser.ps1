@@ -14,6 +14,32 @@ function Get-CapsulenvBrowserDefinition {
     return $definition
 }
 
+function Test-CapsulenvPathUnderPortableScoop {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    try {
+        $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd([char[]]'\\/')
+    } catch {
+        return $false
+    }
+    foreach ($root in @((Get-CapsulenvScoopRoot), (Get-CapsulenvScoopGlobalRoot))) {
+        $fullRoot = [System.IO.Path]::GetFullPath([string]$root).TrimEnd([char[]]'\\/')
+        if ([System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath, $fullRoot)) {
+            return $true
+        }
+        if (
+            $fullPath.StartsWith(
+                $fullRoot + [System.IO.Path]::DirectorySeparatorChar,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
+        ) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Get-CapsulenvBrowserExecutable {
     [CmdletBinding()]
     param(
@@ -26,6 +52,66 @@ function Get-CapsulenvBrowserExecutable {
     return Find-CapsulenvExecutable `
         -Candidates @($definition.ExecutableCandidates) `
         -CommandNames @($definition.CommandNames)
+}
+
+function Get-CapsulenvHostBrowserExecutable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Firefox', 'Zen')]
+        [string]$Browser
+    )
+
+    if (-not (Test-CapsulenvWindows)) {
+        return $null
+    }
+    $definition = Get-CapsulenvBrowserDefinition -Browser $Browser
+    foreach ($candidate in @($definition.HostExecutableCandidates)) {
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+        $expanded = [Environment]::ExpandEnvironmentVariables([string]$candidate)
+        if ($expanded -match '%[^%]+%') {
+            continue
+        }
+        try { $resolved = [System.IO.Path]::GetFullPath($expanded) } catch { continue }
+        if (
+            (Test-Path -LiteralPath $resolved -PathType Leaf) -and
+            -not (Test-CapsulenvPathUnderPortableScoop -Path $resolved)
+        ) {
+            return $resolved
+        }
+    }
+
+    foreach ($name in @($definition.HostAppPathNames)) {
+        $subKey = 'Software\Microsoft\Windows\CurrentVersion\App Paths\{0}' -f [string]$name
+        foreach ($hive in @('CurrentUser', 'LocalMachine')) {
+            $appPath = Get-CapsulenvRegistryStringValue -Hive $hive -SubKey $subKey -Name ''
+            if ([string]::IsNullOrWhiteSpace([string]$appPath)) {
+                continue
+            }
+            try { $resolved = [System.IO.Path]::GetFullPath([string]$appPath) } catch { continue }
+            if (
+                (Test-Path -LiteralPath $resolved -PathType Leaf) -and
+                -not (Test-CapsulenvPathUnderPortableScoop -Path $resolved)
+            ) {
+                return $resolved
+            }
+        }
+    }
+
+    foreach ($name in @($definition.HostCommandNames)) {
+        foreach ($command in @(Get-Command $name -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            try { $source = [System.IO.Path]::GetFullPath([string]$command.Source) } catch { continue }
+            if (
+                (Test-Path -LiteralPath $source -PathType Leaf) -and
+                -not (Test-CapsulenvPathUnderPortableScoop -Path $source)
+            ) {
+                return $source
+            }
+        }
+    }
+    return $null
 }
 
 function Get-CapsulenvBrowserProfilePath {
@@ -106,7 +192,8 @@ function Start-CapsulenvBrowser {
         [Parameter(Mandatory = $true)]
         [ValidateSet('Firefox', 'Zen')]
         [string]$Browser,
-        [string[]]$Arguments = @()
+        [string[]]$Arguments = @(),
+        [switch]$UseHostExecutable
     )
 
     [void](Set-CapsulenvSessionEnvironment)
@@ -115,13 +202,20 @@ function Start-CapsulenvBrowser {
         throw "$Browser integration is disabled."
     }
 
-    $executable = Get-CapsulenvBrowserExecutable -Browser $Browser
+    $executable = if ($UseHostExecutable) {
+        Get-CapsulenvHostBrowserExecutable -Browser $Browser
+    } else {
+        Get-CapsulenvBrowserExecutable -Browser $Browser
+    }
     if (-not $executable) {
+        if ($UseHostExecutable) {
+            throw "$Browser host executable was not found. --host never falls back to a different Gecko product or the capsule Scoop executable."
+        }
         throw "$Browser executable was not found. Install it with Scoop or configure ExecutableCandidates."
     }
 
     $effectiveArguments = @($Arguments)
-    $modeArguments = if ((Get-CapsulenvInstallMode) -eq 'ShellOnly') {
+    $modeArguments = if ($UseHostExecutable -or (Get-CapsulenvInstallMode) -eq 'ShellOnly') {
         @($definition.ShellOnlyArguments)
     } else {
         @()
@@ -147,6 +241,9 @@ function Start-CapsulenvBrowser {
         }
     }
 
+    if ($UseHostExecutable) {
+        Write-CapsulenvMessage -Level Detail -Message "$Browser host executable will open the capsule-owned profile explicitly; Gecko profile compatibility remains the browser's responsibility."
+    }
     $launchArguments = @($effectiveArguments | ForEach-Object { ConvertTo-CapsulenvProcessArgument -Argument $_ })
     $startParameters = @{
         FilePath = $executable
@@ -158,4 +255,25 @@ function Start-CapsulenvBrowser {
     [void](Start-Process @startParameters)
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Start-CapsulenvBrowser, Get-CapsulenvBrowserExecutable, Get-CapsulenvBrowserProfilePath
+function Invoke-CapsulenvBrowserCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Firefox', 'Zen')]
+        [string]$Browser,
+        [string[]]$Arguments = @()
+    )
+
+    $remaining = @($Arguments)
+    $useHost = $false
+    if ($remaining.Count -gt 0 -and [string]$remaining[0] -eq '--host') {
+        $useHost = $true
+        $remaining = if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
+    }
+    if (@($remaining | Where-Object { [string]$_ -eq '--host' }).Count -gt 0) {
+        throw "Usage: $($Browser.ToLowerInvariant()) [--host] [browser arguments...] (--host must be the first browser argument)"
+    }
+    Start-CapsulenvBrowser -Browser $Browser -Arguments $remaining -UseHostExecutable:$useHost
+}
+
+##MOD_EXEC## Export-ModuleMember -Function Start-CapsulenvBrowser, Get-CapsulenvBrowserExecutable, Get-CapsulenvHostBrowserExecutable, Get-CapsulenvBrowserProfilePath
