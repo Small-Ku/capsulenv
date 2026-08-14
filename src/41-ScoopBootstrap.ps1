@@ -228,7 +228,11 @@ function Install-CapsulenvScoopShim {
 
     $ps1Path = Join-Path $shimsRoot 'scoop.ps1'
     $ps1Text = @'
-$path = Join-Path $PSScriptRoot '..\apps\scoop\current\bin\scoop.ps1'
+if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
+    Write-Error 'Capsulenv Scoop shim requires an active capsulenv shell.'
+    exit 2
+}
+$path = Join-Path $env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-gateway.ps1'
 if ($MyInvocation.ExpectingInput) {
     $input | & $path @args
 } else {
@@ -236,9 +240,6 @@ if ($MyInvocation.ExpectingInput) {
 }
 exit $LASTEXITCODE
 '@
-    # Normalize Scoop's own shim whenever its content is stale. The official
-    # installer may leave an absolute-path scoop.cmd; Capsulenv owns these two
-    # capsule-local launchers and keeps them relative so a drive-letter move is safe.
     if (-not (Test-Path -LiteralPath $ps1Path -PathType Leaf) -or [System.IO.File]::ReadAllText($ps1Path) -ne $ps1Text) {
         [System.IO.File]::WriteAllText($ps1Path, $ps1Text, [System.Text.UTF8Encoding]::new($false))
     }
@@ -247,12 +248,16 @@ exit $LASTEXITCODE
     $cmdText = @'
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-set "SCOOP_PS1=%~dp0..\apps\scoop\current\bin\scoop.ps1"
+if "%CAPSULENV_ROOT%"=="" (
+  >&2 echo Capsulenv Scoop shim requires an active capsulenv shell.
+  exit /b 2
+)
+set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"
 where pwsh.exe >nul 2>nul
 if not errorlevel 1 (
-    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCOOP_PS1%" %*
+    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*
 ) else (
-    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCOOP_PS1%" %*
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*
 )
 exit /b %ERRORLEVEL%
 '@

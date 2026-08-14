@@ -10,6 +10,8 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ProjectCacheSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/36-ProjectCacheRegistry.ps1') -Raw
         $script:BootstrapSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/41-ScoopBootstrap.ps1') -Raw
         $script:PortableResetSource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-portable-reset.ps1') -Raw
+        $script:ScoopGatewaySource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-gateway.ps1') -Raw
+        $script:ScoopShellOnlyPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-shellonly-policy.ps1') -Raw
     }
 
     It 'has one Pester-only test path with no duplicated smoke suite' {
@@ -35,6 +37,16 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ScoopSource | Should -Match "IntegrationMode -eq 'User'"
         $script:ScoopSource | Should -Match 'Invoke-CapsulenvConfiguredHookReplay'
         $script:ScoopSource | Should -Match 'lifecycle hook replay is disabled in ShellOnly mode'
+        $script:ScoopGatewaySource | Should -Match "'install', 'update', 'uninstall', 'reset', 'shim'"
+        $script:ScoopGatewaySource | Should -Match "'install', 'download', 'virustotal', 'import'"
+        $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop update'
+        $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop install'
+        $script:ScoopShellOnlyPolicySource.Contains("[Environment]::SetEnvironmentVariable(`$Name, `$Value, 'Process')") | Should -BeTrue
+        $script:ScoopShellOnlyPolicySource | Should -Not -Match "SetEnvironmentVariable\(.*?'User'"
+        $script:ScoopShellOnlyPolicySource | Should -Not -Match "SetEnvironmentVariable\(.*?'Machine'"
+        $script:ScoopShellOnlyPolicySource | Should -Match 'function create_startmenu_shortcuts'
+        $script:ScoopShellOnlyPolicySource | Should -Match 'skipping Scoop Start Menu shortcuts'
+        $script:ScoopShellOnlyPolicySource | Should -Match "'Block'"
     }
 
     It 'puts local and portable-global Scoop shims on only the Capsulenv environment plan' {
@@ -48,7 +60,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'Get-CapsulenvScoopPathEnvironmentVariable'
         $script:EnvironmentSource | Should -Match "'ScoopRoot', 'ScoopGlobalRoot'"
         $script:EnvironmentSource | Should -Match 'SCOOP_CACHE'
-        $script:BootstrapSource.Contains('set "SCOOP_PS1=%~dp0..\apps\scoop\current\bin\scoop.ps1"') | Should -BeTrue
+        $script:BootstrapSource.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"') | Should -BeTrue
         $script:BootstrapSource | Should -Match 'ReadAllText\(\$cmdPath\)'
     }
 

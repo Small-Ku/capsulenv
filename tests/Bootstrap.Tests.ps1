@@ -178,7 +178,7 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                     -Message 'Portable Scoop config was not created before first use.'
                 $shim = Get-Content -LiteralPath (Join-Path $capsule 'scoop/shims/scoop.ps1') -Raw
                 Assert-CapsulenvBootstrapTest `
-                    -Condition ($shim.Contains("Join-Path `$PSScriptRoot '..\apps\scoop\current\bin\scoop.ps1'")) `
+                    -Condition ($shim.Contains("Join-Path `$env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-gateway.ps1'")) `
                     -Message 'Scoop PowerShell shim is not relocation-safe.'
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not $shim.Contains([System.IO.Path]::GetFullPath($capsule))) `
@@ -190,7 +190,7 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                 [void](Initialize-CapsulenvScoopBootstrap)
                 $cmdShim = Get-Content -LiteralPath $cmdShimPath -Raw
                 Assert-CapsulenvBootstrapTest `
-                    -Condition ($cmdShim.Contains('set "SCOOP_PS1=%~dp0..\apps\scoop\current\bin\scoop.ps1"')) `
+                    -Condition ($cmdShim.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"')) `
                     -Message 'Bootstrap did not normalize a stale absolute scoop.cmd to a relative launcher.'
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not $cmdShim.Contains([System.IO.Path]::GetFullPath($capsule))) `

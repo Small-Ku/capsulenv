@@ -22,9 +22,12 @@ function Get-CapsulenvScoopExecutable {
     $scoopRoot = Get-CapsulenvScoopRoot
     $shimsRoot = Join-Path $scoopRoot 'shims'
     $scoopAppRoot = Join-Path (Join-Path (Join-Path $scoopRoot 'apps') 'scoop') 'current'
+    # Internal Capsulenv calls must bypass the public policy gateway to avoid
+    # recursion. Prefer Scoop's canonical executable; keep the shim fallback
+    # only for incomplete/legacy layouts.
     foreach ($candidate in @(
-        (Join-Path $shimsRoot 'scoop.ps1'),
-        (Join-Path (Join-Path $scoopAppRoot 'bin') 'scoop.ps1')
+        (Join-Path (Join-Path $scoopAppRoot 'bin') 'scoop.ps1'),
+        (Join-Path $shimsRoot 'scoop.ps1')
     )) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
             return $candidate

@@ -63,6 +63,8 @@ try {
         @{ Source = 'scripts/Invoke-Capsulenv.ps1'; Destination = 'scripts/Invoke-Capsulenv.ps1' }
         @{ Source = 'scripts/scoop-capsulenv-replay.ps1'; Destination = 'scripts/scoop-capsulenv-replay.ps1' }
         @{ Source = 'scripts/scoop-capsulenv-portable-reset.ps1'; Destination = 'scripts/scoop-capsulenv-portable-reset.ps1' }
+        @{ Source = 'scripts/scoop-capsulenv-gateway.ps1'; Destination = 'scripts/scoop-capsulenv-gateway.ps1' }
+        @{ Source = 'scripts/scoop-capsulenv-shellonly-policy.ps1'; Destination = 'scripts/scoop-capsulenv-shellonly-policy.ps1' }
         @{ Source = 'docs/ARCHITECTURE.md'; Destination = 'docs/ARCHITECTURE.md' }
         @{ Source = 'docs/DEVELOPMENT.md'; Destination = 'docs/DEVELOPMENT.md' }
         @{ Source = 'docs/DEPLOYMENT.md'; Destination = 'docs/DEPLOYMENT.md' }
