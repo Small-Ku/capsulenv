@@ -310,7 +310,7 @@ function Invoke-CapsulenvDoctor {
         }
     }
 
-    foreach ($browser in @('Firefox', 'Zen')) {
+    foreach ($browser in @('Firefox', 'Zen', 'LibreWolf')) {
         $definition = Get-CapsulenvBrowserDefinition -Browser $browser
         if (-not $definition.Enabled) {
             continue

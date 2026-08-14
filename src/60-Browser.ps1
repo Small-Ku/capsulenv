@@ -2,7 +2,7 @@ function Get-CapsulenvBrowserDefinition {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Firefox', 'Zen')]
+        [ValidateSet('Firefox', 'Zen', 'LibreWolf')]
         [string]$Browser
     )
 
@@ -44,7 +44,7 @@ function Get-CapsulenvBrowserExecutable {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Firefox', 'Zen')]
+        [ValidateSet('Firefox', 'Zen', 'LibreWolf')]
         [string]$Browser
     )
 
@@ -58,7 +58,7 @@ function Get-CapsulenvHostBrowserExecutable {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Firefox', 'Zen')]
+        [ValidateSet('Firefox', 'Zen', 'LibreWolf')]
         [string]$Browser
     )
 
@@ -118,7 +118,7 @@ function Get-CapsulenvBrowserProfilePath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Firefox', 'Zen')]
+        [ValidateSet('Firefox', 'Zen', 'LibreWolf')]
         [string]$Browser
     )
 
@@ -190,7 +190,7 @@ function Start-CapsulenvBrowser {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Firefox', 'Zen')]
+        [ValidateSet('Firefox', 'Zen', 'LibreWolf')]
         [string]$Browser,
         [string[]]$Arguments = @(),
         [switch]$UseHostExecutable
@@ -259,7 +259,7 @@ function Invoke-CapsulenvBrowserCommand {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Firefox', 'Zen')]
+        [ValidateSet('Firefox', 'Zen', 'LibreWolf')]
         [string]$Browser,
         [string[]]$Arguments = @()
     )

@@ -51,6 +51,7 @@ app commands
 browser commands
   capsulenv.cmd firefox [--host] [browser arguments...]
   capsulenv.cmd zen [--host] [browser arguments...]
+  capsulenv.cmd librewolf [--host] [browser arguments...]
 
       By default the browser executable and profile both come from capsule
       Scoop state. --host is explicit and uses only the same Gecko product's
@@ -638,6 +639,7 @@ function Invoke-Capsulenv {
         'tools' { Invoke-CapsulenvToolsCommand -Arguments $remaining }
         'firefox' { Invoke-CapsulenvBrowserCommand -Browser Firefox -Arguments $remaining }
         'zen' { Invoke-CapsulenvBrowserCommand -Browser Zen -Arguments $remaining }
+        'librewolf' { Invoke-CapsulenvBrowserCommand -Browser LibreWolf -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }
         'help' {
             $helpArguments = @($remaining)

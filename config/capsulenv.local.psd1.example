@@ -43,6 +43,10 @@
         Zen = @{
             Enabled = $false
         }
+        # LibreWolf = @{
+        #     Enabled = $false
+        #     # HostExecutableCandidates = @('D:\Apps\LibreWolf\librewolf.exe')
+        # }
     }
 
     Environment = @{

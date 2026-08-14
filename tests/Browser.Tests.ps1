@@ -48,10 +48,10 @@ Describe 'Capsulenv Gecko browser launch contracts' {
     It 'treats --host as a Capsulenv-only leading browser option' {
         Mock Start-CapsulenvBrowser {} -ModuleName Capsulenv
         & $script:Module {
-            Invoke-CapsulenvBrowserCommand -Browser Firefox -Arguments @('--host', 'https://example.invalid/')
+            Invoke-CapsulenvBrowserCommand -Browser LibreWolf -Arguments @('--host', 'https://example.invalid/')
         }
         Should -Invoke Start-CapsulenvBrowser -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $Browser -eq 'Firefox' -and $UseHostExecutable -and @($Arguments).Count -eq 1 -and $Arguments[0] -eq 'https://example.invalid/'
+            $Browser -eq 'LibreWolf' -and $UseHostExecutable -and @($Arguments).Count -eq 1 -and $Arguments[0] -eq 'https://example.invalid/'
         }
 
         & $script:Module {

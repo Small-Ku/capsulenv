@@ -82,10 +82,13 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $config = Import-PowerShellDataFile (Join-Path $script:Root 'config/capsulenv.psd1')
         @($config.Browsers.Firefox.ProfileCandidates).Count | Should -BeGreaterThan 0
         @($config.Browsers.Zen.ProfileCandidates).Count | Should -BeGreaterThan 0
+        @($config.Browsers.LibreWolf.ProfileCandidates).Count | Should -BeGreaterThan 0
         $config.Browsers.Firefox.ProfileArgument | Should -Be '-profile'
         $config.Browsers.Zen.ProfileArgument | Should -Be '-profile'
+        $config.Browsers.LibreWolf.ProfileArgument | Should -Be '-profile'
         @($config.Browsers.Firefox.ShellOnlyArguments) | Should -Contain '-no-remote'
         @($config.Browsers.Zen.ShellOnlyArguments) | Should -Contain '-no-remote'
+        @($config.Browsers.LibreWolf.ShellOnlyArguments) | Should -Contain '-no-remote'
         $script:BrowserSource | Should -Match 'never fall back to an unrelated host profile'
         $script:BrowserSource | Should -Match '--host never falls back to a different Gecko product'
         $script:BrowserSource | Should -Match 'Test-CapsulenvPathUnderPortableScoop'

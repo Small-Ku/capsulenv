@@ -18,3 +18,4 @@ workspace/
 bin/*
 !bin/firefox-capsulenv.cmd
 !bin/zen-capsulenv.cmd
+!bin/librewolf-capsulenv.cmd

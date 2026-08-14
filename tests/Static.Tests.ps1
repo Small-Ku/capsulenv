@@ -126,6 +126,7 @@ Describe 'Capsulenv static and relocation' {
             'Get-CapsulenvRelocationContext',
             'Invoke-CapsulenvPersistRelocationRepair',
             'Start-CapsulenvBrowser',
+            'Get-CapsulenvHostBrowserExecutable',
             'Start-CapsulenvBitwarden',
             'Set-CapsulenvBitwardenDesktopSshAgent',
             'Restore-CapsulenvBitwardenDesktopSettings',
@@ -485,7 +486,7 @@ Describe 'Capsulenv static and relocation' {
         Assert-CapsulenvTest `
             -Condition (-not $config.Scoop.RelocationRepairs.ContainsKey('bitwarden')) `
             -Message 'Bitwarden app state must not receive generic path replacement by default.'
-        foreach ($browserApp in @('firefox', 'firefox-esr', 'zen-browser')) {
+        foreach ($browserApp in @('firefox', 'firefox-esr', 'zen-browser', 'librewolf')) {
             Assert-CapsulenvTest `
                 -Condition $config.Scoop.RelocationRepairs.ContainsKey($browserApp) `
                 -Message "Missing default browser persist relocation rules: $browserApp"
@@ -496,7 +497,7 @@ Describe 'Capsulenv static and relocation' {
         Assert-CapsulenvTest `
             -Condition (-not $config.Scoop.ReplayHooks.ContainsKey('zen')) `
             -Message 'Ambiguous app aliases must not receive automatic lifecycle replay.'
-        foreach ($browser in @('Firefox', 'Zen')) {
+        foreach ($browser in @('Firefox', 'Zen', 'LibreWolf')) {
             Assert-CapsulenvTest `
                 -Condition (-not $config.Browsers[$browser].ContainsKey('ProfileDir')) `
                 -Message "$browser profile must be owned by Scoop persist."
@@ -504,6 +505,9 @@ Describe 'Capsulenv static and relocation' {
                 -Condition (-not $config.Browsers[$browser].ContainsKey('CacheDir')) `
                 -Message "$browser cache must not be owned by capsulenv."
         }
+        Assert-CapsulenvTest `
+            -Condition (@($config.Browsers.LibreWolf.ProfileCandidates) -contains 'scoop\persist\librewolf\Profiles\Default') `
+            -Message 'LibreWolf must bind the Scoop-persisted portable default profile.'
 
         $plan = & $module { Get-CapsulenvEnvironmentPlan }
         Assert-CapsulenvTest `

@@ -57,6 +57,7 @@ try {
         @{ Source = 'scripts/Install-Capsulenv.ps1'; Destination = 'scripts/Install-Capsulenv.ps1' }
         @{ Source = 'bin/firefox-capsulenv.cmd'; Destination = 'bin/firefox-capsulenv.cmd' }
         @{ Source = 'bin/zen-capsulenv.cmd'; Destination = 'bin/zen-capsulenv.cmd' }
+        @{ Source = 'bin/librewolf-capsulenv.cmd'; Destination = 'bin/librewolf-capsulenv.cmd' }
         @{ Source = 'config/capsulenv.psd1'; Destination = 'config/capsulenv.psd1' }
         @{ Source = 'config/capsulenv.local.psd1.example'; Destination = 'config/capsulenv.local.psd1.example' }
         @{ Source = 'scripts/Invoke-Capsulenv.ps1'; Destination = 'scripts/Invoke-Capsulenv.ps1' }

@@ -56,6 +56,12 @@
                 @{ Path = 'profile\user.js'; Format = 'text'; Processes = @('zen'); MaxBytes = 16777216 }
                 @{ Path = 'distribution\policies.json'; Format = 'json'; Processes = @('zen'); MaxBytes = 4194304 }
             )
+            librewolf = @(
+                @{ Path = 'Profiles\Default\compatibility.ini'; Format = 'text'; Processes = @('librewolf'); MaxBytes = 1048576 }
+                @{ Path = 'Profiles\Default\extensions.json'; Format = 'json'; Processes = @('librewolf'); MaxBytes = 67108864 }
+                @{ Path = 'Profiles\Default\prefs.js'; Format = 'text'; Processes = @('librewolf'); MaxBytes = 16777216 }
+                @{ Path = 'Profiles\Default\user.js'; Format = 'text'; Processes = @('librewolf'); MaxBytes = 16777216 }
+            )
         }
     }
 
@@ -247,5 +253,26 @@
             HostCommandNames = @('zen.exe')
         }
 
+        LibreWolf = @{
+            Enabled = $true
+            CommandNames = @('librewolf.exe')
+            ExecutableCandidates = @(
+                'scoop\apps\librewolf\current\LibreWolf\librewolf.exe'
+                'scoop-global\apps\librewolf\current\LibreWolf\librewolf.exe'
+            )
+            ProfileCandidates = @(
+                'scoop\persist\librewolf\Profiles\Default'
+                'scoop-global\persist\librewolf\Profiles\Default'
+            )
+            ProfileArgument = '-profile'
+            ShellOnlyArguments = @('-no-remote')
+            HostExecutableCandidates = @(
+                '%ProgramFiles%\LibreWolf\librewolf.exe'
+                '%ProgramFiles(x86)%\LibreWolf\librewolf.exe'
+                '%LocalAppData%\Programs\LibreWolf\librewolf.exe'
+            )
+            HostAppPathNames = @('librewolf.exe')
+            HostCommandNames = @('librewolf.exe')
+        }
     }
 }
