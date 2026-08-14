@@ -100,6 +100,14 @@ seed commands
       Capture a foreign Scoop apps+buckets inventory in
       tool-data/scoop/Scoopfile.json. --apply installs it according to the
       current Capsulenv ownership mode.
+
+  capsulenv.cmd seed weasel [backup] [--force]
+      Cold-copy the registry-confirmed host Weasel Rime user directory into
+      tool-data/weasel. Existing portable backup requires --force.
+
+  capsulenv.cmd seed weasel restore
+      Restore that portable Rime tree only when this machine has a confirmed
+      Weasel installation. The current host tree is backed up first.
 '@ | Write-Host
         }
         'cache' {
@@ -348,7 +356,7 @@ function Invoke-CapsulenvSeedCommand {
     param([string[]]$Arguments)
 
     if ($Arguments.Count -lt 1) {
-        throw 'Usage: seed <powershell|git|scoop> [...]'
+        throw 'Usage: seed <powershell|git|scoop|weasel> [...]'
     }
     $action = $Arguments[0].ToLowerInvariant()
     $remaining = if ($Arguments.Count -gt 1) { @($Arguments[1..($Arguments.Count - 1)]) } else { @() }
@@ -382,6 +390,34 @@ function Invoke-CapsulenvSeedCommand {
                 -Force:($remaining -contains '--force') `
                 -Apply:($remaining -contains '--apply') |
                 Format-List
+        }
+        'weasel' {
+            $operation = if ($remaining.Count -gt 0 -and $remaining[0] -notlike '--*') {
+                [string]$remaining[0].ToLowerInvariant()
+            } else {
+                'backup'
+            }
+            $options = if ($remaining.Count -gt 0 -and $remaining[0] -notlike '--*') {
+                if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
+            } else {
+                @($remaining)
+            }
+            switch ($operation) {
+                'backup' {
+                    $unknown = @($options | Where-Object { $_ -ne '--force' })
+                    if ($unknown.Count -gt 0 -or @($options | Where-Object { $_ -eq '--force' }).Count -gt 1) {
+                        throw 'Usage: seed weasel [backup] [--force]'
+                    }
+                    Save-CapsulenvWeaselSeed -Force:($options -contains '--force') | Format-List
+                }
+                'restore' {
+                    if ($options.Count -gt 0) {
+                        throw 'Usage: seed weasel restore'
+                    }
+                    Restore-CapsulenvWeaselSeed | Format-List
+                }
+                default { throw "Unknown Weasel seed action: $operation. Use backup or restore." }
+            }
         }
         default { throw "Unknown seed action: $($Arguments[0])" }
     }

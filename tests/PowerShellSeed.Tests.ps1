@@ -240,4 +240,106 @@ Describe 'Capsulenv PowerShell and seed ownership' {
         }
     }
 
+    It 'backs up and restores Weasel only through a registry-confirmed installation contract' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-weasel-seed-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $hostData = Join-Path $temporaryRoot 'host-rime'
+            $fakeInstall = Join-Path $temporaryRoot 'machine-weasel'
+            [void](New-Item -ItemType Directory -Path $hostData -Force)
+            [void](New-Item -ItemType Directory -Path $fakeInstall -Force)
+            'portable-source' | Set-Content -LiteralPath (Join-Path $hostData 'weasel.custom.yaml') -Encoding UTF8
+            [void](New-Item -ItemType Directory -Path (Join-Path $hostData 'userdb') -Force)
+            'db-state' | Set-Content -LiteralPath (Join-Path $hostData 'userdb/state.bin') -Encoding UTF8
+
+            $global:CapsulenvTestWeaselInstallation = [pscustomobject]@{
+                InstallRoot = $fakeInstall
+                ServerPath = Join-Path $fakeInstall 'WeaselServer.exe'
+                DeployerPath = Join-Path $fakeInstall 'WeaselDeployer.exe'
+                UserDataDir = $hostData
+                Version = '0.test'
+                RegistryConfirmed = $true
+            }
+            Mock Get-CapsulenvWeaselInstallation { $global:CapsulenvTestWeaselInstallation } -ModuleName Capsulenv
+            Mock Test-CapsulenvWeaselServerRunning { $false } -ModuleName Capsulenv
+            Mock Invoke-CapsulenvWeaselDeploy {} -ModuleName Capsulenv
+
+            $backup = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+                Save-CapsulenvWeaselSeed
+            } $temporaryRoot
+            $backup.Action | Should -Be 'Backup'
+            (Get-Content -LiteralPath (Join-Path $temporaryRoot 'tool-data/weasel/user-data/weasel.custom.yaml') -Raw) | Should -Match 'portable-source'
+            Test-Path -LiteralPath (Join-Path $temporaryRoot 'tool-data/weasel/user-data/userdb/state.bin') | Should -BeTrue
+
+            & $script:Module { { Save-CapsulenvWeaselSeed } | Should -Throw '*--force*' }
+            'host-newer-state' | Set-Content -LiteralPath (Join-Path $hostData 'weasel.custom.yaml') -Encoding UTF8
+
+            $restore = & $script:Module { Restore-CapsulenvWeaselSeed }
+            $restore.Action | Should -Be 'Restore'
+            (Get-Content -LiteralPath (Join-Path $hostData 'weasel.custom.yaml') -Raw) | Should -Match 'portable-source'
+            (Get-Content -LiteralPath (Join-Path $restore.HostRollback 'user-data/weasel.custom.yaml') -Raw) | Should -Match 'host-newer-state'
+            Test-Path -LiteralPath (Join-Path $restore.HostRollback 'host-state.json') | Should -BeTrue
+            Should -Invoke Invoke-CapsulenvWeaselDeploy -ModuleName Capsulenv -Times 1 -Exactly
+        } finally {
+            Remove-Variable -Name CapsulenvTestWeaselInstallation -Scope Global -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
+    It 'rolls the host Weasel tree back when deployment fails' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-weasel-rollback-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $hostData = Join-Path $temporaryRoot 'host-rime'
+            $seedData = Join-Path $temporaryRoot 'tool-data/weasel/user-data'
+            $fakeInstall = Join-Path $temporaryRoot 'machine-weasel'
+            [void](New-Item -ItemType Directory -Path $hostData -Force)
+            [void](New-Item -ItemType Directory -Path $seedData -Force)
+            [void](New-Item -ItemType Directory -Path $fakeInstall -Force)
+            'host-before' | Set-Content -LiteralPath (Join-Path $hostData 'weasel.custom.yaml') -Encoding UTF8
+            'portable-replacement' | Set-Content -LiteralPath (Join-Path $seedData 'weasel.custom.yaml') -Encoding UTF8
+            '{"SchemaVersion":1}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'tool-data/weasel/seed.json') -Encoding UTF8
+
+            $global:CapsulenvTestWeaselInstallation = [pscustomobject]@{
+                InstallRoot = $fakeInstall
+                ServerPath = Join-Path $fakeInstall 'WeaselServer.exe'
+                DeployerPath = Join-Path $fakeInstall 'WeaselDeployer.exe'
+                UserDataDir = $hostData
+                Version = '0.test'
+                RegistryConfirmed = $true
+            }
+            Mock Get-CapsulenvWeaselInstallation { $global:CapsulenvTestWeaselInstallation } -ModuleName Capsulenv
+            Mock Test-CapsulenvWeaselServerRunning { $false } -ModuleName Capsulenv
+            Mock Invoke-CapsulenvWeaselDeploy { throw 'synthetic deploy failure' } -ModuleName Capsulenv
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+                { Restore-CapsulenvWeaselSeed } | Should -Throw '*synthetic deploy failure*'
+            } $temporaryRoot
+            (Get-Content -LiteralPath (Join-Path $hostData 'weasel.custom.yaml') -Raw) | Should -Match 'host-before'
+        } finally {
+            Remove-Variable -Name CapsulenvTestWeaselInstallation -Scope Global -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
+    It 'refuses Weasel seed mutation without registry-confirmed machine installation evidence' {
+        Mock Get-CapsulenvWeaselInstallation { $null } -ModuleName Capsulenv
+        & $script:Module {
+            { Save-CapsulenvWeaselSeed } | Should -Throw '*registry-confirmed machine installation*'
+            { Restore-CapsulenvWeaselSeed } | Should -Throw '*registry-confirmed machine installation*'
+        }
+    }
+
 }

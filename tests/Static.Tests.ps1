@@ -127,6 +127,8 @@ Describe 'Capsulenv static and relocation' {
             'Invoke-CapsulenvPersistRelocationRepair',
             'Start-CapsulenvBrowser',
             'Get-CapsulenvHostBrowserExecutable',
+            'Save-CapsulenvWeaselSeed',
+            'Restore-CapsulenvWeaselSeed',
             'Start-CapsulenvBitwarden',
             'Set-CapsulenvBitwardenDesktopSshAgent',
             'Restore-CapsulenvBitwardenDesktopSettings',
