@@ -152,6 +152,12 @@ F:\capenv\capsulenv.cmd version
 
 Windows default-browser detection 也不再只讀 legacy `UserChoice`；v0.15.6 以 Shell effective association 為準，因此 Windows 11 使用 rotated `UserChoiceLatest` 的 host 不會再被誤判。
 
+### v0.15.7：修復已追蹤但仍殘留舊 command 的 default-browser registration
+
+若曾使用 v0.15.3 或更早版本註冊 Capsulenv Gecko browser，registry 中可能仍保留含 `-osint` 或直接指向 `scoop\persist` profile target 的舊 `shell\open\command`。Windows 可以繼續把該 ProgID 視為 effective default，但 Gecko 會在收到不合法的 `-profile ... -osint -url ...` 組合時立即退出。
+
+v0.15.7 起，只要 User integration state 仍追蹤該 browser registration，普通 User-mode activation 與 `install-user --force` 都會原地刷新 Capsulenv 自己擁有的 ProgID，即使目前 `UserIntegration.DefaultBrowser` 已留空。留空只會停止 Default Apps 提示，不會阻止 runtime upgrade 修復既有 registration。更新後可用 `capsulenv.cmd doctor` 直接比較 tracked URL handler 的 actual/expected command；不應再需要用 ProcMon 才能確認是否仍在執行舊 handler。
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：
