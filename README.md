@@ -192,7 +192,7 @@ capsulenv.cmd tools status
 capsulenv.cmd rehydrate
 ```
 
-User mode 使用 Scoop 原生 reset 來修復已存在的 user integration；ShellOnly 只重建 capsule-owned `current`／shim／persist links，不 materialize Start Menu shortcut 或 manifest environment。需要手動 reset 時：
+User mode 使用保留 Scoop reset semantics 的 Capsulenv temporary command 來修復已存在的 user integration；它仍會重建 shortcut/environment，但會避免 reset `pwsh` 時被目前 Capsulenv control process 自己阻擋。ShellOnly 只重建 capsule-owned `current`／shim／persist links，不 materialize Start Menu shortcut 或 manifest environment。需要手動 reset 時：
 
 ```bat
 capsulenv.cmd reset

@@ -372,6 +372,19 @@ Describe 'Capsulenv static and relocation' {
             Assert-CapsulenvTest `
                 -Condition $missingFingerprintIsStale `
                 -Message 'Incomplete relocation state must require rehydration.'
+
+            $savedState = & $module {
+                Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null
+                Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null
+                Get-Content -LiteralPath (Get-CapsulenvRehydrationStatePath) -Raw | ConvertFrom-Json
+            }
+            Assert-CapsulenvTest `
+                -Condition ([int]$savedState.SchemaVersion -eq 2) `
+                -Message 'Rehydration state must support replacing an existing state file atomically.'
+            $rehydrationRollbacks = @(Get-ChildItem -LiteralPath (Join-Path $tempRoot '.capsulenv') -Filter '.capsulenv-rehydration-*.rollback' -ErrorAction SilentlyContinue)
+            Assert-CapsulenvTest `
+                -Condition ($rehydrationRollbacks.Count -eq 0) `
+                -Message 'Successful rehydration state replacement must not leave rollback files behind.'
         } finally {
             & $module { param($OriginalRoot) [void](Initialize-CapsulenvContext -Root $OriginalRoot) } $root
             if (Test-Path -LiteralPath $tempRoot) {

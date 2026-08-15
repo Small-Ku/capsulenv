@@ -72,7 +72,7 @@ Optional default-browser integration follows the same ownership rule. Its per-ma
 
 Managed references that live inside the capsule should prefer capsule-relative or `capsule://...` identity-based references. Host-scoped integration may also require the current machine/user fingerprint. This prevents a copied ledger or stale absolute path from becoming authority to overwrite unrelated host state.
 
-A relocation is committed only after all required reset/repair stages succeed. Failed strict repairs therefore do not save a new fingerprint that would erase evidence of the old root.
+A relocation is committed only after all required reset/repair stages succeed. Failed strict repairs therefore do not save a new fingerprint that would erase evidence of the old root. Rehydration-state replacement uses a same-directory temporary file plus a real rollback path; PowerShell/.NET `File.Replace` is never called with an empty backup path.
 
 ## Scoop bootstrap boundary
 
@@ -116,9 +116,9 @@ During this reset Capsulenv shadows Scoop's internal path persistence helper wit
 
 The temporary reset may itself be hosted by a Scoop app (normally capsule `pwsh`). Its running-process check therefore ignores only the reset process's own PID. Any other process from that app still goes through Scoop's normal running-process guard. This avoids a self-deadlock while preserving the safety boundary for independently running applications; the launcher uses a physical version-directory executable so repairing `current` does not invalidate the control process.
 
-### User native reset
+### User Scoop reset
 
-User mode may call native `scoop reset` because the current Windows user has explicitly delegated Scoop integration ownership to this capsule. On drive relocation, persistent Capsulenv-managed User variables/PATH references are refreshed from the old capsule root to the new one. If `UserIntegration.DefaultBrowser` is configured, User synchronization also rewrites the owned browser registration from the current Scoop executable/profile paths, so a changed drive letter does not leave stale URL/file handlers.
+User mode keeps upstream Scoop reset semantics because the current Windows user has explicitly delegated Scoop integration ownership to this capsule: `current`, shims, Start Menu shortcuts, manifest environment entries and `persist` links are all rebuilt. Capsulenv invokes those Scoop primitives through a temporary User-reset command rather than upstream `scoop reset` directly, solely so the shared running-process guard can ignore the current Capsulenv control PID when that process itself is hosted by an app being reset (normally `pwsh`). Any other process from that app still delegates to Scoop's normal refusal/`IGNORE_RUNNING_PROCESSES` behavior. On drive relocation, persistent Capsulenv-managed User variables/PATH references are refreshed from the old capsule root to the new one. If `UserIntegration.DefaultBrowser` is configured, User synchronization also rewrites the owned browser registration from the current Scoop executable/profile paths, so a changed drive letter does not leave stale URL/file handlers.
 
 Converting an existing ShellOnly capsule with `install-user` does **not** automatically run `scoop reset *` only to materialize existing UI integration. New package installs then use normal User semantics; `capsulenv.cmd reset` is the explicit operation when existing apps should materialize their native shortcuts/environment. Actual relocation does require automatic reset because existing User integration contains stale absolute targets.
 

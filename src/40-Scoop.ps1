@@ -79,8 +79,7 @@ function Reset-CapsulenvScoop {
     if (-not $Quiet) {
         Write-CapsulenvMessage -Level Info -Message 'Rebuilding Scoop current links, shims, shortcuts, environment entries, and persist links for the installed user...'
     }
-    $arguments = @('reset') + @($Apps)
-    [void](Invoke-CapsulenvScoopCommand -Arguments $arguments)
+    Invoke-CapsulenvUserScoopReset -Apps $Apps
     return $true
 }
 
@@ -98,6 +97,14 @@ function Get-CapsulenvScoopPortableResetScriptPath {
 
     $context = Get-CapsulenvContext
     return Join-Path (Join-Path $context.Root 'scripts') 'scoop-capsulenv-portable-reset.ps1'
+}
+
+function Get-CapsulenvScoopUserResetScriptPath {
+    [CmdletBinding()]
+    param()
+
+    $context = Get-CapsulenvContext
+    return Join-Path (Join-Path $context.Root 'scripts') 'scoop-capsulenv-user-reset.ps1'
 }
 
 function Install-CapsulenvTemporaryScoopCommand {
@@ -143,6 +150,24 @@ function Invoke-CapsulenvPortableScoopReset {
     $temporaryCommand = Install-CapsulenvTemporaryScoopCommand `
         -Source (Get-CapsulenvScoopPortableResetScriptPath) `
         -Prefix 'portable-reset'
+    try {
+        $arguments = @($temporaryCommand.Command) + @($Apps)
+        [void](Invoke-CapsulenvScoopCommand -Arguments $arguments)
+    } finally {
+        if (Test-Path -LiteralPath $temporaryCommand.Path -PathType Leaf) {
+            Remove-Item -LiteralPath $temporaryCommand.Path -Force
+        }
+    }
+}
+
+function Invoke-CapsulenvUserScoopReset {
+    [CmdletBinding()]
+    param([string[]]$Apps = @('*'))
+
+    [void](Set-CapsulenvSessionEnvironment)
+    $temporaryCommand = Install-CapsulenvTemporaryScoopCommand `
+        -Source (Get-CapsulenvScoopUserResetScriptPath) `
+        -Prefix 'user-reset'
     try {
         $arguments = @($temporaryCommand.Command) + @($Apps)
         [void](Invoke-CapsulenvScoopCommand -Arguments $arguments)
@@ -314,17 +339,25 @@ function Save-CapsulenvRehydrationState {
 
     $json = $state | ConvertTo-Json -Depth 8
     [void]($json | ConvertFrom-Json)
-    $tempPath = Join-Path $stateDirectory ('.capsulenv-rehydration-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
+    $token = [Guid]::NewGuid().ToString('N')
+    $tempPath = Join-Path $stateDirectory ('.capsulenv-rehydration-{0}.tmp' -f $token)
+    $rollbackPath = Join-Path $stateDirectory ('.capsulenv-rehydration-{0}.rollback' -f $token)
     [System.IO.File]::WriteAllText($tempPath, $json, [System.Text.UTF8Encoding]::new($true))
     try {
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {
-            [System.IO.File]::Replace($tempPath, $statePath, $null, $true)
+            [System.IO.File]::Replace($tempPath, $statePath, $rollbackPath, $true)
+            if (Test-Path -LiteralPath $rollbackPath -PathType Leaf) {
+                Remove-Item -LiteralPath $rollbackPath -Force
+            }
         } else {
             [System.IO.File]::Move($tempPath, $statePath)
         }
     } finally {
         if (Test-Path -LiteralPath $tempPath -PathType Leaf) {
-            Remove-Item -LiteralPath $tempPath -Force
+            Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $rollbackPath -PathType Leaf) {
+            Remove-Item -LiteralPath $rollbackPath -Force -ErrorAction SilentlyContinue
         }
     }
 }
