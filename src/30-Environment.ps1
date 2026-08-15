@@ -696,6 +696,7 @@ function Install-CapsulenvUserEnvironment {
     if ($rehydrationRequired) {
         Invoke-CapsulenvScoopRehydrate -IntegrationMode User
     }
+    Sync-CapsulenvConfiguredDefaultBrowser
     Write-CapsulenvMessage -Level Success -Message $(if ($alreadyUser) { "User environment synchronized. Backup: $backupPath" } else { "User environment enabled. Backup: $backupPath" })
 }
 
@@ -732,10 +733,12 @@ function Restore-CapsulenvUserEnvironment {
     if ((Test-Path -LiteralPath $sshAgentStatePath -PathType Leaf) -and -not (Test-CapsulenvAdministrator)) {
         throw 'User-mode Bitwarden setup changed the Windows ssh-agent service. Run restore-user from an elevated terminal so Capsulenv can restore that machine-level state before returning to ShellOnly.'
     }
+    Assert-CapsulenvDefaultBrowserRestorable
     if (Test-Path -LiteralPath $sshAgentStatePath -PathType Leaf) {
         Restore-CapsulenvWindowsSshAgent -Confirm:$false
     }
     [void](Restore-CapsulenvGitOpenSshGlobal -IfPresent)
+    Restore-CapsulenvDefaultBrowserRegistration
 
     $backup = Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
     foreach ($property in $backup.PSObject.Properties) {

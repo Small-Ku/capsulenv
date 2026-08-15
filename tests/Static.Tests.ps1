@@ -175,7 +175,7 @@ Describe 'Capsulenv static and relocation' {
         }
 
         $config = Get-CapsulenvConfiguration -Refresh
-        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 10) -Message 'Unexpected configuration schema.'
+        Assert-CapsulenvTest -Condition ($config.SchemaVersion -eq 11) -Message 'Unexpected configuration schema.'
         Assert-CapsulenvTest -Condition ([bool]$config.Scoop.Bootstrap.Enabled) -Message 'Scoop bootstrap is not enabled by default.'
         Assert-CapsulenvTest -Condition ([int]$config.Scoop.Bootstrap.GitDepth -eq 1) -Message 'Scoop bootstrap must default to a shallow depth of one.'
         Assert-CapsulenvTest -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Scoop.Bootstrap.Scoop.Repository)) -Message 'Scoop bootstrap repository is missing.'

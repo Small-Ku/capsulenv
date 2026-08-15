@@ -48,7 +48,7 @@ function Assert-CapsulenvConfiguration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][hashtable]$Configuration)
 
-    foreach ($sectionName in @('Scoop', 'Environment', 'ToolStorage', 'Bitwarden', 'Browsers')) {
+    foreach ($sectionName in @('Scoop', 'Environment', 'ToolStorage', 'Bitwarden', 'Browsers', 'UserIntegration')) {
         if (-not $Configuration.ContainsKey($sectionName) -or $Configuration[$sectionName] -isnot [hashtable]) {
             throw "Configuration section is missing or invalid: $sectionName"
         }
@@ -183,6 +183,14 @@ function Assert-CapsulenvConfiguration {
                 throw "Scoop.RelocationRepairs paths do not support wildcards for '$app': $($rule.Path)"
             }
         }
+    }
+
+    if (-not $Configuration.UserIntegration.ContainsKey('DefaultBrowser')) {
+        throw 'UserIntegration.DefaultBrowser is missing.'
+    }
+    $defaultBrowser = [string]$Configuration.UserIntegration.DefaultBrowser
+    if (-not [string]::IsNullOrWhiteSpace($defaultBrowser) -and $defaultBrowser -notin @('Firefox', 'Zen', 'LibreWolf')) {
+        throw 'UserIntegration.DefaultBrowser must be empty, Firefox, Zen, or LibreWolf.'
     }
 
     if (
@@ -429,7 +437,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 10) {
+    if ([int]$configuration.SchemaVersion -ne 11) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

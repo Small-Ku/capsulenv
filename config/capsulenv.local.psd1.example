@@ -39,6 +39,12 @@
         Authorization = 'always'
     }
 
+    UserIntegration = @{
+        # Optional. User mode registers the portable browser with Windows and
+        # opens its Default Apps page when it is not already selected.
+        # DefaultBrowser = 'LibreWolf'
+    }
+
     Browsers = @{
         Zen = @{
             Enabled = $false

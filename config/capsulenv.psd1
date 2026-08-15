@@ -1,5 +1,5 @@
 @{
-    SchemaVersion = 10
+    SchemaVersion = 11
 
     Scoop = @{
         Root = 'scoop'
@@ -87,6 +87,14 @@
                 @{ Path = 'Profiles\Default\user.js'; Format = 'text'; Processes = @('librewolf'); MaxBytes = 16777216 }
             )
         }
+    }
+
+    UserIntegration = @{
+        # Empty by default: changing Windows defaults requires an explicit
+        # per-user choice. Set to Firefox, Zen, or LibreWolf in local config.
+        # In User mode Capsulenv registers a portable-profile-aware handler and
+        # opens Windows Default Apps directly to that application when needed.
+        DefaultBrowser = ''
     }
 
     Environment = @{

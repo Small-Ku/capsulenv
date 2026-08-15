@@ -78,6 +78,16 @@ capsulenv.cmd restore-user
 
 同一支 USB 可以在一台機器保持 ShellOnly，在另一台機器使用 User；mode 是「目前 machine/user 是否由此 capsule 接管」，不是 USB 的永久 profile。
 
+User mode 也可以把 capsule 裡指定的 Gecko browser 註冊成 Windows 的 default-app candidate。這是 opt-in；在 `config/capsulenv.local.psd1` 加入例如：
+
+```powershell
+UserIntegration = @{
+    DefaultBrowser = 'LibreWolf'
+}
+```
+
+支援 `Firefox`、`Zen`、`LibreWolf`。下一次 `install-user`／`enable-user`／`user-shell` 會建立 Capsulenv-owned 的 `http`、`https`、`.htm`、`.html` registration，handler 直接綁定 capsule 的實體 Gecko executable 與 Scoop-persisted profile，然後在尚未選中時開啟該 application 的 Windows **Default Apps** 頁。現代 Windows 11 不允許一般程式可靠地靜默覆寫 `http/https` 的 `UserChoice`，所以最後的 **Set default** 仍由使用者在 Settings 確認；Capsulenv 不偽造 association hash。`restore-user` 若發現 Capsulenv browser 仍是 default，會先要求改選另一個 browser，再移除自己精確記錄的 registration。
+
 ## 啟動 Scoop GUI app
 
 有 shim／`bin` 的 app 直接在 shell 內執行即可。ShellOnly 不會為 manifest `shortcuts` 建立 Start Menu `.lnk`；只有 shortcut 的 GUI app 可用 Capsulenv launcher：

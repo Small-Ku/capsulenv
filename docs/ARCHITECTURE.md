@@ -64,6 +64,8 @@ The ledger is host-scoped. A reset-on-shutdown machine can erase its User enviro
 
 `restore-user` only reverses state Capsulenv actually captured or explicitly owns. It is not a generic undo mechanism for arbitrary Scoop manifest side effects such as package-specific shortcuts, registry entries or environment keys whose original state was never recorded.
 
+Optional default-browser integration follows the same ownership rule. Its per-machine/user registration snapshot lives under that host integration state root, records capsule identity, host integration key, the exact `RegisteredApplications` value that existed before Capsulenv, and only the registry subtrees Capsulenv itself creates. A state file from another capsule or machine/user is rejected rather than used as delete authority.
+
 ## Capsule identity and relocation context
 
 `.capsulenv/identity.json` provides a stable capsule identity independent of drive letter. Relocation state records the previous root/Scoop roots and is used to decide whether stale paths belong to this same capsule before mutation.
@@ -116,7 +118,7 @@ The temporary reset may itself be hosted by a Scoop app (normally capsule `pwsh`
 
 ### User native reset
 
-User mode may call native `scoop reset` because the current Windows user has explicitly delegated Scoop integration ownership to this capsule. On drive relocation, persistent Capsulenv-managed User variables/PATH references are refreshed from the old capsule root to the new one.
+User mode may call native `scoop reset` because the current Windows user has explicitly delegated Scoop integration ownership to this capsule. On drive relocation, persistent Capsulenv-managed User variables/PATH references are refreshed from the old capsule root to the new one. If `UserIntegration.DefaultBrowser` is configured, User synchronization also rewrites the owned browser registration from the current Scoop executable/profile paths, so a changed drive letter does not leave stale URL/file handlers.
 
 Converting an existing ShellOnly capsule with `install-user` does **not** automatically run `scoop reset *` only to materialize existing UI integration. New package installs then use normal User semantics; `capsulenv.cmd reset` is the explicit operation when existing apps should materialize their native shortcuts/environment. Actual relocation does require automatic reset because existing User integration contains stale absolute targets.
 
@@ -147,6 +149,11 @@ Firefox/Firefox ESR/Zen/LibreWolf profiles stay in Scoop `persist`. Capsulenv ne
 The dedicated browser commands bind the capsule-persisted profile explicitly. ShellOnly also uses `-no-remote`, preventing the request from being handed to a foreign host browser process. `--host` is the sole opt-in path for borrowing a machine-installed executable; resolution is product-specific, excludes both capsule Scoop roots, and never falls back across Firefox, Zen, and LibreWolf. Host-executable launches always apply the configured `-no-remote` isolation argument even in User mode, so they cannot silently hand the request to an already-running host-profile process. The profile remains capsule-owned, so browser/profile format compatibility is deliberately left visible to Gecko rather than bypassed with downgrade flags. User mode may rely on normal Scoop integration, but the explicit Capsulenv launcher remains available.
 
 Browser persisted-file relocation uses only the configured `Scoop.RelocationRepairs` allow-list. User-mode manifest `post_install` replay may repair normal user profile registration; ShellOnly does not perform that host-user registration.
+
+
+`UserIntegration.DefaultBrowser` is an explicit User-mode policy for Firefox, Zen, or LibreWolf. Capsulenv registers a unique per-user Default Programs application under `HKCU\Software\RegisteredApplications`, `HKCU\Software\Clients\StartMenuInternet`, and Capsulenv-specific ProgIDs under `HKCU\Software\Classes`. Its `http`/`https` and `.htm`/`.html` open commands invoke the real capsule Gecko executable while explicitly passing the Scoop-persisted profile; portable launchers such as `LibreWolf-Portable.exe` are therefore not responsible for preserving the association.
+
+Capsulenv treats Windows `UserChoice` as user-owned state. It reads the selected ProgIDs to detect whether its registration is active, but does not write/replay the protected association hash. When the configured registration is not selected, User synchronization opens `ms-settings:defaultapps?registeredAppUser=...` so the final default choice remains in Windows Settings. Before `restore-user` deletes the registration, Capsulenv refuses if Windows still points `http`/`https`/HTML at those ProgIDs; the user selects another default first, then the exact prior `RegisteredApplications` value and owned registry trees can be restored without leaving dangling associations.
 
 ## Weasel seed ownership
 

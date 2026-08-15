@@ -6,6 +6,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:BitwardenSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/50-Bitwarden.ps1') -Raw
         $script:BitwardenAgentSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/55-BitwardenSshAgent.ps1') -Raw
         $script:BrowserSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/60-Browser.ps1') -Raw
+        $script:DefaultBrowserSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/62-DefaultBrowser.ps1') -Raw
         $script:DoctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
         $script:ProjectCacheSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/36-ProjectCacheRegistry.ps1') -Raw
         $script:BootstrapSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/41-ScoopBootstrap.ps1') -Raw
@@ -91,12 +92,19 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'Run restore-user from an elevated terminal'
         $script:EnvironmentSource | Should -Match 'Initialize-CapsulenvGitOpenSshSession'
         $script:EnvironmentSource | Should -Match 'Sync-CapsulenvUserEnvironment -RelocationContext \$relocationContext'
+        $script:EnvironmentSource | Should -Match 'Sync-CapsulenvConfiguredDefaultBrowser'
+        $script:EnvironmentSource | Should -Match 'Assert-CapsulenvDefaultBrowserRestorable'
+        $script:EnvironmentSource | Should -Match 'Restore-CapsulenvDefaultBrowserRegistration'
+        $script:DefaultBrowserSource | Should -Match 'registeredAppUser='
+        $script:DefaultBrowserSource | Should -Match 'UserChoice hashes'
+        $script:DefaultBrowserSource | Should -Match 'HostIntegrationKey'
         $script:BitwardenSource | Should -Match 'Set-CapsulenvGitOpenSshIntent'
         $script:BitwardenSource | Should -Match 'function Restore-CapsulenvGitOpenSshGlobal'
     }
 
     It 'binds Capsulenv browser commands to Scoop-persisted profiles' {
         $config = Import-PowerShellDataFile (Join-Path $script:Root 'config/capsulenv.psd1')
+        $config.UserIntegration.DefaultBrowser | Should -Be ''
         @($config.Browsers.Firefox.ProfileCandidates).Count | Should -BeGreaterThan 0
         @($config.Browsers.Zen.ProfileCandidates).Count | Should -BeGreaterThan 0
         @($config.Browsers.LibreWolf.ProfileCandidates).Count | Should -BeGreaterThan 0

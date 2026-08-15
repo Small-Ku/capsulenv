@@ -67,7 +67,9 @@ user integration commands
   capsulenv.cmd install-user [--force]
   capsulenv.cmd enable-user [--force]
       Install this capsule as the current Windows user's Scoop environment.
-      enable-user is retained as a compatibility alias.
+      enable-user is retained as a compatibility alias. If
+      UserIntegration.DefaultBrowser is configured, also register that capsule
+      Gecko browser and open its Default Apps page when confirmation is needed.
 
   capsulenv.cmd restore-user
       Restore Capsulenv-owned current-user settings and return to ShellOnly.
