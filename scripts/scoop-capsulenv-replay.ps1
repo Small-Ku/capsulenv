@@ -27,18 +27,30 @@ foreach ($library in @('manifest.ps1', 'system.ps1', 'install.ps1', 'versions.ps
 
 $failed = $false
 foreach ($requestedApp in $Apps) {
-    $app, $null, $null = parse_app $requestedApp
+    $global = $null
+    $scoopApp = [string]$requestedApp
+    if ($scoopApp -match '^(?i:(user|global))/(.+)$') {
+        $scope = [string]$Matches[1]
+        $scoopApp = [string]$Matches[2]
+        $global = [System.StringComparer]::OrdinalIgnoreCase.Equals($scope, 'global')
+    }
+    $app, $null, $null = parse_app $scoopApp
     if ($app -eq 'scoop') {
         continue
     }
-    $global = $false
-    if (-not (installed $app $false)) {
-        if (installed $app $true) {
+    if ($null -eq $global) {
+        if (installed $app $false) {
+            $global = $false
+        } elseif (installed $app $true) {
             $global = $true
         } else {
             Write-Host "Skipping '$app': not installed in either portable Scoop root." -ForegroundColor DarkGray
             continue
         }
+    } elseif (-not (installed $app $global)) {
+        $scopeLabel = if ($global) { 'global' } else { 'user' }
+        Write-Host "Skipping '$scopeLabel/$app': not installed in that portable Scoop root." -ForegroundColor DarkGray
+        continue
     }
 
     $version = Select-CurrentVersion -AppName $app -Global:$global

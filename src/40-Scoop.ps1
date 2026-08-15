@@ -473,38 +473,4 @@ function Invoke-CapsulenvScoopRehydrate {
     }
 }
 
-function Find-CapsulenvExecutable {
-    [CmdletBinding()]
-    param(
-        [string[]]$Candidates,
-        [string[]]$CommandNames
-    )
-
-    foreach ($candidate in $Candidates) {
-        $resolved = Resolve-CapsulenvPath -Path $candidate -AllowMissing
-        if (Test-Path -LiteralPath $resolved -PathType Leaf) {
-            return $resolved
-        }
-    }
-    $portableRoots = @(
-        [System.IO.Path]::GetFullPath((Get-CapsulenvScoopRoot)).TrimEnd('\', '/'),
-        [System.IO.Path]::GetFullPath((Get-CapsulenvScoopGlobalRoot)).TrimEnd('\', '/')
-    )
-    foreach ($name in $CommandNames) {
-        $command = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue
-        if (-not $command) {
-            continue
-        }
-        $source = [System.IO.Path]::GetFullPath([string]$command.Source)
-        $separator = [System.IO.Path]::DirectorySeparatorChar
-        foreach ($portableRoot in $portableRoots) {
-            $rootPrefix = $portableRoot + $separator
-            if ($source.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $source
-            }
-        }
-    }
-    return $null
-}
-
 ##MOD_EXEC## Export-ModuleMember -Function Reset-CapsulenvScoop, Invoke-CapsulenvScoopRehydrate, Invoke-CapsulenvScoopHookReplay, Test-CapsulenvScoopRehydrationRequired

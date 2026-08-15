@@ -54,6 +54,10 @@ foreach ($entry in $requested) {
     if ($entry -is [array] -and $entry.Count -ge 2) {
         $requestedApp = [string]$entry[0]
         $global = [bool]$entry[1]
+    } elseif ($requestedApp -match '^(?i:(user|global))/(.+)$') {
+        $scope = [string]$Matches[1]
+        $requestedApp = [string]$Matches[2]
+        $global = [System.StringComparer]::OrdinalIgnoreCase.Equals($scope, 'global')
     }
 
     $app, $null, $version = parse_app $requestedApp
@@ -65,6 +69,11 @@ foreach ($entry in $requested) {
             Write-Host "Skipping '$app': not installed in either portable Scoop root." -ForegroundColor DarkGray
             continue
         }
+    }
+    if ($null -ne $global -and -not (installed $app $global)) {
+        $scopeLabel = if ($global) { 'global' } else { 'user' }
+        Write-Host "Skipping '$scopeLabel/$app': not installed in that portable Scoop root." -ForegroundColor DarkGray
+        continue
     }
     if ($global -and !(is_admin)) {
         Write-Warning "Skipping global app '$app': user reset requires Administrator rights."

@@ -79,7 +79,10 @@ function Split-CapsulenvScoopAppSelector {
 
 function Get-CapsulenvInstalledScoopApp {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Selector)
+    param(
+        [Parameter(Mandatory = $true)][string]$Selector,
+        [switch]$AllowMissing
+    )
 
     $parsed = Split-CapsulenvScoopAppSelector -Selector $Selector
     $scopes = if ($null -ne $parsed.Scope) { @([string]$parsed.Scope) } else { @('User', 'Global') }
@@ -110,7 +113,9 @@ function Get-CapsulenvInstalledScoopApp {
         $matches.Add([pscustomobject]@{
             Scope = $scope
             Name = [string]$parsed.Name
+            Selector = ('{0}/{1}' -f $scope.ToLowerInvariant(), $parsed.Name)
             Root = $rootRecord.Root
+            AppRoot = Join-Path $rootRecord.AppsRoot $parsed.Name
             Current = $current
             Persist = Join-Path $rootRecord.PersistRoot $parsed.Name
             ManifestPath = $manifestPath
@@ -121,12 +126,54 @@ function Get-CapsulenvInstalledScoopApp {
     }
 
     if ($matches.Count -eq 0) {
+        if ($AllowMissing) {
+            return $null
+        }
         throw "Scoop app is not installed in the capsule: $Selector"
     }
     if ($matches.Count -gt 1) {
         throw "Scoop app '$($parsed.Name)' is installed in both user and global roots. Use user/$($parsed.Name) or global/$($parsed.Name)."
     }
     return $matches[0]
+}
+
+function Get-CapsulenvInstalledManifestPropertyValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$App,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $value = $null
+    $property = Get-CapsulenvJsonPropertyRecord -Object $App.Manifest -Name $Name
+    if ($null -ne $property) {
+        $value = $property.Value
+    }
+
+    $architecture = Get-CapsulenvInstalledScoopArchitecture -App $App
+    $architectureMapProperty = Get-CapsulenvJsonPropertyRecord -Object $App.Manifest -Name 'architecture'
+    $architectureManifestProperty = if ($null -ne $architectureMapProperty) {
+        Get-CapsulenvJsonPropertyRecord -Object $architectureMapProperty.Value -Name $architecture
+    } else {
+        $null
+    }
+    $architectureProperty = if ($null -ne $architectureManifestProperty) {
+        Get-CapsulenvJsonPropertyRecord -Object $architectureManifestProperty.Value -Name $Name
+    } else {
+        $null
+    }
+    if ($null -ne $architectureProperty) {
+        $architectureValue = $architectureProperty.Value
+        $hasArchitectureValue = (
+            $null -ne $architectureValue -and
+            @($architectureValue).Count -gt 0 -and
+            -not ($architectureValue -is [string] -and [string]::IsNullOrWhiteSpace([string]$architectureValue))
+        )
+        if ($hasArchitectureValue) {
+            $value = $architectureValue
+        }
+    }
+    return $value
 }
 
 function Get-CapsulenvInstalledScoopArchitecture {
@@ -151,32 +198,27 @@ function Get-CapsulenvInstalledShortcutEntries {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$App)
 
-    $manifest = $App.Manifest
-    $shortcutProperty = Get-CapsulenvJsonPropertyRecord -Object $manifest -Name 'shortcuts'
-    $shortcuts = $null
-    if ($null -ne $shortcutProperty) {
-        $shortcuts = $shortcutProperty.Value
-    }
-    $architecture = Get-CapsulenvInstalledScoopArchitecture -App $App
-    $architectureMapProperty = Get-CapsulenvJsonPropertyRecord -Object $manifest -Name 'architecture'
-    $architectureManifestProperty = if ($null -ne $architectureMapProperty) {
-        Get-CapsulenvJsonPropertyRecord -Object $architectureMapProperty.Value -Name $architecture
-    } else {
-        $null
-    }
-    $architectureShortcutProperty = if ($null -ne $architectureManifestProperty) {
-        Get-CapsulenvJsonPropertyRecord -Object $architectureManifestProperty.Value -Name 'shortcuts'
-    } else {
-        $null
-    }
-    if ($null -ne $architectureShortcutProperty -and @($architectureShortcutProperty.Value).Count -gt 0) {
-        $shortcuts = $architectureShortcutProperty.Value
-    }
+    $shortcuts = Get-CapsulenvInstalledManifestPropertyValue -App $App -Name 'shortcuts'
 
     if ($null -eq $shortcuts) {
         $shortcuts = @()
     }
     return [pscustomobject]@{ Entries = $shortcuts }
+}
+
+function Get-CapsulenvInstalledBinEntries {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$App)
+
+    $bin = Get-CapsulenvInstalledManifestPropertyValue -App $App -Name 'bin'
+    if ($null -eq $bin) {
+        return [pscustomobject]@{ Entries = @() }
+    }
+
+    if ($bin -is [string]) {
+        return [pscustomobject]@{ Entries = @([string]$bin) }
+    }
+    return [pscustomobject]@{ Entries = @($bin) }
 }
 
 function Expand-CapsulenvScoopShortcutValue {
@@ -246,6 +288,191 @@ function ConvertTo-CapsulenvInstalledShortcut {
         ManifestPath = [string]$App.ManifestPath
         InstallPath = [string]$App.InstallPath
     }
+}
+
+function ConvertTo-CapsulenvInstalledBin {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$App,
+        [Parameter(Mandatory = $true)]$Entry
+    )
+
+    $parts = if ($Entry -is [string]) { @([string]$Entry) } else { @($Entry) }
+    if ($parts.Count -lt 1 -or [string]::IsNullOrWhiteSpace([string]$parts[0])) {
+        throw "Invalid bin entry in installed manifest for $($App.Scope.ToLowerInvariant())/$($App.Name)."
+    }
+
+    $targetSpec = Expand-CapsulenvScoopShortcutValue -Value ([string]$parts[0]) -App $App
+    $target = if ([System.IO.Path]::IsPathRooted($targetSpec)) {
+        [System.IO.Path]::GetFullPath($targetSpec)
+    } else {
+        [System.IO.Path]::GetFullPath((Join-Path $App.Current $targetSpec))
+    }
+    $alias = if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace([string]$parts[1])) {
+        [string]$parts[1]
+    } else {
+        [System.IO.Path]::GetFileNameWithoutExtension($target)
+    }
+
+    return [pscustomobject]@{
+        Scope = [string]$App.Scope
+        App = [string]$App.Name
+        Selector = [string]$App.Selector
+        Name = $alias
+        Target = $target
+        Architecture = Get-CapsulenvInstalledScoopArchitecture -App $App
+        ManifestPath = [string]$App.ManifestPath
+        InstallPath = [string]$App.InstallPath
+    }
+}
+
+function Get-CapsulenvScoopAppBins {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$App)
+
+    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $results = New-Object System.Collections.Generic.List[object]
+    $entrySet = Get-CapsulenvInstalledBinEntries -App $installed
+    foreach ($entry in @($entrySet.Entries)) {
+        $results.Add((ConvertTo-CapsulenvInstalledBin -App $installed -Entry $entry))
+    }
+    return $results.ToArray()
+}
+
+function Resolve-CapsulenvScoopAppRelativePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [AllowEmptyString()][string]$RelativePath = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+        return [System.IO.Path]::GetFullPath($Root)
+    }
+    if (
+        [System.IO.Path]::IsPathRooted($RelativePath) -or
+        $RelativePath -match '(^|[\\/])\.\.([\\/]|$)'
+    ) {
+        throw "Scoop app integration paths must remain relative to their owning app: $RelativePath"
+    }
+    $rootPath = [System.IO.Path]::GetFullPath($Root).TrimEnd([char[]]'\\/')
+    $resolved = [System.IO.Path]::GetFullPath((Join-Path $rootPath $RelativePath))
+    if (
+        -not [System.StringComparer]::OrdinalIgnoreCase.Equals($resolved.TrimEnd([char[]]'\\/'), $rootPath) -and
+        -not $resolved.StartsWith(
+            $rootPath + [System.IO.Path]::DirectorySeparatorChar,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        throw "Scoop app integration path escapes its owning app: $RelativePath"
+    }
+    return $resolved
+}
+
+function Resolve-CapsulenvScoopAppExecutable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$App,
+        [string]$RelativePath,
+        [string]$BinName,
+        [string]$ShortcutName
+    )
+
+    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    if (-not [string]::IsNullOrWhiteSpace($RelativePath)) {
+        $target = Resolve-CapsulenvScoopAppRelativePath -Root $installed.Current -RelativePath $RelativePath
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            throw "Configured executable is missing for '$($installed.Selector)': $target"
+        }
+        return $target
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($BinName)) {
+        $matches = @(
+            Get-CapsulenvScoopAppBins -App $installed.Selector |
+                Where-Object {
+                    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, $BinName) -or
+                    [System.StringComparer]::OrdinalIgnoreCase.Equals([System.IO.Path]::GetFileName([string]$_.Target), $BinName)
+                }
+        )
+        if ($matches.Count -ne 1) {
+            throw "Installed Scoop app '$($installed.Selector)' does not expose exactly one bin named '$BinName'."
+        }
+        if (-not (Test-Path -LiteralPath $matches[0].Target -PathType Leaf)) {
+            throw "Configured Scoop bin target is missing: $($matches[0].Target)"
+        }
+        return [string]$matches[0].Target
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ShortcutName)) {
+        $matches = @(Get-CapsulenvScoopAppShortcuts -App $installed.Selector | Where-Object { [string]$_.Name -eq $ShortcutName })
+        if ($matches.Count -ne 1) {
+            throw "Installed Scoop app '$($installed.Selector)' does not expose exactly one shortcut named '$ShortcutName'."
+        }
+        if (-not (Test-Path -LiteralPath $matches[0].Target -PathType Leaf)) {
+            throw "Configured Scoop shortcut target is missing: $($matches[0].Target)"
+        }
+        return [string]$matches[0].Target
+    }
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @(Get-CapsulenvScoopAppBins -App $installed.Selector)) {
+        if (Test-Path -LiteralPath $entry.Target -PathType Leaf) {
+            $candidates.Add([string]$entry.Target)
+        }
+    }
+    foreach ($entry in @(Get-CapsulenvScoopAppShortcuts -App $installed.Selector)) {
+        if (Test-Path -LiteralPath $entry.Target -PathType Leaf) {
+            $candidates.Add([string]$entry.Target)
+        }
+    }
+    $unique = @($candidates.ToArray() | Sort-Object -Unique)
+    if ($unique.Count -eq 1) {
+        return [string]$unique[0]
+    }
+    if ($unique.Count -eq 0) {
+        throw "Installed Scoop app '$($installed.Selector)' has no resolvable bin or shortcut executable. Configure RelativePath, BinName, or ShortcutName."
+    }
+    throw "Installed Scoop app '$($installed.Selector)' exposes multiple executable targets. Configure RelativePath, BinName, or ShortcutName."
+}
+
+function Resolve-CapsulenvScoopAppPersistPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$App,
+        [AllowEmptyString()][string]$RelativePath = '',
+        [switch]$AllowMissing
+    )
+
+    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $target = Resolve-CapsulenvScoopAppRelativePath -Root $installed.Persist -RelativePath $RelativePath
+    if (-not $AllowMissing -and -not (Test-Path -LiteralPath $target)) {
+        throw "Configured persisted path is missing for '$($installed.Selector)': $target"
+    }
+    return $target
+}
+
+function Test-CapsulenvScoopAppOwnsPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$App,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    try {
+        $root = [System.IO.Path]::GetFullPath([string]$installed.AppRoot).TrimEnd([char[]]'\\/')
+        $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd([char[]]'\\/')
+    } catch {
+        return $false
+    }
+    return (
+        [System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath, $root) -or
+        $fullPath.StartsWith(
+            $root + [System.IO.Path]::DirectorySeparatorChar,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    )
 }
 
 function Get-CapsulenvScoopAppShortcuts {
@@ -348,4 +575,4 @@ function Start-CapsulenvScoopShortcut {
     return Start-Process @startParameters
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvScoopAppShortcuts, Get-CapsulenvScoopShortcutCatalog, Start-CapsulenvScoopShortcut
+##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvScoopAppShortcuts, Get-CapsulenvScoopAppBins, Get-CapsulenvScoopShortcutCatalog, Start-CapsulenvScoopShortcut, Resolve-CapsulenvScoopAppExecutable, Resolve-CapsulenvScoopAppPersistPath

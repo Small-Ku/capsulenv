@@ -66,7 +66,8 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
             $current = Join-Path $temporaryRoot 'scoop/apps/demo/current'
             [void](New-Item -ItemType Directory -Path $current -Force)
             '' | Set-Content -LiteralPath (Join-Path $current 'demo.exe') -Encoding UTF8
-            '{"shortcuts":[["demo.exe","Generic Demo"]],"architecture":{"64bit":{"shortcuts":[]}}}' |
+            '' | Set-Content -LiteralPath (Join-Path $current 'generic.exe') -Encoding UTF8
+            '{"shortcuts":[["demo.exe","Generic Demo"]],"bin":"generic.exe","architecture":{"64bit":{"shortcuts":[],"bin":[]}}}' |
                 Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
             @{ architecture = '64bit' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
 
@@ -79,6 +80,55 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
             $shortcuts = @(Get-CapsulenvScoopAppShortcuts -App demo)
             $shortcuts.Count | Should -Be 1
             $shortcuts[0].Name | Should -Be 'Generic Demo'
+            $bins = @(Get-CapsulenvScoopAppBins -App demo)
+            $bins.Count | Should -Be 1
+            $bins[0].Name | Should -Be 'generic'
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
+    It 'resolves architecture-specific bin entries and persist paths from the installed manifest' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-app-bin-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $current = Join-Path $temporaryRoot 'scoop/apps/custom-gecko/current'
+            $persist = Join-Path $temporaryRoot 'scoop/persist/custom-gecko'
+            [void](New-Item -ItemType Directory -Path $current -Force)
+            [void](New-Item -ItemType Directory -Path (Join-Path $persist 'profile') -Force)
+            '' | Set-Content -LiteralPath (Join-Path $current 'browser.exe') -Encoding UTF8
+            '' | Set-Content -LiteralPath (Join-Path $current 'helper.exe') -Encoding UTF8
+            @{
+                bin = @('generic.exe')
+                architecture = @{
+                    '64bit' = @{
+                        bin = @(
+                            @('browser.exe', 'gecko'),
+                            @('helper.exe', 'helper')
+                        )
+                    }
+                }
+            } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
+            @{ architecture = '64bit' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+            } $temporaryRoot
+
+            $bins = @(Get-CapsulenvScoopAppBins -App custom-gecko)
+            $bins.Count | Should -Be 2
+            @($bins.Name) | Should -Contain 'gecko'
+            @($bins.Name) | Should -Not -Contain 'generic'
+            Resolve-CapsulenvScoopAppExecutable -App custom-gecko -BinName gecko |
+                Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'browser.exe')))
+            Resolve-CapsulenvScoopAppPersistPath -App custom-gecko -RelativePath profile |
+                Should -Be ([System.IO.Path]::GetFullPath((Join-Path $persist 'profile')))
+            { Resolve-CapsulenvScoopAppExecutable -App custom-gecko } | Should -Throw '*multiple executable targets*'
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
@@ -108,6 +158,37 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
             { Get-CapsulenvScoopAppShortcuts -App demo } | Should -Throw '*both user and global roots*'
             @(Get-CapsulenvScoopAppShortcuts -App user/demo).Count | Should -Be 1
             @(Get-CapsulenvScoopAppShortcuts -App global/demo).Count | Should -Be 1
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
+    It 'keeps persist relocation scope bound to the selected Scoop root' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-persist-scope-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $userPersist = Join-Path $temporaryRoot 'scoop/persist/demo'
+            $globalPersist = Join-Path $temporaryRoot 'scoop-global/persist/demo'
+            [void](New-Item -ItemType Directory -Path $userPersist, $globalPersist -Force)
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+            } $temporaryRoot
+
+            $allRoots = @(& $script:Module { Get-CapsulenvPersistRootsForApp -App demo })
+            $userRoots = @(& $script:Module { Get-CapsulenvPersistRootsForApp -App user/demo })
+            $globalRoots = @(& $script:Module { Get-CapsulenvPersistRootsForApp -App global/demo })
+
+            $allRoots.Count | Should -Be 2
+            $userRoots.Count | Should -Be 1
+            $globalRoots.Count | Should -Be 1
+            $userRoots[0] | Should -Be ([System.IO.Path]::GetFullPath($userPersist))
+            $globalRoots[0] | Should -Be ([System.IO.Path]::GetFullPath($globalPersist))
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force

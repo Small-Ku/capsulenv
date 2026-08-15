@@ -85,10 +85,20 @@ function Get-CapsulenvPersistRootsForApp {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
 
+    $selector = Split-CapsulenvScoopAppSelector -Selector $App
+    $rootRecords = if ($null -eq $selector.Scope) {
+        @(
+            (Get-CapsulenvScoopAppRootRecord -Scope User),
+            (Get-CapsulenvScoopAppRootRecord -Scope Global)
+        )
+    } else {
+        @(Get-CapsulenvScoopAppRootRecord -Scope ([string]$selector.Scope))
+    }
+
     $roots = New-Object System.Collections.Generic.List[string]
     $seen = @{}
-    foreach ($scoopRoot in @((Get-CapsulenvScoopRoot), (Get-CapsulenvScoopGlobalRoot))) {
-        $candidate = Join-Path (Join-Path $scoopRoot 'persist') $App
+    foreach ($rootRecord in $rootRecords) {
+        $candidate = Join-Path $rootRecord.PersistRoot $selector.Name
         if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
             continue
         }
