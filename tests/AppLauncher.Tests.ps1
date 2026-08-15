@@ -58,6 +58,73 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
         }
     }
 
+    It 'restores the outer shortcut list when a single tuple arrives flattened' {
+        $result = & $script:Module {
+            $app = [pscustomobject]@{
+                Scope = 'User'
+                Name = 'vscode'
+                Selector = 'user/vscode'
+                Current = 'C:\capsulenv\scoop\apps\vscode\current'
+                Persist = 'C:\capsulenv\scoop\persist\vscode'
+                ManifestPath = 'C:\capsulenv\scoop\apps\vscode\current\manifest.json'
+                InstallPath = 'C:\capsulenv\scoop\apps\vscode\current\install.json'
+                Manifest = [pscustomobject]@{
+                    shortcuts = @('code.exe', 'Visual Studio Code')
+                }
+                Install = [pscustomobject]@{
+                    architecture = '64bit'
+                }
+            }
+
+            $entrySet = Get-CapsulenvInstalledShortcutEntries -App $app
+            $entries = @($entrySet.Entries)
+            $parts = @($entries[0])
+            [pscustomobject]@{
+                EntryCount = $entries.Count
+                PartCount = $parts.Count
+                Target = [string]$parts[0]
+                Name = [string]$parts[1]
+            }
+        }
+
+        $result.EntryCount | Should -Be 1
+        $result.PartCount | Should -Be 2
+        $result.Target | Should -Be 'code.exe'
+        $result.Name | Should -Be 'Visual Studio Code'
+    }
+
+    It 'launches the single shortcut shape used by the Scoop Extras vscode manifest' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-vscode-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $current = Join-Path $temporaryRoot 'scoop/apps/vscode/current'
+            [void](New-Item -ItemType Directory -Path $current -Force)
+            '' | Set-Content -LiteralPath (Join-Path $current 'code.exe') -Encoding UTF8
+            '{"version":"1.133.0","shortcuts":[["code.exe","Visual Studio Code"]]}' |
+                Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
+            '{"architecture":"64bit","bucket":"extras"}' |
+                Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+            } $temporaryRoot
+
+            Mock -CommandName Start-Process -ModuleName Capsulenv -MockWith { }
+            { Start-CapsulenvScoopShortcut -App vscode } | Should -Not -Throw
+            Should -Invoke -CommandName Start-Process -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+                $FilePath -eq ([System.IO.Path]::GetFullPath((Join-Path $current 'code.exe'))) -and
+                $WorkingDirectory -eq ([System.IO.Path]::GetFullPath($current))
+            }
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
     It 'falls back to generic shortcuts when the installed architecture shortcut list is empty' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-app-fallback-' + [Guid]::NewGuid().ToString('N'))
         try {
@@ -83,6 +150,36 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
             $bins = @(Get-CapsulenvScoopAppBins -App demo)
             $bins.Count | Should -Be 1
             $bins[0].Name | Should -Be 'generic'
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
+    It 'preserves a one-entry nested bin alias tuple from the installed manifest' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-bin-single-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $current = Join-Path $temporaryRoot 'scoop/apps/demo/current'
+            [void](New-Item -ItemType Directory -Path (Join-Path $current 'bin') -Force)
+            '' | Set-Content -LiteralPath (Join-Path $current 'bin/demo.cmd') -Encoding UTF8
+            '{"bin":[["bin/demo.cmd","demo"]]}' |
+                Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
+            '{"architecture":"64bit"}' |
+                Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+            } $temporaryRoot
+
+            $bins = @(Get-CapsulenvScoopAppBins -App demo)
+            $bins.Count | Should -Be 1
+            $bins[0].Name | Should -Be 'demo'
+            $bins[0].Target | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'bin/demo.cmd')))
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force

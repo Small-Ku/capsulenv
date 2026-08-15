@@ -137,7 +137,7 @@ function Get-CapsulenvInstalledScoopApp {
     return $matches[0]
 }
 
-function Get-CapsulenvInstalledManifestPropertyValue {
+function Get-CapsulenvInstalledManifestPropertyRecord {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]$App,
@@ -173,11 +173,11 @@ function Get-CapsulenvInstalledManifestPropertyValue {
             $value = $architectureValue
         }
     }
-    # Installed manifest values can themselves be arrays (notably one-entry
-    # shortcuts/bin lists). Emit the property value as one pipeline object so
-    # PowerShell does not flatten a one-element outer array into the shortcut
-    # tuple it contains.
-    return ,$value
+    # Never return a manifest array as the function output itself. Windows
+    # PowerShell can enumerate nested arrays while they cross command/function
+    # boundaries. Keeping the value inside a scalar record preserves the JSON
+    # array shape until the schema-specific consumer normalizes it.
+    return [pscustomobject]@{ Value = $value }
 }
 
 function Get-CapsulenvInstalledScoopArchitecture {
@@ -202,19 +202,39 @@ function Get-CapsulenvInstalledShortcutEntries {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$App)
 
-    $shortcuts = Get-CapsulenvInstalledManifestPropertyValue -App $App -Name 'shortcuts'
-
+    $shortcutProperty = Get-CapsulenvInstalledManifestPropertyRecord -App $App -Name 'shortcuts'
+    $shortcuts = $shortcutProperty.Value
     if ($null -eq $shortcuts) {
-        $shortcuts = @()
+        return [pscustomobject]@{ Entries = @() }
     }
-    return [pscustomobject]@{ Entries = $shortcuts }
+
+    $items = @($shortcuts)
+    if ($items.Count -eq 0) {
+        return [pscustomobject]@{ Entries = @() }
+    }
+
+    # Scoop shortcuts are always an outer list of shortcut tuples. Windows
+    # PowerShell 5.1 can lose that one-element outer list while values travel
+    # through function output, leaving a valid single tuple such as
+    # @('code.exe', 'Visual Studio Code') looking like two shortcut entries.
+    # Detect that shape by its required first string field and restore only the
+    # schema-mandated outer list. Multi-shortcut manifests already begin with
+    # an array/collection and are left untouched.
+    if ($items[0] -is [string]) {
+        $entries = New-Object System.Collections.Generic.List[object]
+        $entries.Add([object[]]$items)
+        return [pscustomobject]@{ Entries = $entries.ToArray() }
+    }
+
+    return [pscustomobject]@{ Entries = $items }
 }
 
 function Get-CapsulenvInstalledBinEntries {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$App)
 
-    $bin = Get-CapsulenvInstalledManifestPropertyValue -App $App -Name 'bin'
+    $binProperty = Get-CapsulenvInstalledManifestPropertyRecord -App $App -Name 'bin'
+    $bin = $binProperty.Value
     if ($null -eq $bin) {
         return [pscustomobject]@{ Entries = @() }
     }
