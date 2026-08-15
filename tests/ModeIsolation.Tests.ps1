@@ -78,6 +78,9 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'ShellOnlyLifecyclePolicy \| ConvertTo-Json -Compress'
         $script:EnvironmentSource | Should -Match "CAPSULENV_SCOOP_LIFECYCLE_POLICY.*'Process'"
         $script:BootstrapSource.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"') | Should -BeTrue
+        $script:BootstrapSource.Contains('set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"') | Should -BeTrue
+        $script:BootstrapSource.Contains("Join-Path `$env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'") | Should -BeTrue
+        $script:BootstrapSource | Should -Not -Match 'where pwsh\.exe'
         $script:BootstrapSource | Should -Match 'ReadAllText\(\$cmdPath\)'
     }
 

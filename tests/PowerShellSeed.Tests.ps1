@@ -52,6 +52,31 @@ Describe 'Capsulenv PowerShell and seed ownership' {
         }
     }
 
+    It 'selects capsule pwsh for the interactive shell independently from the Windows PowerShell control host' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-interactive-pwsh-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $currentHome = Join-Path $temporaryRoot 'scoop/apps/pwsh/current'
+            [void](New-Item -ItemType Directory -Path $currentHome -Force)
+            $portablePwsh = Join-Path $currentHome 'pwsh.exe'
+            '' | Set-Content -LiteralPath $portablePwsh -Encoding UTF8
+
+            $selected = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+                Get-CapsulenvInteractivePowerShellExecutable
+            } $temporaryRoot
+
+            [System.IO.Path]::GetFullPath([string]$selected) | Should -Be ([System.IO.Path]::GetFullPath($portablePwsh))
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
     It 'seeds CurrentUser PowerShell profiles into the Scoop pwsh persist contract' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-pwsh-seed-' + [Guid]::NewGuid().ToString('N'))
         try {

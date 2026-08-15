@@ -21,6 +21,46 @@ function Test-CapsulenvPortablePowerShellExecutable {
     return $false
 }
 
+function Get-CapsulenvInteractivePowerShellExecutable {
+    [CmdletBinding()]
+    param()
+
+    # The Capsulenv control plane deliberately runs under Windows PowerShell
+    # 5.1 so it can rebuild the portable pwsh app without locking its files.
+    # Interactive/project work still prefers the capsule-owned PowerShell 7,
+    # resolved directly from Scoop app directories rather than through shims.
+    foreach ($root in @((Get-CapsulenvScoopRoot), (Get-CapsulenvScoopGlobalRoot))) {
+        $appRoot = Join-Path (Join-Path $root 'apps') 'pwsh'
+        if (-not (Test-Path -LiteralPath $appRoot -PathType Container)) {
+            continue
+        }
+
+        $current = Join-Path (Join-Path $appRoot 'current') 'pwsh.exe'
+        if (Test-Path -LiteralPath $current -PathType Leaf) {
+            return [System.IO.Path]::GetFullPath($current)
+        }
+
+        foreach ($versionDirectory in @(
+            Get-ChildItem -LiteralPath $appRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -ne 'current' } |
+                Sort-Object Name -Descending
+        )) {
+            $candidate = Join-Path $versionDirectory.FullName 'pwsh.exe'
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                return [System.IO.Path]::GetFullPath($candidate)
+            }
+        }
+    }
+
+    # Bootstrap remains usable before Scoop pwsh is installed. In normal
+    # capsulenv.cmd use this is the Windows PowerShell control host.
+    $currentProcess = Get-Process -Id $PID
+    if ($null -ne $currentProcess -and -not [string]::IsNullOrWhiteSpace([string]$currentProcess.Path)) {
+        return [System.IO.Path]::GetFullPath([string]$currentProcess.Path)
+    }
+    throw 'No usable PowerShell executable is available for the Capsulenv child shell.'
+}
+
 function Get-CapsulenvPortablePowerShellProfilePaths {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$ShellPath)

@@ -763,7 +763,7 @@ function Invoke-CapsulenvChildShell {
     [void](Set-CapsulenvSessionEnvironment)
     Initialize-CapsulenvIntegrations
 
-    $shellPath = (Get-Process -Id $PID).Path
+    $shellPath = Get-CapsulenvInteractivePowerShellExecutable
     $launchPlan = Get-CapsulenvPowerShellChildLaunchPlan `
         -ShellPath $shellPath `
         -IntegrationMode (Get-CapsulenvInstallMode) `

@@ -23,6 +23,21 @@ Describe 'Capsulenv Scoop reset mode dispatch' {
     }
 
 
+    It 'keeps Scoop command output out of the returned exit-code value' {
+        $fakeScoop = Join-Path $TestDrive 'fake-scoop.ps1'
+        @'
+Write-Output 'Creating shim for pwsh.'
+$global:LASTEXITCODE = 0
+'@ | Set-Content -LiteralPath $fakeScoop -Encoding UTF8
+        Mock Get-CapsulenvScoopExecutable { $fakeScoop } -ModuleName Capsulenv
+
+        $exitCode = & (Get-Module Capsulenv) { Invoke-CapsulenvScoopCommand -Arguments @('noop') -AllowFailure }
+
+        @($exitCode).Count | Should -Be 1
+        $exitCode | Should -BeOfType ([int])
+        $exitCode | Should -Be 0
+    }
+
     It 'keeps a deferred running app non-fatal and reports the User reset as incomplete' {
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Get-CapsulenvScoopUserResetScriptPath { 'mock-user-reset.ps1' } -ModuleName Capsulenv

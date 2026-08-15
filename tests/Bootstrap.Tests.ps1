@@ -183,6 +183,12 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not $shim.Contains([System.IO.Path]::GetFullPath($capsule))) `
                     -Message 'Scoop shim captured an absolute capsule path.'
+                Assert-CapsulenvBootstrapTest `
+                    -Condition ($shim.Contains("Join-Path `$env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'")) `
+                    -Message 'Scoop PowerShell shim does not hand control-plane work to Windows PowerShell.'
+                Assert-CapsulenvBootstrapTest `
+                    -Condition (-not $shim.Contains('& $path @args')) `
+                    -Message 'Scoop PowerShell shim still executes the gateway inside the interactive pwsh process.'
 
                 $cmdShimPath = Join-Path $capsule 'scoop/shims/scoop.cmd'
                 ('@echo off' + [Environment]::NewLine + ('powershell -File "{0}\scoop\apps\scoop\current\bin\scoop.ps1" %*' -f $capsule)) |
@@ -192,6 +198,12 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                 Assert-CapsulenvBootstrapTest `
                     -Condition ($cmdShim.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"')) `
                     -Message 'Bootstrap did not normalize a stale absolute scoop.cmd to a relative launcher.'
+                Assert-CapsulenvBootstrapTest `
+                    -Condition ($cmdShim.Contains('set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"')) `
+                    -Message 'Scoop command gateway is not pinned to the Windows PowerShell control host.'
+                Assert-CapsulenvBootstrapTest `
+                    -Condition (-not $cmdShim.Contains('pwsh.exe')) `
+                    -Message 'Scoop command gateway must not bootstrap through portable pwsh.'
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not $cmdShim.Contains([System.IO.Path]::GetFullPath($capsule))) `
                     -Message 'Normalized scoop.cmd still captured the absolute capsule path.'

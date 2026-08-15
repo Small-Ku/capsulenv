@@ -51,41 +51,26 @@ Describe 'Capsulenv static and relocation' {
             -Message 'Generated module still contains merge markers.'
 
         $launcherSource = [System.IO.File]::ReadAllText((Join-Path $root 'capsulenv.cmd'))
-        $bootstrapOrder = @(
-            'call :FindScoopPwsh "%CAPSULENV_BOOTSTRAP_SCOOP_ROOT%"',
-            'call :FindScoopPwsh "%CAPSULENV_BOOTSTRAP_SCOOP_GLOBAL_ROOT%"',
+        foreach ($requiredControlHostBehavior in @(
+            'call :SelectWindowsPowerShell "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"',
+            'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectWindowsPowerShell "%%P"',
+            '$PSVersionTable.PSEdition -eq ''Desktop''',
+            '$PSVersionTable.PSVersion.Major -eq 5',
+            '"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass'
+        )) {
+            Assert-CapsulenvTest `
+                -Condition $launcherSource.Contains($requiredControlHostBehavior) `
+                -Message "Capsulenv control launcher is missing required Windows PowerShell behavior: $requiredControlHostBehavior"
+        }
+        foreach ($forbiddenControlHostBehavior in @(
+            'FindScoopPwsh',
             'where pwsh.exe',
-            '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe'
-        )
-        $previousBootstrapIndex = -1
-        foreach ($bootstrapStep in $bootstrapOrder) {
-            $bootstrapIndex = $launcherSource.IndexOf($bootstrapStep, [System.StringComparison]::OrdinalIgnoreCase)
-            Assert-CapsulenvTest `
-                -Condition ($bootstrapIndex -gt $previousBootstrapIndex) `
-                -Message "PowerShell bootstrap search order is missing or unsafe at: $bootstrapStep"
-            $previousBootstrapIndex = $bootstrapIndex
-        }
-        foreach ($requiredBootstrapBehavior in @(
-            'dir /b /ad /o-d',
-            'if /i not "%%D"=="current"',
-            'call :SelectPowerShell "%CAPSULENV_PWSH_APP_ROOT%\current\pwsh.exe"',
-            'call :SelectPowerShell "%~1\shims\pwsh.exe"',
-            'for /f "delims=" %%P in (''where pwsh.exe 2^>nul'') do call :SelectPowerShell "%%P"',
-            'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectPowerShell "%%P"',
-            '"%~1" -NoLogo -NoProfile -Command "exit 0" >nul 2>nul'
+            '\shims\pwsh.exe',
+            '\apps\pwsh\current\pwsh.exe'
         )) {
             Assert-CapsulenvTest `
-                -Condition $launcherSource.Contains($requiredBootstrapBehavior) `
-                -Message "PowerShell bootstrap resolver is missing required behavior: $requiredBootstrapBehavior"
-        }
-
-        foreach ($unsafeBootstrapBehavior in @(
-            'where pwsh.exe >nul 2>nul && set "CAPSULENV_POWERSHELL=pwsh.exe"',
-            'where powershell.exe >nul 2>nul && set "CAPSULENV_POWERSHELL=powershell.exe"'
-        )) {
-            Assert-CapsulenvTest `
-                -Condition (-not $launcherSource.Contains($unsafeBootstrapBehavior)) `
-                -Message "PowerShell bootstrap still trusts an unvalidated PATH shim: $unsafeBootstrapBehavior"
+                -Condition (-not $launcherSource.Contains($forbiddenControlHostBehavior)) `
+                -Message "Capsulenv control launcher must not depend on portable pwsh: $forbiddenControlHostBehavior"
         }
 
         $doctorSource = [System.IO.File]::ReadAllText(
@@ -107,11 +92,16 @@ Describe 'Capsulenv static and relocation' {
         Assert-CapsulenvTest `
             -Condition $environmentSource.Contains('Get-CapsulenvPowerShellChildLaunchPlan') `
             -Message 'Child PowerShell launch must be delegated to the mode-aware launch plan.'
+        Assert-CapsulenvTest `
+            -Condition $environmentSource.Contains('Get-CapsulenvInteractivePowerShellExecutable') `
+            -Message 'Interactive shell selection must be independent from the Windows PowerShell control host.'
         foreach ($requiredLaunchBehavior in @(
             "`$arguments.Add('-ExecutionPolicy')",
             "`$arguments.Add('Bypass')",
             "`$arguments.Add('-NoProfile')",
             'Get-CapsulenvPortablePowerShellProfilePaths',
+            'Get-CapsulenvInteractivePowerShellExecutable',
+            "Join-Path (Join-Path `$root 'apps') 'pwsh'",
             'CAPSULENV_PSREADLINE_HISTORY'
         )) {
             Assert-CapsulenvTest `
@@ -829,12 +819,19 @@ Describe 'Capsulenv static and relocation' {
 
             $installerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
             $installCmdSource = [System.IO.File]::ReadAllText((Join-Path $root 'install.cmd'))
+            foreach ($requiredInstallerControlHostBehavior in @(
+                'call :SelectWindowsPowerShell "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"',
+                'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectWindowsPowerShell "%%P"',
+                '$PSVersionTable.PSEdition -eq ''Desktop''',
+                '$PSVersionTable.PSVersion.Major -eq 5'
+            )) {
+                Assert-CapsulenvTest `
+                    -Condition $installCmdSource.Contains($requiredInstallerControlHostBehavior) `
+                    -Message "Installer is missing required Windows PowerShell control-host behavior: $requiredInstallerControlHostBehavior"
+            }
             Assert-CapsulenvTest `
-                -Condition $installCmdSource.Contains('for /f "delims=" %%P in (''where pwsh.exe 2^>nul'') do call :SelectPowerShell "%%P"') `
-                -Message 'Installer bootstrap must probe each PATH PowerShell candidate before selecting it.'
-            Assert-CapsulenvTest `
-                -Condition (-not $installCmdSource.Contains('where pwsh.exe >nul 2>nul && set "CAPSULENV_INSTALL_POWERSHELL=pwsh.exe"')) `
-                -Message 'Installer bootstrap must not trust a PATH pwsh shim merely because where.exe can find it.'
+                -Condition (-not $installCmdSource.Contains('pwsh.exe')) `
+                -Message 'Installer control plane must never bootstrap through pwsh.exe.'
 
             $invokeSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Invoke-Capsulenv.ps1'))
             Assert-CapsulenvTest `

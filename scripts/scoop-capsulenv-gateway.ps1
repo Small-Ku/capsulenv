@@ -29,10 +29,20 @@ if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
     exit 2
 }
 $path = Join-Path $env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-gateway.ps1'
+$windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
+    $fallback = Get-Command powershell.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $fallback) {
+        Write-Error 'Capsulenv Scoop gateway requires Windows PowerShell 5.1.'
+        exit 2
+    }
+    $windowsPowerShell = [string]$fallback.Source
+}
+$controlArguments = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $path) + @($args)
 if ($MyInvocation.ExpectingInput) {
-    $input | & $path @args
+    $input | & $windowsPowerShell @controlArguments
 } else {
-    & $path @args
+    & $windowsPowerShell @controlArguments
 }
 exit $LASTEXITCODE
 '@
@@ -47,12 +57,9 @@ if "%CAPSULENV_ROOT%"=="" (
   exit /b 2
 )
 set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"
-where pwsh.exe >nul 2>nul
-if not errorlevel 1 (
-    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*
-) else (
-    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*
-)
+set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%CAPSULENV_CONTROL_POWERSHELL%" set "CAPSULENV_CONTROL_POWERSHELL=powershell.exe"
+"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*
 exit /b %ERRORLEVEL%
 '@
     [System.IO.File]::WriteAllText($cmdPath, $cmdText, [System.Text.UTF8Encoding]::new($false))

@@ -50,8 +50,11 @@ function Invoke-CapsulenvScoopCommand {
     }
 
     Clear-CapsulenvLastExitCode
-    & $scoop @Arguments
+    $commandOutput = @(& $scoop @Arguments)
     $succeeded = $?
+    if ($commandOutput.Count -gt 0) {
+        $commandOutput | Out-Host
+    }
     $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
     if ($exitCode -ne 0 -and -not $AllowFailure) {
         throw "scoop $($Arguments -join ' ') failed with exit code $exitCode"
