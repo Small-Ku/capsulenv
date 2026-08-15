@@ -278,6 +278,9 @@ function Assert-CapsulenvConfiguration {
         if ($browser.ContainsKey('ExecutablePath') -and -not [string]::IsNullOrWhiteSpace([string]$browser.ExecutablePath)) {
             Assert-CapsulenvScoopIntegrationRelativePath -Name "Browsers.$browserName.ExecutablePath" -Path ([string]$browser.ExecutablePath)
         }
+        if ($browser.ContainsKey('DefaultExecutablePath') -and -not [string]::IsNullOrWhiteSpace([string]$browser.DefaultExecutablePath)) {
+            Assert-CapsulenvScoopIntegrationRelativePath -Name "Browsers.$browserName.DefaultExecutablePath" -Path ([string]$browser.DefaultExecutablePath)
+        }
         if ($browser.ContainsKey('Enabled') -and $browser.Enabled -isnot [bool]) {
             throw "Browsers.$browserName.Enabled must be Boolean."
         }

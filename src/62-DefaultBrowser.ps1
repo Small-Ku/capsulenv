@@ -324,7 +324,7 @@ function Install-CapsulenvDefaultBrowserRegistration {
     $definition = Get-CapsulenvBrowserDefinition -App $App
     $displayName = Get-CapsulenvBrowserDisplayName -App $App -Definition $definition
     $registration = Get-CapsulenvDefaultBrowserRegistration -App $App
-    $executable = Get-CapsulenvBrowserExecutable -App $App
+    $executable = Get-CapsulenvBrowserDefaultExecutable -App $App
     if ([string]::IsNullOrWhiteSpace([string]$executable) -or -not (Test-Path -LiteralPath $executable -PathType Leaf)) {
         throw "Cannot register $displayName as a User default-browser candidate because its capsule executable is missing."
     }

@@ -379,8 +379,12 @@ function Resolve-CapsulenvScoopAppRelativePath {
     ) {
         throw "Scoop app integration paths must remain relative to their owning app: $RelativePath"
     }
+    # Scoop manifests/configuration use Windows separators. Normalize both
+    # forms so the same resolver can also be tested on non-Windows hosts.
+    $separator = [string][System.IO.Path]::DirectorySeparatorChar
+    $hostRelativePath = $RelativePath.Replace('\', $separator).Replace('/', $separator)
     $rootPath = [System.IO.Path]::GetFullPath($Root).TrimEnd([char[]]'\\/')
-    $resolved = [System.IO.Path]::GetFullPath((Join-Path $rootPath $RelativePath))
+    $resolved = [System.IO.Path]::GetFullPath((Join-Path $rootPath $hostRelativePath))
     if (
         -not [System.StringComparer]::OrdinalIgnoreCase.Equals($resolved.TrimEnd([char[]]'\\/'), $rootPath) -and
         -not $resolved.StartsWith(
@@ -474,6 +478,98 @@ function Resolve-CapsulenvScoopAppPersistPath {
         throw "Configured persisted path is missing for '$($installed.Selector)': $target"
     }
     return $target
+}
+
+function Resolve-CapsulenvScoopAppRuntimePersistPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$App,
+        [AllowEmptyString()][string]$RelativePath = '',
+        [switch]$AllowMissing
+    )
+
+    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $persistedTarget = Resolve-CapsulenvScoopAppRelativePath -Root $installed.Persist -RelativePath $RelativePath
+    if (-not $AllowMissing -and -not (Test-Path -LiteralPath $persistedTarget)) {
+        throw "Configured persisted path is missing for '$($installed.Selector)': $persistedTarget"
+    }
+
+    # Runtime consumers should address a persisted item through the source path
+    # inside app/current when the installed manifest owns such a persist link.
+    # Scoop creates that source as the junction/hardlink that points at the
+    # persist store. Using the app-visible path keeps command lines identical to
+    # those emitted by the app's own launcher while the underlying data remains
+    # owned by scoop/persist.
+    $persistRecord = Get-CapsulenvInstalledManifestPropertyRecord -App $installed -Name 'persist'
+    $persistValue = $persistRecord.Value
+    if ($null -eq $persistValue) {
+        return $persistedTarget
+    }
+
+    $requested = ([string]$RelativePath).Replace('/', '\').Trim([char[]]'\')
+    $mappings = New-Object System.Collections.Generic.List[object]
+    $definitions = New-Object System.Collections.Generic.List[object]
+    if ($persistValue -is [string]) {
+        $definitions.Add([string]$persistValue)
+    } else {
+        foreach ($persistDefinition in $persistValue) {
+            $definitions.Add([object]$persistDefinition)
+        }
+    }
+    foreach ($definition in $definitions.ToArray()) {
+        if ($definition -is [string]) {
+            $source = [string]$definition
+            $target = [string]$definition
+        } else {
+            $parts = @($definition)
+            if ($parts.Count -lt 1 -or [string]::IsNullOrWhiteSpace([string]$parts[0])) {
+                continue
+            }
+            $source = [string]$parts[0]
+            $target = if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace([string]$parts[1])) {
+                [string]$parts[1]
+            } else {
+                [string]$parts[0]
+            }
+        }
+        $sourceNormalized = $source.Replace('/', '\').Trim([char[]]'\')
+        $targetNormalized = $target.Replace('/', '\').Trim([char[]]'\')
+        if ([string]::IsNullOrWhiteSpace($sourceNormalized) -or [string]::IsNullOrWhiteSpace($targetNormalized)) {
+            continue
+        }
+        $mappings.Add([pscustomobject]@{
+            Source = $sourceNormalized
+            Target = $targetNormalized
+        })
+    }
+
+    foreach ($mapping in @($mappings.ToArray() | Sort-Object { ([string]$_.Target).Length } -Descending)) {
+        $targetPrefix = [string]$mapping.Target
+        $matchesTarget = (
+            [System.StringComparer]::OrdinalIgnoreCase.Equals($requested, $targetPrefix) -or
+            $requested.StartsWith($targetPrefix + '\', [System.StringComparison]::OrdinalIgnoreCase)
+        )
+        if (-not $matchesTarget) {
+            continue
+        }
+        $remainder = if ($requested.Length -gt $targetPrefix.Length) {
+            $requested.Substring($targetPrefix.Length).TrimStart([char[]]'\')
+        } else {
+            ''
+        }
+        $runtimeRelative = if ([string]::IsNullOrWhiteSpace($remainder)) {
+            [string]$mapping.Source
+        } else {
+            ([string]$mapping.Source).TrimEnd([char[]]'\') + '\' + $remainder
+        }
+        $runtime = Resolve-CapsulenvScoopAppRelativePath -Root $installed.Current -RelativePath $runtimeRelative
+        if ($AllowMissing -or (Test-Path -LiteralPath $runtime)) {
+            return $runtime
+        }
+        throw "Configured persisted runtime path is missing for '$($installed.Selector)': $runtime"
+    }
+
+    return $persistedTarget
 }
 
 function Test-CapsulenvScoopAppOwnsPath {

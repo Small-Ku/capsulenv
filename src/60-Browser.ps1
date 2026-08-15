@@ -77,6 +77,22 @@ function Get-CapsulenvBrowserExecutable {
     return Resolve-CapsulenvScoopAppExecutable @parameters
 }
 
+function Get-CapsulenvBrowserDefaultExecutable {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$App)
+
+    $definition = Get-CapsulenvBrowserDefinition -App $App
+    if (
+        $definition.ContainsKey('DefaultExecutablePath') -and
+        -not [string]::IsNullOrWhiteSpace([string]$definition.DefaultExecutablePath)
+    ) {
+        return Resolve-CapsulenvScoopAppExecutable `
+            -App $App `
+            -RelativePath ([string]$definition.DefaultExecutablePath)
+    }
+    return Get-CapsulenvBrowserExecutable -App $App
+}
+
 function Get-CapsulenvHostBrowserExecutable {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
@@ -147,7 +163,7 @@ function Get-CapsulenvBrowserProfilePath {
     ) {
         throw "Gecko browser integration for '$App' must declare ProfilePath relative to the Scoop app persist root."
     }
-    $profile = Resolve-CapsulenvScoopAppPersistPath `
+    $profile = Resolve-CapsulenvScoopAppRuntimePersistPath `
         -App $App `
         -RelativePath ([string]$definition.ProfilePath) `
         -AllowMissing
@@ -301,4 +317,4 @@ function Invoke-CapsulenvBrowserCommand {
     Start-CapsulenvBrowser -App $App -Arguments $remaining -UseHostExecutable:$useHost
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Start-CapsulenvBrowser, Get-CapsulenvBrowserExecutable, Get-CapsulenvHostBrowserExecutable, Get-CapsulenvBrowserProfilePath
+##MOD_EXEC## Export-ModuleMember -Function Start-CapsulenvBrowser, Get-CapsulenvBrowserExecutable, Get-CapsulenvBrowserDefaultExecutable, Get-CapsulenvHostBrowserExecutable, Get-CapsulenvBrowserProfilePath

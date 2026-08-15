@@ -68,6 +68,44 @@ Describe 'Capsulenv Gecko browser launch contracts' {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
+    It 'uses the manifest launcher for LibreWolf interactive launch but the inner Gecko executable for default delegation' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-librewolf-entrypoints-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $current = Join-Path $temporaryRoot 'scoop/apps/librewolf/current'
+            $persist = Join-Path $temporaryRoot 'scoop/persist/librewolf'
+            [void](New-Item -ItemType Directory -Path (Join-Path $current 'LibreWolf') -Force)
+            [void](New-Item -ItemType Directory -Path (Join-Path $current 'Profiles/Default') -Force)
+            [void](New-Item -ItemType Directory -Path (Join-Path $persist 'Profiles/Default') -Force)
+            '' | Set-Content -LiteralPath (Join-Path $current 'LibreWolf-Portable.exe') -Encoding UTF8
+            '' | Set-Content -LiteralPath (Join-Path $current 'LibreWolf/librewolf.exe') -Encoding UTF8
+            '{"version":"1.0","bin":[["LibreWolf-Portable.exe","librewolf"]],"shortcuts":[["LibreWolf-Portable.exe","LibreWolf"]],"persist":"Profiles"}' |
+                Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
+            '{"architecture":"64bit","bucket":"extras"}' |
+                Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+
+            $resolved = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+                [pscustomobject]@{
+                    Interactive = Get-CapsulenvBrowserExecutable -App librewolf
+                    Default = Get-CapsulenvBrowserDefaultExecutable -App librewolf
+                    Profile = Get-CapsulenvBrowserProfilePath -App librewolf
+                }
+            } $temporaryRoot
+
+            $resolved.Interactive | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'LibreWolf-Portable.exe')))
+            $resolved.Default | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'LibreWolf/librewolf.exe')))
+            $resolved.Profile | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'Profiles/Default')))
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
     It 'resolves an explicit same-product host executable without relaxing capsule executable lookup' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-browser-host-' + [Guid]::NewGuid().ToString('N'))
         try {
@@ -161,7 +199,7 @@ Describe 'Capsulenv User default-browser integration' {
             Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
             Mock Get-CapsulenvIdentity { '11111111-2222-3333-4444-555555555555' } -ModuleName Capsulenv
             Mock Get-CapsulenvHostIntegrationKey { 'host-key' } -ModuleName Capsulenv
-            Mock Get-CapsulenvBrowserExecutable { $executable } -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserDefaultExecutable { $executable } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserProfilePath { $profile } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile'; DisplayName = 'LibreWolf' } } -ModuleName Capsulenv
             Mock Get-CapsulenvDefaultBrowserState { $null } -ModuleName Capsulenv
@@ -240,7 +278,7 @@ Describe 'Capsulenv User default-browser integration' {
 
             Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
             Mock Get-CapsulenvIdentity { '11111111-2222-3333-4444-555555555555' } -ModuleName Capsulenv
-            Mock Get-CapsulenvBrowserExecutable { $executable } -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserDefaultExecutable { $executable } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserProfilePath { $profile } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile'; DisplayName = 'LibreWolf' } } -ModuleName Capsulenv
             Mock Get-CapsulenvDefaultBrowserState { $legacyState } -ModuleName Capsulenv

@@ -313,7 +313,8 @@
             Enabled = $true
             App = 'librewolf'
             DisplayName = 'LibreWolf'
-            ExecutablePath = 'LibreWolf\librewolf.exe'
+            BinName = 'librewolf'
+            DefaultExecutablePath = 'LibreWolf\librewolf.exe'
             ProfilePath = 'Profiles\Default'
             ProfileArgument = '-profile'
             ShellOnlyArguments = @('-no-remote')

@@ -233,6 +233,68 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
         }
     }
 
+    It 'resolves a persisted runtime path through the app-visible current link declared by the installed manifest' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-runtime-persist-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $current = Join-Path $temporaryRoot 'scoop/apps/demo/current'
+            $persist = Join-Path $temporaryRoot 'scoop/persist/demo'
+            [void](New-Item -ItemType Directory -Path (Join-Path $current 'Profiles/Default') -Force)
+            [void](New-Item -ItemType Directory -Path (Join-Path $persist 'Profiles/Default') -Force)
+            '{"version":"1.0","persist":"Profiles"}' |
+                Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
+            '{"architecture":"64bit"}' |
+                Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+            } $temporaryRoot
+
+            Resolve-CapsulenvScoopAppPersistPath -App demo -RelativePath 'Profiles\Default' |
+                Should -Be ([System.IO.Path]::GetFullPath((Join-Path $persist 'Profiles/Default')))
+            & $script:Module {
+                Resolve-CapsulenvScoopAppRuntimePersistPath -App demo -RelativePath 'Profiles\Default'
+            } | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'Profiles/Default')))
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
+    It 'maps a renamed persist target back to its manifest source path for runtime use' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-runtime-persist-map-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            $current = Join-Path $temporaryRoot 'scoop/apps/demo/current'
+            $persist = Join-Path $temporaryRoot 'scoop/persist/demo'
+            [void](New-Item -ItemType Directory -Path (Join-Path $current 'PortableProfiles/Default') -Force)
+            [void](New-Item -ItemType Directory -Path (Join-Path $persist 'Profiles/Default') -Force)
+            '{"version":"1.0","persist":[["PortableProfiles","Profiles"]]}' |
+                Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
+            '{"architecture":"64bit"}' |
+                Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+            } $temporaryRoot
+
+            & $script:Module {
+                Resolve-CapsulenvScoopAppRuntimePersistPath -App demo -RelativePath 'Profiles\Default'
+            } | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'PortableProfiles/Default')))
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
     It 'requires an explicit scope when the same app exists in user and global roots' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-app-scope-' + [Guid]::NewGuid().ToString('N'))
         try {
