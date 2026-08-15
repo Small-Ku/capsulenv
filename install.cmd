@@ -6,7 +6,7 @@ set "CAPSULENV_INSTALL_POWERSHELL="
 call :FindScoopPwsh "%CAPSULENV_SOURCE_ROOT%\scoop"
 if not defined CAPSULENV_INSTALL_POWERSHELL call :FindScoopPwsh "%CAPSULENV_SOURCE_ROOT%\scoop-global"
 if not defined CAPSULENV_INSTALL_POWERSHELL (
-    where pwsh.exe >nul 2>nul && set "CAPSULENV_INSTALL_POWERSHELL=pwsh.exe"
+    for /f "delims=" %%P in ('where pwsh.exe 2^>nul') do call :SelectPowerShell "%%P"
 )
 if not defined CAPSULENV_INSTALL_POWERSHELL if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" set "CAPSULENV_INSTALL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not defined CAPSULENV_INSTALL_POWERSHELL (

@@ -70,11 +70,22 @@ Describe 'Capsulenv static and relocation' {
             'if /i not "%%D"=="current"',
             'call :SelectPowerShell "%CAPSULENV_PWSH_APP_ROOT%\current\pwsh.exe"',
             'call :SelectPowerShell "%~1\shims\pwsh.exe"',
+            'for /f "delims=" %%P in (''where pwsh.exe 2^>nul'') do call :SelectPowerShell "%%P"',
+            'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectPowerShell "%%P"',
             '"%~1" -NoLogo -NoProfile -Command "exit 0" >nul 2>nul'
         )) {
             Assert-CapsulenvTest `
                 -Condition $launcherSource.Contains($requiredBootstrapBehavior) `
                 -Message "PowerShell bootstrap resolver is missing required behavior: $requiredBootstrapBehavior"
+        }
+
+        foreach ($unsafeBootstrapBehavior in @(
+            'where pwsh.exe >nul 2>nul && set "CAPSULENV_POWERSHELL=pwsh.exe"',
+            'where powershell.exe >nul 2>nul && set "CAPSULENV_POWERSHELL=powershell.exe"'
+        )) {
+            Assert-CapsulenvTest `
+                -Condition (-not $launcherSource.Contains($unsafeBootstrapBehavior)) `
+                -Message "PowerShell bootstrap still trusts an unvalidated PATH shim: $unsafeBootstrapBehavior"
         }
 
         $doctorSource = [System.IO.File]::ReadAllText(
@@ -809,6 +820,14 @@ Describe 'Capsulenv static and relocation' {
                 -Message 'Installer update changed mutable workspace data.'
 
             $installerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
+            $installCmdSource = [System.IO.File]::ReadAllText((Join-Path $root 'install.cmd'))
+            Assert-CapsulenvTest `
+                -Condition $installCmdSource.Contains('for /f "delims=" %%P in (''where pwsh.exe 2^>nul'') do call :SelectPowerShell "%%P"') `
+                -Message 'Installer bootstrap must probe each PATH PowerShell candidate before selecting it.'
+            Assert-CapsulenvTest `
+                -Condition (-not $installCmdSource.Contains('where pwsh.exe >nul 2>nul && set "CAPSULENV_INSTALL_POWERSHELL=pwsh.exe"')) `
+                -Message 'Installer bootstrap must not trust a PATH pwsh shim merely because where.exe can find it.'
+
             $invokeSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Invoke-Capsulenv.ps1'))
             Assert-CapsulenvTest `
                 -Condition $invokeSource.Contains('Import-Module $modulePath -Force -DisableNameChecking') `

@@ -11,11 +11,11 @@ set "CAPSULENV_POWERSHELL="
 call :FindScoopPwsh "%CAPSULENV_BOOTSTRAP_SCOOP_ROOT%"
 if not defined CAPSULENV_POWERSHELL call :FindScoopPwsh "%CAPSULENV_BOOTSTRAP_SCOOP_GLOBAL_ROOT%"
 if not defined CAPSULENV_POWERSHELL (
-    where pwsh.exe >nul 2>nul && set "CAPSULENV_POWERSHELL=pwsh.exe"
+    for /f "delims=" %%P in ('where pwsh.exe 2^>nul') do call :SelectPowerShell "%%P"
 )
 if not defined CAPSULENV_POWERSHELL if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" set "CAPSULENV_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not defined CAPSULENV_POWERSHELL (
-    where powershell.exe >nul 2>nul && set "CAPSULENV_POWERSHELL=powershell.exe"
+    for /f "delims=" %%P in ('where powershell.exe 2^>nul') do call :SelectPowerShell "%%P"
 )
 
 if not defined CAPSULENV_POWERSHELL (

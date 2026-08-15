@@ -34,6 +34,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-Capsulenv.ps
 
 從 source checkout 執行時，installer 先在 temporary directory 呼叫 builder 產生新 runtime；從 prebuilt bundle 執行時，直接驗證 `.capsulenv-runtime.json` schema 2／`ManagedFiles` 並以該 bundle 作 payload，不需要 `src/` 或 build script。Destination 不可等於、位於 installer source 內或成為其 ancestor。
 
+`install.cmd` 的 bootstrap 不信任 PATH 上僅能被 `where.exe` 找到的 `pwsh.exe`：source-local Scoop candidates 與每個 PATH candidate 都必須實際以 `-NoProfile -Command "exit 0"` 成功啟動後才可選用。這使先前 capsule 搬動 drive letter 後殘留的 Scoop shim（例如仍指向舊 `E:\capenv`）不會阻止從另一個 source tree 更新到目前 destination；無可用 PowerShell 7 時才回退到 Windows PowerShell 5.1。
+
 兩條路徑最後都以 `.capsulenv-install.json` 的 `ManagedFiles` 作 update boundary。舊 managed files 會先備份，新增/替換採 temporary-file replacement；若 mutation 階段失敗，installer 逆序還原已記錄的 managed files/marker。成功後 installer 會印出 installed/updated destination 與下一個 `capsulenv.cmd` command。
 
 Installer 不接管 mutable/user data。以下典型內容跨 update 保留：
