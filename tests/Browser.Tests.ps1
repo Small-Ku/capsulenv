@@ -178,6 +178,11 @@ Describe 'Capsulenv User default-browser integration' {
                 $SubKey -like '*\URLAssociations' -and $Name -eq 'https' -and $Value -eq $registration.UrlProgId
             }
             Should -Invoke Set-CapsulenvCurrentUserRegistryStringValue -ModuleName Capsulenv -Times 1 -ParameterFilter {
+                $SubKey -eq $registration.CapabilitiesPath -and
+                $Name -eq 'ApplicationName' -and
+                $Value -eq $registration.RegisteredName
+            }
+            Should -Invoke Set-CapsulenvCurrentUserRegistryStringValue -ModuleName Capsulenv -Times 1 -ParameterFilter {
                 $SubKey -eq ($registration.UrlClassPath + '\shell\open\command') -and
                 $Name -eq '' -and
                 $Value -like ('*' + $executable + '*') -and

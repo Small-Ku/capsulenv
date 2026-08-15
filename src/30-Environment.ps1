@@ -710,7 +710,10 @@ function Enter-CapsulenvUserShell {
     # currently integrated, refresh that host's reversible backup before takeover.
     $refreshBackup = ((Get-CapsulenvInstallMode) -ne 'User')
     Install-CapsulenvUserEnvironment -Force:$Force -RefreshBackup:$refreshBackup
-    Invoke-CapsulenvChildShell
+    # Install-CapsulenvUserEnvironment already synchronized persistent User
+    # integrations, including the configured default browser. Do not immediately
+    # repeat the prompt while entering the child shell.
+    Invoke-CapsulenvChildShell -SkipUserIntegrationSync
 }
 
 function Enable-CapsulenvUserEnvironment {
@@ -758,10 +761,20 @@ function Restore-CapsulenvUserEnvironment {
 
 function Invoke-CapsulenvChildShell {
     [CmdletBinding()]
-    param([string]$Command)
+    param(
+        [string]$Command,
+        [switch]$SkipUserIntegrationSync
+    )
 
     [void](Set-CapsulenvSessionEnvironment)
     Initialize-CapsulenvIntegrations
+    if (-not $SkipUserIntegrationSync -and (Get-CapsulenvInstallMode) -eq 'User') {
+        # A normal `capsulenv.cmd` activation must observe persistent User
+        # integration config changes too. Previously DefaultBrowser was parsed
+        # and validated here but only synchronized by install-user/user-shell,
+        # which made changing it on an already-integrated host look like a no-op.
+        Sync-CapsulenvConfiguredDefaultBrowser
+    }
 
     $shellPath = Get-CapsulenvInteractivePowerShellExecutable
     $launchPlan = Get-CapsulenvPowerShellChildLaunchPlan `

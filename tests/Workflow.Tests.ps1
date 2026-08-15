@@ -128,6 +128,28 @@ Describe 'Capsulenv portable workflow contracts' {
         $lifecycleSource | Should -Not -Match 'Restore-CapsulenvUserEnvironment\s*(-|\()'
     }
 
+    It 'synchronizes configured persistent browser integration on ordinary User shell activation only once' {
+        Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
+        Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
+        Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
+        Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
+        Mock Get-CapsulenvPowerShellChildLaunchPlan {
+            [pscustomobject]@{ ShellPath = 'Write-Output'; Arguments = @('capsulenv-child') }
+        } -ModuleName Capsulenv
+        Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
+
+        & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+
+        & $script:Module { Invoke-CapsulenvChildShell -SkipUserIntegrationSync } | Out-Null
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+
+        Mock Get-CapsulenvInstallMode { 'ShellOnly' } -ModuleName Capsulenv
+        & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+    }
+
     It 'blocks eject while capsule-owned processes remain' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-eject-' + [Guid]::NewGuid().ToString('N'))
         try {

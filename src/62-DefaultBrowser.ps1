@@ -377,7 +377,12 @@ function Install-CapsulenvDefaultBrowserRegistration {
     Set-CapsulenvCurrentUserRegistryStringValue -SubKey $registration.ClientPath -Name '' -Value $registration.DisplayName
     Set-CapsulenvCurrentUserRegistryStringValue -SubKey ($registration.ClientPath + '\DefaultIcon') -Name '' -Value $icon
     Set-CapsulenvCurrentUserRegistryStringValue -SubKey ($registration.ClientPath + '\shell\open\command') -Name '' -Value $urlCommand
-    Set-CapsulenvCurrentUserRegistryStringValue -SubKey $registration.CapabilitiesPath -Name 'ApplicationName' -Value $registration.DisplayName
+    # Windows uses the named value under RegisteredApplications as the
+    # application identity for Default Apps deep links. Keep ApplicationName
+    # byte-for-byte aligned with that registered name; using a prettier display
+    # label here can leave the application registered but make
+    # `registeredAppUser=` fail to resolve it in Settings.
+    Set-CapsulenvCurrentUserRegistryStringValue -SubKey $registration.CapabilitiesPath -Name 'ApplicationName' -Value $registration.RegisteredName
     Set-CapsulenvCurrentUserRegistryStringValue -SubKey $registration.CapabilitiesPath -Name 'ApplicationDescription' -Value ("Portable $displayName managed by Capsulenv User integration.")
     Set-CapsulenvCurrentUserRegistryStringValue -SubKey $registration.CapabilitiesPath -Name 'ApplicationIcon' -Value $icon
     foreach ($protocol in @('http', 'https')) {
