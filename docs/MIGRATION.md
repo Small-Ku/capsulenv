@@ -133,7 +133,7 @@ v0.15 把 browser、Bitwarden、sing-box，以及 Scoop-installed uv/Pixi 的 ex
 }
 ```
 
-若 local config 曾覆寫 `Bitwarden.ExecutableCandidates`，改為 `Bitwarden.App`，並按需要指定 `ShortcutName`／`BinName`／`ExecutablePath`；persisted `data.json` 仍留在該 Scoop app 的 persist root，不要搬到 Capsulenv 自建資料夾。自訂 Gecko manifest 則加入一個 `Browsers` entry，至少指定 `App`、`ProfilePath`、`ProfileArgument`，executable 可由 manifest 唯一 `bin` 自動解出或以 `BinName`／`ExecutablePath` 消歧。
+若 local config 曾覆寫 `Bitwarden.ExecutableCandidates`，改為 `Bitwarden.App`，並按需要指定 `ShortcutName`／`BinName`／`ExecutablePath`；persisted `data.json` 仍留在該 Scoop app 的 persist root，不要搬到 Capsulenv 自建資料夾。自訂 Gecko manifest 則加入一個 `Browsers` entry，至少指定 `App`、`ProfilePath`、`ProfileArgument`，interactive executable 可由 manifest 唯一 `bin` 自動解出或以 `BinName`／`ExecutablePath` 消歧。只有當 manifest 公開的是不適合 Windows running-instance URL delegation 的 portable wrapper 時，才另設 app-relative `DefaultExecutablePath`；profile storage 仍不另建副本。
 
 `Scoop.ReplayHooks`、`Scoop.RelocationRepairs` 與 reset 現在也接受 `user/<app>`／`global/<app>`。只有在同名 app 同時存在兩個 root 或 rule 本身必須精確限制 scope 時才需要加 prefix；無 scope 的既有設定仍保留原有語義。
 
