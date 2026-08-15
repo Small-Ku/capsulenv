@@ -64,6 +64,7 @@ function Reset-CapsulenvScoop {
     param(
         [string[]]$Apps = @('*'),
         [switch]$Quiet,
+        [switch]$DeferRunningApps,
         [ValidateSet('ShellOnly', 'User')]
         [string]$IntegrationMode = (Get-CapsulenvInstallMode)
     )
@@ -79,8 +80,7 @@ function Reset-CapsulenvScoop {
     if (-not $Quiet) {
         Write-CapsulenvMessage -Level Info -Message 'Rebuilding Scoop current links, shims, shortcuts, environment entries, and persist links for the installed user...'
     }
-    Invoke-CapsulenvUserScoopReset -Apps $Apps
-    return $true
+    return [bool](Invoke-CapsulenvUserScoopReset -Apps $Apps -DeferRunningApps:$DeferRunningApps)
 }
 
 function Get-CapsulenvScoopReplayScriptPath {
@@ -162,15 +162,30 @@ function Invoke-CapsulenvPortableScoopReset {
 
 function Invoke-CapsulenvUserScoopReset {
     [CmdletBinding()]
-    param([string[]]$Apps = @('*'))
+    param(
+        [string[]]$Apps = @('*'),
+        [switch]$DeferRunningApps
+    )
 
     [void](Set-CapsulenvSessionEnvironment)
     $temporaryCommand = Install-CapsulenvTemporaryScoopCommand `
         -Source (Get-CapsulenvScoopUserResetScriptPath) `
         -Prefix 'user-reset'
     try {
-        $arguments = @($temporaryCommand.Command) + @($Apps)
-        [void](Invoke-CapsulenvScoopCommand -Arguments $arguments)
+        $arguments = @($temporaryCommand.Command)
+        if ($DeferRunningApps) {
+            $arguments += '-DeferRunningApps'
+        }
+        $arguments += @($Apps)
+        $exitCode = Invoke-CapsulenvScoopCommand -Arguments $arguments -AllowFailure
+        if ($exitCode -eq 0) {
+            return $true
+        }
+        if ($exitCode -eq 2) {
+            Write-CapsulenvMessage -Level Warning -Message 'One or more running Scoop apps deferred their User reset; Capsulenv will retry automatically after they exit.'
+            return $false
+        }
+        throw "scoop $($arguments -join ' ') failed with exit code $exitCode"
     } finally {
         if (Test-Path -LiteralPath $temporaryCommand.Path -PathType Leaf) {
             Remove-Item -LiteralPath $temporaryCommand.Path -Force
@@ -267,6 +282,10 @@ function Test-CapsulenvScoopRehydrationRequired {
     } catch {
         return $true
     }
+    $pendingResetProperty = $saved.PSObject.Properties['PendingScoopReset']
+    if ($null -ne $pendingResetProperty -and [bool]$pendingResetProperty.Value) {
+        return $true
+    }
     $current = Get-CapsulenvRelocationFingerprint
     foreach ($name in @('CapsuleId', 'Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
         $property = $saved.PSObject.Properties[$name]
@@ -304,14 +323,16 @@ function Save-CapsulenvRehydrationState {
     [CmdletBinding()]
     param(
         $RelocationContext,
-        $PersistRepairResult
+        $PersistRepairResult,
+        [bool]$PendingScoopReset = $false
     )
 
     $statePath = Get-CapsulenvRehydrationStatePath
     $stateDirectory = Split-Path -Parent $statePath
     [void](New-Item -ItemType Directory -Path $stateDirectory -Force)
     $state = Get-CapsulenvRelocationFingerprint
-    $state.Insert(0, 'SchemaVersion', 2)
+    $state.Insert(0, 'SchemaVersion', 3)
+    $state['PendingScoopReset'] = $PendingScoopReset
     $state['CompletedAtUtc'] = [DateTime]::UtcNow.ToString('o')
     if ($null -ne $RelocationContext -and $RelocationContext.HasPathChanges) {
         $state['LastRelocation'] = [ordered]@{
@@ -406,7 +427,9 @@ function Invoke-CapsulenvScoopRehydrate {
             -Names (@($environmentPlan.Variables.Keys) + @('PATH', $scoopPathEnvironmentVariable))
     }
     Assert-CapsulenvGlobalScoopResetAccess
-    [void](Reset-CapsulenvScoop -IntegrationMode $IntegrationMode)
+    $scoopResetComplete = [bool](Reset-CapsulenvScoop `
+        -IntegrationMode $IntegrationMode `
+        -DeferRunningApps:($IntegrationMode -eq 'User'))
     if (-not $SkipHooks -and $IntegrationMode -eq 'User') {
         Invoke-CapsulenvConfiguredHookReplay
     } elseif (-not $SkipHooks -and $IntegrationMode -eq 'ShellOnly') {
@@ -436,8 +459,15 @@ function Invoke-CapsulenvScoopRehydrate {
     if ($IntegrationMode -eq 'User') {
         [void](Sync-CapsulenvUserEnvironment -RelocationContext $relocationContext)
     }
-    Save-CapsulenvRehydrationState -RelocationContext $relocationContext -PersistRepairResult $repairResult
-    Write-CapsulenvMessage -Level Success -Message "Portable Scoop rehydration completed in $IntegrationMode mode."
+    Save-CapsulenvRehydrationState `
+        -RelocationContext $relocationContext `
+        -PersistRepairResult $repairResult `
+        -PendingScoopReset:(-not $scoopResetComplete)
+    if ($scoopResetComplete) {
+        Write-CapsulenvMessage -Level Success -Message "Portable Scoop rehydration completed in $IntegrationMode mode."
+    } else {
+        Write-CapsulenvMessage -Level Warning -Message "Portable Scoop rehydration completed in $IntegrationMode mode with a deferred app reset; it will be retried automatically."
+    }
 }
 
 function Find-CapsulenvExecutable {

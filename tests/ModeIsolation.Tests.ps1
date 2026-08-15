@@ -39,10 +39,14 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ResetGuardSource | Should -Match '\$_.Id -ne \$PID'
         $script:ResetGuardSource | Should -Match 'test_running_process \$App \$Global'
         $script:UserResetSource | Should -Match 'Test-CapsulenvResetHasBlockingProcesses'
+        $script:UserResetSource | Should -Match 'if \(\$DeferRunningApps\)'
+        $script:UserResetSource | Should -Match '\$deferred = \$true'
+        $script:UserResetSource | Should -Match 'if \(\$deferred\) \{ exit 2 \}'
         $script:UserResetSource | Should -Match 'create_startmenu_shortcuts'
         $script:UserResetSource | Should -Match 'env_add_path'
         $script:UserResetSource | Should -Match 'env_set'
         $script:ScoopSource | Should -Match 'Invoke-CapsulenvUserScoopReset'
+        $script:ScoopSource | Should -Match '-DeferRunningApps:\(\$IntegrationMode -eq ''User''\)'
         $script:ScoopSource | Should -Match "IntegrationMode -eq 'ShellOnly'"
         $script:ScoopSource | Should -Match 'Invoke-CapsulenvPortableScoopReset'
         $script:ScoopSource | Should -Match "IntegrationMode -eq 'User'"

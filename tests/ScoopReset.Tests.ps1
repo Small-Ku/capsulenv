@@ -12,7 +12,7 @@ Describe 'Capsulenv Scoop reset mode dispatch' {
 
     It 'uses the self-host-safe User reset helper instead of native scoop reset' {
         Mock Invoke-CapsulenvPortableScoopReset {} -ModuleName Capsulenv
-        Mock Invoke-CapsulenvUserScoopReset {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvUserScoopReset { $true } -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { throw 'native scoop command must not be used for User reset' } -ModuleName Capsulenv
 
         Reset-CapsulenvScoop -Apps @('*') -IntegrationMode User -Quiet | Should -BeTrue
@@ -20,6 +20,40 @@ Describe 'Capsulenv Scoop reset mode dispatch' {
         Should -Invoke Invoke-CapsulenvUserScoopReset -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Invoke-CapsulenvPortableScoopReset -ModuleName Capsulenv -Times 0 -Exactly
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
+
+    It 'keeps a deferred running app non-fatal and reports the User reset as incomplete' {
+        Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
+        Mock Get-CapsulenvScoopUserResetScriptPath { 'mock-user-reset.ps1' } -ModuleName Capsulenv
+        Mock Install-CapsulenvTemporaryScoopCommand {
+            [pscustomobject]@{ Command = 'capsulenv-user-reset-test'; Path = (Join-Path $TestDrive 'temporary-reset.ps1') }
+        } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvScoopCommand { 2 } -ModuleName Capsulenv
+        Mock Test-Path { $false } -ModuleName Capsulenv
+
+        $result = & (Get-Module Capsulenv) { Invoke-CapsulenvUserScoopReset -Apps @('*') -DeferRunningApps }
+
+        $result | Should -BeFalse
+        Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $AllowFailure -and $Arguments -contains '-DeferRunningApps'
+        }
+    }
+
+    It 'keeps explicit User reset strict when deferred mode is not requested' {
+        Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
+        Mock Get-CapsulenvScoopUserResetScriptPath { 'mock-user-reset.ps1' } -ModuleName Capsulenv
+        Mock Install-CapsulenvTemporaryScoopCommand {
+            [pscustomobject]@{ Command = 'capsulenv-user-reset-test'; Path = (Join-Path $TestDrive 'temporary-reset.ps1') }
+        } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvScoopCommand { 1 } -ModuleName Capsulenv
+        Mock Test-Path { $false } -ModuleName Capsulenv
+
+        { & (Get-Module Capsulenv) { Invoke-CapsulenvUserScoopReset -Apps @('librewolf') } } |
+            Should -Throw '*failed with exit code 1*'
+        Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $AllowFailure -and $Arguments -notcontains '-DeferRunningApps'
+        }
     }
 
     It 'keeps ShellOnly on the non-persistent portable reset helper' {

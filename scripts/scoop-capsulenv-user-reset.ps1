@@ -1,6 +1,7 @@
 # Summary: Rebuild Scoop-owned links and explicit current-user integration without self-deadlocking on the Capsulenv host process.
 [CmdletBinding()]
 param(
+    [switch]$DeferRunningApps,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$Apps = @('*')
 )
@@ -31,6 +32,7 @@ if ($requested.Count -eq 0 -or $requested -contains '*') {
 }
 
 $failed = $false
+$deferred = $false
 foreach ($entry in $requested) {
     $global = $null
     $requestedApp = $entry
@@ -64,7 +66,12 @@ foreach ($entry in $requested) {
         continue
     }
     if (Test-CapsulenvResetHasBlockingProcesses -App $app -Global $global) {
-        $failed = $true
+        if ($DeferRunningApps) {
+            Write-Warning "Deferring user reset for '$app' until its running processes have exited."
+            $deferred = $true
+        } else {
+            $failed = $true
+        }
         continue
     }
 
@@ -100,4 +107,5 @@ foreach ($entry in $requested) {
 }
 
 if ($failed) { exit 1 }
+if ($deferred) { exit 2 }
 exit 0

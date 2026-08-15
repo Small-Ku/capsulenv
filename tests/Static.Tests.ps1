@@ -390,12 +390,20 @@ Describe 'Capsulenv static and relocation' {
                 Get-Content -LiteralPath (Get-CapsulenvRehydrationStatePath) -Raw | ConvertFrom-Json
             }
             Assert-CapsulenvTest `
-                -Condition ([int]$savedState.SchemaVersion -eq 2) `
+                -Condition ([int]$savedState.SchemaVersion -eq 3) `
                 -Message 'Rehydration state must support replacing an existing state file atomically.'
             $rehydrationRollbacks = @(Get-ChildItem -LiteralPath (Join-Path $tempRoot '.capsulenv') -Filter '.capsulenv-rehydration-*.rollback' -ErrorAction SilentlyContinue)
             Assert-CapsulenvTest `
                 -Condition ($rehydrationRollbacks.Count -eq 0) `
                 -Message 'Successful rehydration state replacement must not leave rollback files behind.'
+
+            $pendingRehydration = & $module {
+                Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null -PendingScoopReset $true
+                Test-CapsulenvScoopRehydrationRequired
+            }
+            Assert-CapsulenvTest `
+                -Condition $pendingRehydration `
+                -Message 'A deferred User-mode Scoop reset must keep rehydration pending for the next activation.'
         } finally {
             & $module { param($OriginalRoot) [void](Initialize-CapsulenvContext -Root $OriginalRoot) } $root
             if (Test-Path -LiteralPath $tempRoot) {
