@@ -51,7 +51,49 @@ $global:LASTEXITCODE = 0
 
         $result | Should -BeFalse
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $AllowFailure -and $Arguments -contains '-DeferRunningApps'
+            $AllowFailure -and $Arguments -contains ':defer' -and $Arguments -notcontains '-DeferRunningApps'
+        }
+    }
+
+
+    It 'keeps deferred mode intact through Scoop-style string-array dispatch' {
+        $fakeRoot = Join-Path $TestDrive 'dispatch-root'
+        $fakeScoop = Join-Path $fakeRoot 'scoop'
+        $fakeShims = Join-Path $fakeScoop 'shims'
+        $fakeLib = Join-Path $fakeScoop 'apps/scoop/current/lib'
+        $fakeScripts = Join-Path $fakeRoot 'scripts'
+        New-Item -ItemType Directory -Path $fakeShims, $fakeLib, $fakeScripts -Force | Out-Null
+
+        @'
+function installed_apps($global) { if (-not $global) { 'librewolf' } }
+function parse_app($requested) { @($requested, $null, $null) }
+function installed($app, $global) { return (-not $global -and $app -eq 'librewolf') }
+function Select-CurrentVersion { '1.0' }
+function installed_manifest { [pscustomobject]@{} }
+function install_info { [pscustomobject]@{ architecture = '64bit' } }
+function is_admin { $false }
+'@ | Set-Content -LiteralPath (Join-Path $fakeLib 'manifest.ps1') -Encoding UTF8
+        foreach ($name in @('system.ps1', 'install.ps1', 'versions.ps1', 'shortcuts.ps1')) {
+            Set-Content -LiteralPath (Join-Path $fakeLib $name) -Value '' -Encoding UTF8
+        }
+        @'
+function Test-CapsulenvResetHasBlockingProcesses {
+    param([string]$App, [bool]$Global)
+    return $true
+}
+'@ | Set-Content -LiteralPath (Join-Path $fakeScripts 'scoop-capsulenv-process-guard.ps1') -Encoding UTF8
+
+        $helper = Join-Path $fakeShims 'scoop-capsulenv-user-reset-test.ps1'
+        Copy-Item -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-user-reset.ps1') -Destination $helper
+        $oldRoot = $env:CAPSULENV_ROOT
+        try {
+            $env:CAPSULENV_ROOT = $fakeRoot
+            Remove-Variable LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+            [string[]]$dispatchArguments = @(':defer', 'librewolf')
+            & $helper @dispatchArguments
+            $LASTEXITCODE | Should -Be 2
+        } finally {
+            $env:CAPSULENV_ROOT = $oldRoot
         }
     }
 
@@ -67,7 +109,7 @@ $global:LASTEXITCODE = 0
         { & (Get-Module Capsulenv) { Invoke-CapsulenvUserScoopReset -Apps @('librewolf') } } |
             Should -Throw '*failed with exit code 1*'
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $AllowFailure -and $Arguments -notcontains '-DeferRunningApps'
+            $AllowFailure -and $Arguments -contains ':strict' -and $Arguments -notcontains '-DeferRunningApps'
         }
     }
 

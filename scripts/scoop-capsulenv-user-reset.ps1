@@ -1,10 +1,25 @@
 # Summary: Rebuild Scoop-owned links and explicit current-user integration without self-deadlocking on the Capsulenv host process.
 [CmdletBinding()]
 param(
-    [switch]$DeferRunningApps,
-    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
-    [string[]]$Apps = @('*')
+    [Parameter(Position = 0)]
+    [string]$ModeOrApp = ':strict',
+    [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
+    [string[]]$Apps = @()
 )
+
+# Scoop dispatches subcommand arguments through a string[] splat. Named
+# parameters are not reparsed in that path, so keep the private protocol
+# positional. The fallback treats an unknown first token as an app name for
+# compatibility with older/direct invocations of this helper.
+$deferRunningApps = $false
+switch ($ModeOrApp.ToLowerInvariant()) {
+    ':strict' { }
+    ':defer' { $deferRunningApps = $true }
+    default { $Apps = @($ModeOrApp) + @($Apps) }
+}
+if ($Apps.Count -eq 0) {
+    $Apps = @('*')
+}
 
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
@@ -66,7 +81,7 @@ foreach ($entry in $requested) {
         continue
     }
     if (Test-CapsulenvResetHasBlockingProcesses -App $app -Global $global) {
-        if ($DeferRunningApps) {
+        if ($deferRunningApps) {
             Write-Warning "Deferring user reset for '$app' until its running processes have exited."
             $deferred = $true
         } else {

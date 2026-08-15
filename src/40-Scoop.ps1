@@ -175,11 +175,11 @@ function Invoke-CapsulenvUserScoopReset {
         -Source (Get-CapsulenvScoopUserResetScriptPath) `
         -Prefix 'user-reset'
     try {
-        $arguments = @($temporaryCommand.Command)
-        if ($DeferRunningApps) {
-            $arguments += '-DeferRunningApps'
-        }
-        $arguments += @($Apps)
+        # Scoop dispatches command arguments through a string[] splat, which
+        # does not re-bind strings such as '-DeferRunningApps' as named
+        # parameters. Keep this private helper protocol positional.
+        $mode = if ($DeferRunningApps) { ':defer' } else { ':strict' }
+        $arguments = @($temporaryCommand.Command, $mode) + @($Apps)
         $exitCode = Invoke-CapsulenvScoopCommand -Arguments $arguments -AllowFailure
         if ($exitCode -eq 0) {
             return $true
