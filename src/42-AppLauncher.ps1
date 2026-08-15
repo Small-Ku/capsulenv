@@ -173,7 +173,11 @@ function Get-CapsulenvInstalledManifestPropertyValue {
             $value = $architectureValue
         }
     }
-    return $value
+    # Installed manifest values can themselves be arrays (notably one-entry
+    # shortcuts/bin lists). Emit the property value as one pipeline object so
+    # PowerShell does not flatten a one-element outer array into the shortcut
+    # tuple it contains.
+    return ,$value
 }
 
 function Get-CapsulenvInstalledScoopArchitecture {
@@ -297,7 +301,7 @@ function ConvertTo-CapsulenvInstalledBin {
         [Parameter(Mandatory = $true)]$Entry
     )
 
-    $parts = if ($Entry -is [string]) { @([string]$Entry) } else { @($Entry) }
+    $parts = @($Entry)
     if ($parts.Count -lt 1 -or [string]::IsNullOrWhiteSpace([string]$parts[0])) {
         throw "Invalid bin entry in installed manifest for $($App.Scope.ToLowerInvariant())/$($App.Name)."
     }

@@ -452,11 +452,7 @@ function Invoke-CapsulenvBitwardenCommand {
     }
 
     $action = $Arguments[0].ToLowerInvariant()
-    $remaining = if ($Arguments.Count -gt 1) {
-        @($Arguments[1..($Arguments.Count - 1)])
-    } else {
-        @()
-    }
+    $remaining = @($Arguments | Select-Object -Skip 1)
 
     switch ($action) {
         'setup' {

@@ -293,7 +293,7 @@ function Invoke-CapsulenvBrowserCommand {
     $useHost = $false
     if ($remaining.Count -gt 0 -and [string]$remaining[0] -eq '--host') {
         $useHost = $true
-        $remaining = if ($remaining.Count -gt 1) { @($remaining[1..($remaining.Count - 1)]) } else { @() }
+        $remaining = @($remaining | Select-Object -Skip 1)
     }
     if (@($remaining | Where-Object { [string]$_ -eq '--host' }).Count -gt 0) {
         throw 'Usage: browser <scoop-app> [--host] [browser arguments...] (--host must be the first browser argument)'

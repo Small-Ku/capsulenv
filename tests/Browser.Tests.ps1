@@ -1,3 +1,60 @@
+Describe 'Capsulenv Gecko browser configuration selection' {
+    BeforeAll {
+        $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        Import-Module $script:Build.ModulePath -Force
+        $script:Module = @(Get-Module Capsulenv)[-1]
+    }
+
+    AfterAll {
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'resolves a scoped installed app through one unscoped built-in definition' {
+        $configuration = Import-PowerShellDataFile (Join-Path $script:Root 'config/capsulenv.psd1')
+
+        $definition = & $script:Module {
+            param($Configuration)
+            Get-CapsulenvBrowserDefinitionFromConfiguration -Configuration $Configuration -App 'user/librewolf'
+        } $configuration
+
+        $definition.App | Should -Be 'librewolf'
+        $definition.ProfilePath | Should -Be 'Profiles\Default'
+    }
+
+    It 'prefers an exact scoped definition over an unscoped same-app fallback' {
+        $configuration = @{
+            Browsers = @{
+                Generic = @{ App = 'librewolf'; ProfilePath = 'generic'; ProfileArgument = '-profile' }
+                UserSpecific = @{ App = 'user/librewolf'; ProfilePath = 'user-profile'; ProfileArgument = '-profile' }
+            }
+        }
+
+        $definition = & $script:Module {
+            param($Configuration)
+            Get-CapsulenvBrowserDefinitionFromConfiguration -Configuration $Configuration -App 'user/librewolf'
+        } $configuration
+
+        $definition.ProfilePath | Should -Be 'user-profile'
+    }
+
+    It 'still rejects genuinely ambiguous unscoped definitions for one app' {
+        $configuration = @{
+            Browsers = @{
+                First = @{ App = 'librewolf'; ProfilePath = 'one'; ProfileArgument = '-profile' }
+                Second = @{ App = 'librewolf'; ProfilePath = 'two'; ProfileArgument = '-profile' }
+            }
+        }
+
+        & $script:Module {
+            param($Configuration)
+            { Get-CapsulenvBrowserDefinitionFromConfiguration -Configuration $Configuration -App 'global/librewolf' } |
+                Should -Throw "Multiple Browsers entries select Scoop app 'global/librewolf'."
+        } $configuration
+    }
+}
+
 Describe 'Capsulenv Gecko browser launch contracts' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -47,14 +104,19 @@ Describe 'Capsulenv Gecko browser launch contracts' {
 
     It 'dispatches the primary browser command by Scoop app selector without a preset ValidateSet' {
         Mock Start-CapsulenvBrowser {} -ModuleName Capsulenv
+        $previousRoot = $env:CAPSULENV_ROOT
+        try {
+            $env:CAPSULENV_ROOT = $script:Root
+            Invoke-Capsulenv -Arguments @('browser', 'global/my-gecko', 'https://example.invalid/')
 
-        Invoke-Capsulenv -Arguments @('browser', 'global/my-gecko', 'https://example.invalid/')
-
-        Should -Invoke Start-CapsulenvBrowser -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $App -eq 'global/my-gecko' -and
-            -not $UseHostExecutable -and
-            @($Arguments).Count -eq 1 -and
-            $Arguments[0] -eq 'https://example.invalid/'
+            Should -Invoke Start-CapsulenvBrowser -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+                $App -eq 'global/my-gecko' -and
+                -not $UseHostExecutable -and
+                @($Arguments).Count -eq 1 -and
+                $Arguments[0] -eq 'https://example.invalid/'
+            }
+        } finally {
+            $env:CAPSULENV_ROOT = $previousRoot
         }
     }
 
@@ -158,6 +220,7 @@ Describe 'Capsulenv User default-browser integration' {
             }
 
             Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+            Mock Get-CapsulenvIdentity { '11111111-2222-3333-4444-555555555555' } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserExecutable { $executable } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserProfilePath { $profile } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile'; DisplayName = 'LibreWolf' } } -ModuleName Capsulenv
@@ -187,6 +250,7 @@ Describe 'Capsulenv User default-browser integration' {
             [pscustomobject]@{ RegisteredName = 'Capsulenv LibreWolf (111111111111)'; DisplayName = 'LibreWolf (Capsulenv)'; UrlProgId = 'Capsulenv.URL'; HtmlProgId = 'Capsulenv.HTML' }
         } -ModuleName Capsulenv
         Mock Test-CapsulenvDefaultBrowserProgIdsSelected { $false } -ModuleName Capsulenv
+        Mock Get-CapsulenvBrowserDisplayName { 'LibreWolf' } -ModuleName Capsulenv
         Mock Open-CapsulenvDefaultAppsSettings {} -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 

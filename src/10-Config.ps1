@@ -74,14 +74,23 @@ function Get-CapsulenvBrowserDefinitionFromConfiguration {
             }
         } catch {}
     }
-    $matches = if ($exact.Count -gt 0) { @($exact.ToArray()) } else { @($byName.ToArray()) }
-    if ($matches.Count -eq 0) {
-        throw "No Browsers entry selects Scoop app '$App'."
-    }
-    if ($matches.Count -gt 1) {
+    # Do not assign a single hashtable through an `if` expression and then
+    # inspect `.Count`: PowerShell unwraps the one-element array and the
+    # hashtable's own entry count is observed instead. Inspect the typed lists
+    # directly so one browser definition remains one match.
+    if ($exact.Count -gt 1) {
         throw "Multiple Browsers entries select Scoop app '$App'."
     }
-    return $matches[0]
+    if ($exact.Count -eq 1) {
+        return $exact[0]
+    }
+    if ($byName.Count -gt 1) {
+        throw "Multiple Browsers entries select Scoop app '$App'."
+    }
+    if ($byName.Count -eq 1) {
+        return $byName[0]
+    }
+    throw "No Browsers entry selects Scoop app '$App'."
 }
 
 
