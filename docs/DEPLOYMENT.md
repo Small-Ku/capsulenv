@@ -34,6 +34,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-Capsulenv.ps
 
 從 source checkout 執行時，installer 先在 temporary directory 呼叫 builder 產生新 runtime；從 prebuilt bundle 執行時，直接驗證 `.capsulenv-runtime.json` schema 2／`ManagedFiles` 並以該 bundle 作 payload，不需要 `src/` 或 build script。Destination 不可等於、位於 installer source 內或成為其 ancestor。
 
+Runtime launcher 同樣明確區分兩種 artifact。若 `src/`、`Capsulenv.psd1` 與 `Merge-ModuleScripts.ps1` 同時存在，視為 development checkout，每次 entry 都從 source clean-merge `.build/Capsulenv`，不會因殘留 `modules/Capsulenv` 而執行 stale generated code。Minimal deployed runtime 則沒有 compiler/source，只可載入 bundle 自帶的 `modules/Capsulenv`；launcher 會比對 `.capsulenv-runtime.json.Version` 與 module manifest `ModuleVersion`，若不一致便拒絕執行 partial/mixed runtime。`CAPSULENV_FORCE_REBUILD=1` 在 minimal runtime 不可能完成 rebuild，因此只會警告並繼續使用已驗證 prebuilt module；真正更新必須從**另一個新版 runtime bundle directory** 執行其 installer。
+
 `install.cmd` 與 installed `capsulenv.cmd` 的 bootstrap 固定使用 **Windows PowerShell 5.1 control plane**，不再以 capsule/PATH 上的 `pwsh.exe` 啟動 installer 或 maintenance command。兩者先驗證 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 是 Desktop PowerShell 5.x，再逐一驗證 PATH 上的 `powershell.exe` fallback；不會 fallback 到 PowerShell 7。這讓 update/rehydrate 可以安全重建 `scoop\apps\pwsh\current` 與 `scoop\shims\pwsh.exe`，即使 destination 剛搬 drive letter 或舊 pwsh shim 仍在 PATH。PowerShell 7 是另一個角色：`shell`/`user-shell` 完成 control-plane activation 後才從 capsule Scoop `apps\pwsh` 啟動 interactive shell。
 
 兩條路徑最後都以 `.capsulenv-install.json` 的 `ManagedFiles` 作 update boundary。舊 managed files 會先備份，新增/替換採 temporary-file replacement；若 mutation 階段失敗，installer 逆序還原已記錄的 managed files/marker。成功後 installer 會印出 installed/updated destination 與下一個 `capsulenv.cmd` command。

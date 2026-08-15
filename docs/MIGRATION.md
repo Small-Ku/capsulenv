@@ -137,6 +137,21 @@ v0.15 把 browser、Bitwarden、sing-box，以及 Scoop-installed uv/Pixi 的 ex
 
 `Scoop.ReplayHooks`、`Scoop.RelocationRepairs` 與 reset 現在也接受 `user/<app>`／`global/<app>`。只有在同名 app 同時存在兩個 root 或 rule 本身必須精確限制 scope 時才需要加 prefix；無 scope 的既有設定仍保留原有語義。
 
+## 從 v0.15.0–v0.15.5 source-only 更新遷移
+
+若曾把 Git/source 增量 patch 套到一個 minimal installed capsule，卻沒有用新版 runtime bundle installer 更新 `modules/Capsulenv`，可能會出現「source 已修，但 `capsulenv.cmd` 仍執行舊行為」。Minimal runtime 故意不攜帶 `src/`／module compiler，不能靠 `CAPSULENV_FORCE_REBUILD=1` 在現場把 module 重新 merge。
+
+升級到 v0.15.6 時，請把新版 runtime bundle 解壓到 capsule **外部** staging directory，再執行：
+
+```bat
+X:\capsulenv-0.15.6\install.cmd F:\capenv
+F:\capenv\capsulenv.cmd version
+```
+
+這會 transactional replacement managed runtime，包括 prebuilt `modules/Capsulenv`，並保留 Scoop/persist/local config/workspace 等 mutable state。Development checkout 則相反：launcher 現在每次從 source merge，不再讓殘留 prebuilt module shadow 新 source。
+
+Windows default-browser detection 也不再只讀 legacy `UserChoice`；v0.15.6 以 Shell effective association 為準，因此 Windows 11 使用 rotated `UserChoiceLatest` 的 host 不會再被誤判。
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：

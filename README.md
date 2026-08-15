@@ -251,7 +251,7 @@ X:\capsulenv-release\install.cmd D:\Portable\capsulenv
 D:\Portable\capsulenv\capsulenv.cmd version
 ```
 
-Installer 只替換 bundle manifest 列出的 managed runtime files；`scoop/`、`tool-data/`、`cache/`、`workspace/`、`PowerShell/Modules/`、`.capsulenv/`、local config 與其他 unmanaged files 會保留，mutation 失敗時會回滾 runtime replacement。不要用舊 installed capsule 內附的 installer 當成「自動更新器」；它只帶著當時那一版 payload。
+Installer 只替換 bundle manifest 列出的 managed runtime files；`scoop/`、`tool-data/`、`cache/`、`workspace/`、`PowerShell/Modules/`、`.capsulenv/`、local config 與其他 unmanaged files 會保留，mutation 失敗時會回滾 runtime replacement。不要用舊 installed capsule 內附的 installer 當成「自動更新器」；它只帶著當時那一版 payload。**Source patch / Git commit 也不是 deployed runtime update**：minimal runtime 執行的是 bundle 內預先 merge 好的 `modules\Capsulenv`，因此要讓 source 修正進入既有 `F:\capenv`，必須先 build/取得新版 runtime bundle，再從另一個 staging directory 執行它的 `install.cmd F:\capenv`。
 
 Capsulenv 是 portable directory，沒有另外的 machine-wide uninstaller。要永久移除一支 capsule：先在仍使用 User mode 的 host 上執行 `restore-user`，再 `eject`；確認不再需要 USB 內的 `workspace/`、`tool-data/`、Scoop `persist` 等 user data 後，刪除整個 capsule directory。若只想移除 runtime、保留資料供之後重裝，直接保留目錄並用新版 bundle 對同一 destination 安裝即可。
 
