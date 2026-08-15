@@ -406,6 +406,28 @@ function Invoke-CapsulenvDoctor {
     }
 
     try {
+        $defaultBrowserCommand = Get-CapsulenvTrackedDefaultBrowserCommandStatus
+        if ($null -ne $defaultBrowserCommand) {
+            $handlerDetail = if ($defaultBrowserCommand.Matches) {
+                "App=$($defaultBrowserCommand.App); ProgId=$($defaultBrowserCommand.ProgId); Command=$($defaultBrowserCommand.ActualCommand)"
+            } else {
+                "App=$($defaultBrowserCommand.App); ProgId=$($defaultBrowserCommand.ProgId); Registry=$($defaultBrowserCommand.RegistryPath); Actual=$($defaultBrowserCommand.ActualCommand); Expected=$($defaultBrowserCommand.ExpectedCommand)"
+            }
+            $results.Add((New-CapsulenvCheckResult `
+                -Name 'Default-browser URL handler' `
+                -Passed ([bool]$defaultBrowserCommand.Matches) `
+                -Importance Optional `
+                -Detail $handlerDetail))
+        }
+    } catch {
+        $results.Add((New-CapsulenvCheckResult `
+            -Name 'Default-browser URL handler' `
+            -Passed $false `
+            -Importance Optional `
+            -Detail $_.Exception.Message))
+    }
+
+    try {
         $offline = Get-CapsulenvOfflineReadiness
         $results.Add((New-CapsulenvCheckResult `
             -Name 'Offline run readiness' `

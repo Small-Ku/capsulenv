@@ -595,11 +595,32 @@ function Sync-CapsulenvConfiguredDefaultBrowser {
     param()
 
     $app = Get-CapsulenvConfiguredDefaultBrowser
-    if ([string]::IsNullOrWhiteSpace([string]$app)) {
-        return
-    }
     if ((Get-CapsulenvInstallMode) -ne 'User') {
+        if ([string]::IsNullOrWhiteSpace([string]$app)) {
+            return
+        }
         throw 'Default-browser integration is persistent and may only be synchronized in User mode.'
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$app)) {
+        # A tracked registration is Capsulenv-owned persistent state even when
+        # the current config no longer asks Windows to select it as the default.
+        # Runtime upgrades must still refresh that owned ProgID in place: older
+        # handlers may contain obsolete executable/profile arguments and Windows
+        # can continue using the tracked ProgID through UserChoiceLatest. Do not
+        # reopen Default Apps when the preference is blank; only repair what we
+        # already own.
+        $state = Get-CapsulenvDefaultBrowserState
+        if ($null -eq $state) {
+            return
+        }
+        $trackedApp = Get-CapsulenvDefaultBrowserStateApp -State $state
+        if ([string]::IsNullOrWhiteSpace([string]$trackedApp)) {
+            return
+        }
+        [void](Install-CapsulenvDefaultBrowserRegistration -App $trackedApp)
+        Write-CapsulenvMessage -Level Detail -Message "Refreshed tracked default-browser registration for $trackedApp; no browser is currently configured for Default Apps prompting."
+        return
     }
 
     $registration = Install-CapsulenvDefaultBrowserRegistration -App $app
@@ -610,6 +631,46 @@ function Sync-CapsulenvConfiguredDefaultBrowser {
 
     Open-CapsulenvDefaultAppsSettings -RegisteredName $registration.RegisteredName
     Write-CapsulenvMessage -Level Warning -Message "Windows requires user confirmation before changing http/https default handlers. Default Apps was opened directly on '$($registration.DisplayName)'; choose Set default, then return to Capsulenv."
+}
+
+function Get-CapsulenvTrackedDefaultBrowserCommandStatus {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-CapsulenvWindows)) {
+        return $null
+    }
+    $state = Get-CapsulenvDefaultBrowserState
+    if ($null -eq $state) {
+        return $null
+    }
+
+    $app = Get-CapsulenvDefaultBrowserStateApp -State $state
+    if ([string]::IsNullOrWhiteSpace([string]$app)) {
+        return $null
+    }
+    $definition = Get-CapsulenvBrowserDefinition -App $app
+    $executable = Get-CapsulenvBrowserDefaultExecutable -App $app
+    $profile = Get-CapsulenvBrowserProfilePath -App $app
+    $profileArgument = [string]$definition.ProfileArgument
+    $expected = ConvertTo-CapsulenvDefaultBrowserCommand `
+        -Executable $executable `
+        -Profile $profile `
+        -ProfileArgument $profileArgument `
+        -Kind Url
+    $actual = Get-CapsulenvRegistryStringValue `
+        -Hive CurrentUser `
+        -SubKey (([string]$state.UrlClassPath) + '\shell\open\command') `
+        -Name ''
+
+    [pscustomobject]@{
+        App = $app
+        ProgId = [string]$state.UrlProgId
+        RegistryPath = 'HKCU\' + ([string]$state.UrlClassPath) + '\shell\open\command'
+        ExpectedCommand = $expected
+        ActualCommand = $actual
+        Matches = [System.StringComparer]::Ordinal.Equals([string]$expected, [string]$actual)
+    }
 }
 
 function Assert-CapsulenvDefaultBrowserRestorable {
