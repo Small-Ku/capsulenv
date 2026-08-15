@@ -47,6 +47,27 @@ Describe 'Capsulenv build and install' {
                 -Condition (@($runtimeMetadata.ManagedFiles) -contains '.capsulenv-runtime.json') `
                 -Message 'Runtime manifest does not own its own metadata file.'
 
+            $forceRebuildOriginal = [Environment]::GetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', 'Process')
+            try {
+                [Environment]::SetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', '1', 'Process')
+                & (Join-Path $buildRoot 'scripts/Invoke-Capsulenv.ps1') help
+            } finally {
+                [Environment]::SetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', $forceRebuildOriginal, 'Process')
+            }
+
+            $runtimeMetadataPathForMismatch = Join-Path $buildRoot '.capsulenv-runtime.json'
+            $runtimeMetadataOriginalText = Get-Content -LiteralPath $runtimeMetadataPathForMismatch -Raw
+            try {
+                $runtimeMetadataMismatch = $runtimeMetadataOriginalText | ConvertFrom-Json
+                $runtimeMetadataMismatch.Version = '99.99.99'
+                $runtimeMetadataMismatch | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeMetadataPathForMismatch -Encoding UTF8
+                {
+                    & (Join-Path $buildRoot 'scripts/Invoke-Capsulenv.ps1') help
+                } | Should -Throw '*runtime metadata version 99.99.99 does not match prebuilt module version*'
+            } finally {
+                [System.IO.File]::WriteAllText($runtimeMetadataPathForMismatch, $runtimeMetadataOriginalText)
+            }
+
             $prebuiltInstaller = Join-Path $buildRoot 'scripts/Install-Capsulenv.ps1'
             $prebuiltInstall = & $prebuiltInstaller $prebuiltInstallRoot
             Assert-CapsulenvBuildInstallTest `
