@@ -177,12 +177,22 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                     -Condition ((Get-Content -LiteralPath (Join-Path $capsule 'scoop/config.json') -Raw).Trim() -eq '{}') `
                     -Message 'Portable Scoop config was not created before first use.'
                 $shim = Get-Content -LiteralPath (Join-Path $capsule 'scoop/shims/scoop.ps1') -Raw
+                $capsuleFullPath = [System.IO.Path]::GetFullPath($capsule)
+                $gatewayPath = Join-Path $capsuleFullPath 'scripts/scoop-capsulenv-gateway.ps1'
+                $shimLines = @($shim -split "`r?`n")
+                Assert-CapsulenvBootstrapTest `
+                    -Condition ($shimLines[0] -eq ("# {0}" -f $gatewayPath)) `
+                    -Message 'Scoop PowerShell shim is missing Scoop-compatible target metadata.'
+                Assert-CapsulenvBootstrapTest `
+                    -Condition (($shimLines[0] -replace '^#\s*', '') -eq $gatewayPath) `
+                    -Message 'Scoop PowerShell shim target metadata is not parseable by Scoop Get-ShimTarget semantics.'
                 Assert-CapsulenvBootstrapTest `
                     -Condition ($shim.Contains("Join-Path `$env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-gateway.ps1'")) `
                     -Message 'Scoop PowerShell shim is not relocation-safe.'
+                $shimBody = (@($shimLines | Select-Object -Skip 1) -join [Environment]::NewLine)
                 Assert-CapsulenvBootstrapTest `
-                    -Condition (-not $shim.Contains([System.IO.Path]::GetFullPath($capsule))) `
-                    -Message 'Scoop shim captured an absolute capsule path.'
+                    -Condition (-not $shimBody.Contains($capsuleFullPath)) `
+                    -Message 'Scoop shim executable logic captured an absolute capsule path instead of only metadata.'
                 Assert-CapsulenvBootstrapTest `
                     -Condition ($shim.Contains("Join-Path `$env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'")) `
                     -Message 'Scoop PowerShell shim does not hand control-plane work to Windows PowerShell.'
@@ -204,9 +214,14 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not $cmdShim.Contains('pwsh.exe')) `
                     -Message 'Scoop command gateway must not bootstrap through portable pwsh.'
+                $cmdShimLines = @($cmdShim -split "`r?`n")
                 Assert-CapsulenvBootstrapTest `
-                    -Condition (-not $cmdShim.Contains([System.IO.Path]::GetFullPath($capsule))) `
-                    -Message 'Normalized scoop.cmd still captured the absolute capsule path.'
+                    -Condition ($cmdShimLines[0] -eq ("@rem {0}" -f $gatewayPath)) `
+                    -Message 'Scoop command shim is missing Scoop-compatible target metadata.'
+                $cmdShimBody = (@($cmdShimLines | Select-Object -Skip 1) -join [Environment]::NewLine)
+                Assert-CapsulenvBootstrapTest `
+                    -Condition (-not $cmdShimBody.Contains($capsuleFullPath)) `
+                    -Message 'Normalized scoop.cmd executable logic still captured the absolute capsule path.'
 
                 Assert-CapsulenvBootstrapTest `
                     -Condition ((Get-Content -LiteralPath $hostScoopSentinel -Raw).Trim() -eq 'untouched') `

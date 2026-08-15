@@ -56,6 +56,10 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ScoopGatewaySource | Should -Match "'install', 'download', 'virustotal', 'import'"
         $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop update'
         $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop install'
+        $script:ScoopGatewaySource.Contains('$script:CapsulenvGatewayPath = [System.IO.Path]::GetFullPath($PSCommandPath)') | Should -BeTrue
+        $script:ScoopGatewaySource.Contains('$gatewayPath = $script:CapsulenvGatewayPath') | Should -BeTrue
+        $script:ScoopGatewaySource.Contains("`$ps1Text = ('# {0}{1}' -f `$gatewayPath") | Should -BeTrue
+        $script:ScoopGatewaySource.Contains("`$cmdText = ('@rem {0}{1}' -f `$gatewayPath") | Should -BeTrue
         $script:ScoopShellOnlyPolicySource.Contains("[Environment]::SetEnvironmentVariable(`$Name, `$Value, 'Process')") | Should -BeTrue
         $script:ScoopShellOnlyPolicySource | Should -Not -Match "SetEnvironmentVariable\(.*?'User'"
         $script:ScoopShellOnlyPolicySource | Should -Not -Match "SetEnvironmentVariable\(.*?'Machine'"

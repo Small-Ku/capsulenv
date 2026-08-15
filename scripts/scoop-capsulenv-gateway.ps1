@@ -6,6 +6,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:CapsulenvGatewayPath = [System.IO.Path]::GetFullPath($PSCommandPath)
 
 function Get-CapsulenvGatewayExitCode {
     param([bool]$Succeeded)
@@ -22,8 +23,9 @@ function Write-CapsulenvScoopGatewayShims {
 
     $shimsRoot = Join-Path $ScoopRoot 'shims'
     [void](New-Item -ItemType Directory -Path $shimsRoot -Force)
+    $gatewayPath = $script:CapsulenvGatewayPath
     $ps1Path = Join-Path $shimsRoot 'scoop.ps1'
-    $ps1Text = @'
+    $ps1Text = ('# {0}{1}' -f $gatewayPath, [Environment]::NewLine) + @'
 if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
     Write-Error 'Capsulenv Scoop shim requires an active capsulenv shell.'
     exit 2
@@ -49,7 +51,7 @@ exit $LASTEXITCODE
     [System.IO.File]::WriteAllText($ps1Path, $ps1Text, [System.Text.UTF8Encoding]::new($false))
 
     $cmdPath = Join-Path $shimsRoot 'scoop.cmd'
-    $cmdText = @'
+    $cmdText = ('@rem {0}{1}' -f $gatewayPath, [Environment]::NewLine) + @'
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 if "%CAPSULENV_ROOT%"=="" (

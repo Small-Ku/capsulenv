@@ -226,8 +226,9 @@ function Install-CapsulenvScoopShim {
     $shimsRoot = Join-Path $scoopRoot 'shims'
     [void](New-Item -ItemType Directory -Path $shimsRoot -Force)
 
+    $gatewayPath = Join-Path (Get-CapsulenvContext).Root 'scripts\scoop-capsulenv-gateway.ps1'
     $ps1Path = Join-Path $shimsRoot 'scoop.ps1'
-    $ps1Text = @'
+    $ps1Text = ('# {0}{1}' -f $gatewayPath, [Environment]::NewLine) + @'
 if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
     Write-Error 'Capsulenv Scoop shim requires an active capsulenv shell.'
     exit 2
@@ -255,7 +256,7 @@ exit $LASTEXITCODE
     }
 
     $cmdPath = Join-Path $shimsRoot 'scoop.cmd'
-    $cmdText = @'
+    $cmdText = ('@rem {0}{1}' -f $gatewayPath, [Environment]::NewLine) + @'
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 if "%CAPSULENV_ROOT%"=="" (
