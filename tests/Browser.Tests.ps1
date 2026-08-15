@@ -300,6 +300,45 @@ Describe 'Capsulenv User default-browser integration' {
         }
     }
 
+    It 'checks the Shell effective ProgIDs instead of reading legacy UserChoice directly' {
+        Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+        Mock Get-CapsulenvEffectiveAssociationProgId {
+            param($Association, $Type)
+            if ($Type -eq 'Protocol') { return 'Capsulenv.URL' }
+            return 'Capsulenv.HTML'
+        } -ModuleName Capsulenv
+
+        $selected = & $script:Module {
+            Test-CapsulenvDefaultBrowserProgIdsSelected `
+                -UrlProgId 'Capsulenv.URL' `
+                -HtmlProgId 'Capsulenv.HTML'
+        }
+
+        $selected | Should -BeTrue
+        Should -Invoke Get-CapsulenvEffectiveAssociationProgId -ModuleName Capsulenv -Times 4 -Exactly
+    }
+
+    It 'prefers rotated UserChoiceLatest in the registry fallback when COM lookup is unavailable' {
+        Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+        Mock Get-CapsulenvRegistryStringValue {
+            param($Hive, $SubKey, $Name)
+            if ($SubKey -like '*\UserChoiceLatest\ProgId') {
+                return 'Capsulenv.Latest.URL'
+            }
+            return 'MSEdgeHTM'
+        } -ModuleName Capsulenv
+
+        $progId = & $script:Module {
+            Get-CapsulenvEffectiveAssociationProgId -Association 'https' -Type Protocol
+        }
+
+        $progId | Should -Be 'Capsulenv.Latest.URL'
+        Should -Invoke Get-CapsulenvRegistryStringValue -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $SubKey -eq 'Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoiceLatest\ProgId' -and
+            $Name -eq 'ProgId'
+        }
+    }
+
     It 'opens the targeted Windows Default Apps page only when the configured browser is not already selected' {
         Mock Get-CapsulenvConfiguredDefaultBrowser { 'librewolf' } -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv

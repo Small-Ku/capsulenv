@@ -410,6 +410,135 @@ function Install-CapsulenvDefaultBrowserRegistration {
     return $registration
 }
 
+function Get-CapsulenvEffectiveAssociationProgId {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Association,
+        [Parameter(Mandatory = $true)][ValidateSet('Protocol', 'FileExtension')][string]$Type
+    )
+
+    if (-not (Test-CapsulenvWindows)) {
+        return $null
+    }
+
+    if ($null -eq ('Capsulenv.WindowsAssociationQuery' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace Capsulenv
+{
+    internal enum AssociationLevel
+    {
+        Machine = 0,
+        Effective = 1,
+        User = 2
+    }
+
+    internal enum AssociationType
+    {
+        FileExtension = 0,
+        UrlProtocol = 1,
+        StartMenuClient = 2,
+        MimeType = 3
+    }
+
+    [ComImport]
+    [Guid("4e530b0a-e611-4c77-a3ac-9031d022281b")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IApplicationAssociationRegistration
+    {
+        [return: MarshalAs(UnmanagedType.LPWStr)]
+        string QueryCurrentDefault(
+            [MarshalAs(UnmanagedType.LPWStr)] string query,
+            AssociationType queryType,
+            AssociationLevel queryLevel);
+
+        [return: MarshalAs(UnmanagedType.Bool)]
+        bool QueryAppIsDefault(
+            [MarshalAs(UnmanagedType.LPWStr)] string query,
+            AssociationType queryType,
+            AssociationLevel queryLevel,
+            [MarshalAs(UnmanagedType.LPWStr)] string appRegistryName);
+
+        [return: MarshalAs(UnmanagedType.Bool)]
+        bool QueryAppIsDefaultAll(
+            AssociationLevel queryLevel,
+            [MarshalAs(UnmanagedType.LPWStr)] string appRegistryName);
+
+        void SetAppAsDefault(
+            [MarshalAs(UnmanagedType.LPWStr)] string appRegistryName,
+            [MarshalAs(UnmanagedType.LPWStr)] string set,
+            AssociationType setType);
+
+        void SetAppAsDefaultAll([MarshalAs(UnmanagedType.LPWStr)] string appRegistryName);
+        void ClearUserAssociations();
+    }
+
+    [ComImport]
+    [Guid("591209c7-767b-42b2-9fba-44ee4615f2c7")]
+    internal class ApplicationAssociationRegistration
+    {
+    }
+
+    public static class WindowsAssociationQuery
+    {
+        public static string QueryCurrentDefault(string association, bool protocol)
+        {
+            object instance = null;
+            try
+            {
+                instance = new ApplicationAssociationRegistration();
+                IApplicationAssociationRegistration registration =
+                    (IApplicationAssociationRegistration)instance;
+                return registration.QueryCurrentDefault(
+                    association,
+                    protocol ? AssociationType.UrlProtocol : AssociationType.FileExtension,
+                    AssociationLevel.Effective);
+            }
+            finally
+            {
+                if (instance != null && Marshal.IsComObject(instance))
+                {
+                    Marshal.FinalReleaseComObject(instance);
+                }
+            }
+        }
+    }
+}
+'@
+    }
+
+    try {
+        return [Capsulenv.WindowsAssociationQuery]::QueryCurrentDefault(
+            $Association,
+            $Type -eq 'Protocol'
+        )
+    } catch {
+        # QueryCurrentDefault is the supported Windows 8+ read path, but keep a
+        # bounded registry fallback for damaged/older hosts where COM lookup is
+        # unavailable. Prefer UserChoiceLatest when present because some Windows
+        # 11 hosts retain a stale UserChoice while ShellExecute uses the rotated
+        # association.
+        $base = if ($Type -eq 'Protocol') {
+            "Software\Microsoft\Windows\Shell\Associations\UrlAssociations\$Association"
+        } else {
+            "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$Association"
+        }
+        $latest = Get-CapsulenvRegistryStringValue `
+            -Hive CurrentUser `
+            -SubKey ($base + '\UserChoiceLatest\ProgId') `
+            -Name 'ProgId'
+        if (-not [string]::IsNullOrWhiteSpace([string]$latest)) {
+            return [string]$latest
+        }
+        return Get-CapsulenvRegistryStringValue `
+            -Hive CurrentUser `
+            -SubKey ($base + '\UserChoice') `
+            -Name 'ProgId'
+    }
+}
+
 function Test-CapsulenvDefaultBrowserProgIdsSelected {
     [CmdletBinding()]
     param(
@@ -420,15 +549,17 @@ function Test-CapsulenvDefaultBrowserProgIdsSelected {
     if (-not (Test-CapsulenvWindows)) {
         return $false
     }
-    $expected = [ordered]@{
-        'Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice' = $UrlProgId
-        'Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' = $UrlProgId
-        'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.htm\UserChoice' = $HtmlProgId
-        'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.html\UserChoice' = $HtmlProgId
-    }
-    foreach ($subKey in $expected.Keys) {
-        $progId = Get-CapsulenvRegistryStringValue -Hive CurrentUser -SubKey $subKey -Name 'ProgId'
-        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$progId, [string]$expected[$subKey])) {
+    $expected = @(
+        [pscustomobject]@{ Association = 'http'; Type = 'Protocol'; ProgId = $UrlProgId }
+        [pscustomobject]@{ Association = 'https'; Type = 'Protocol'; ProgId = $UrlProgId }
+        [pscustomobject]@{ Association = '.htm'; Type = 'FileExtension'; ProgId = $HtmlProgId }
+        [pscustomobject]@{ Association = '.html'; Type = 'FileExtension'; ProgId = $HtmlProgId }
+    )
+    foreach ($entry in $expected) {
+        $progId = Get-CapsulenvEffectiveAssociationProgId `
+            -Association $entry.Association `
+            -Type $entry.Type
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$progId, [string]$entry.ProgId)) {
             return $false
         }
     }
