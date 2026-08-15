@@ -32,6 +32,9 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:PortableResetSource | Should -Not -Match 'create_startmenu_shortcuts'
         $script:PortableResetSource | Should -Not -Match '\benv_add_path\b'
         $script:PortableResetSource | Should -Not -Match '\benv_set\b'
+        $script:PortableResetSource | Should -Match 'Test-CapsulenvPortableResetHasBlockingProcesses'
+        $script:PortableResetSource | Should -Match '\$_.Id -ne \$PID'
+        $script:PortableResetSource | Should -Match 'test_running_process \$App \$Global'
         $script:ScoopSource | Should -Match "IntegrationMode -eq 'ShellOnly'"
         $script:ScoopSource | Should -Match 'Invoke-CapsulenvPortableScoopReset'
         $script:ScoopSource | Should -Match "IntegrationMode -eq 'User'"

@@ -112,6 +112,8 @@ ShellOnly uses a capsule-local temporary Scoop command that rebuilds only app `c
 
 During this reset Capsulenv shadows Scoop's internal path persistence helper with a process-only implementation. Rebuilding a shim must not cause upstream Scoop to persist the shim directory into User/Machine PATH merely because ShellOnly is repairing itself.
 
+The temporary reset may itself be hosted by a Scoop app (normally capsule `pwsh`). Its running-process check therefore ignores only the reset process's own PID. Any other process from that app still goes through Scoop's normal running-process guard. This avoids a self-deadlock while preserving the safety boundary for independently running applications; the launcher uses a physical version-directory executable so repairing `current` does not invalidate the control process.
+
 ### User native reset
 
 User mode may call native `scoop reset` because the current Windows user has explicitly delegated Scoop integration ownership to this capsule. On drive relocation, persistent Capsulenv-managed User variables/PATH references are refreshed from the old capsule root to the new one.

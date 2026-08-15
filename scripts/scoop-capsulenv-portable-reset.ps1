@@ -50,6 +50,42 @@ function Add-Path {
     }
 }
 
+function Test-CapsulenvPortableResetHasBlockingProcesses {
+    param(
+        [Parameter(Mandatory = $true)][string]$App,
+        [Parameter(Mandatory = $true)][bool]$Global
+    )
+
+    $appDirectory = appdir $App $Global | Convert-Path
+    $running = @(
+        Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            try {
+                -not [string]::IsNullOrWhiteSpace([string]$_.Path) -and
+                    $_.Path -like "$appDirectory\*"
+            } catch {
+                $false
+            }
+        }
+    )
+    if ($running.Count -eq 0) {
+        return $false
+    }
+
+    # capsulenv.cmd deliberately boots its control process from a physical
+    # Scoop version directory so this temporary reset can repair that app's
+    # current junction/shims/persist links without depending on current itself.
+    # Do not weaken Scoop's guard for any *other* process from the same app.
+    $blocking = @($running | Where-Object { $_.Id -ne $PID })
+    if ($blocking.Count -eq 0) {
+        Write-Host "Portable reset is running from '$App'; ignoring only the reset host process (PID $PID)." -ForegroundColor DarkGray
+        return $false
+    }
+
+    # Delegate the actual refusal/output (including Scoop's explicit
+    # IGNORE_RUNNING_PROCESSES configuration) to the upstream implementation.
+    return [bool](test_running_process $App $Global)
+}
+
 $requested = @($Apps)
 if ($requested.Count -eq 0 -or $requested -contains '*') {
     $local = installed_apps $false | ForEach-Object { ,@($_, $false) }
@@ -96,7 +132,7 @@ foreach ($entry in $requested) {
         $failed = $true
         continue
     }
-    if (test_running_process $app $global) {
+    if (Test-CapsulenvPortableResetHasBlockingProcesses -App $app -Global $global) {
         $failed = $true
         continue
     }
