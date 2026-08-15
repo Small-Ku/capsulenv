@@ -187,7 +187,7 @@ Describe 'Capsulenv User default-browser integration' {
                 $Name -eq '' -and
                 $Value -like ('*' + $executable + '*') -and
                 $Value -like ('*' + $profile + '*') -and
-                $Value -like '*-osint*' -and
+                $Value -notlike '*-osint*' -and
                 $Value -like '*-url*' -and
                 $Value -notlike '*LibreWolf-Portable.exe*'
             }
@@ -203,6 +203,20 @@ Describe 'Capsulenv User default-browser integration' {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
             }
         }
+    }
+
+    It 'does not combine Gecko -osint with an explicit portable profile' {
+        $command = & $script:Module {
+            ConvertTo-CapsulenvDefaultBrowserCommand `
+                -Executable 'F:\Capsule Root\LibreWolf\librewolf.exe' `
+                -Profile 'F:\Capsule Root\scoop\persist\librewolf\Profiles\Default' `
+                -ProfileArgument '-profile' `
+                -Kind Url
+        }
+
+        $command | Should -Not -Match '(?i)(^|\s)-{1,2}osint(\s|$)'
+        $command | Should -Match '(?i)(^|\s)-profile\s'
+        $command | Should -Match '(?i)(^|\s)-url\s+"%1"$'
     }
 
     It 'reuses exact schema-1 registration paths when the old preset maps to the selected Scoop app' {

@@ -237,7 +237,12 @@ function ConvertTo-CapsulenvDefaultBrowserCommand {
     $parts.Add($ProfileArgument)
     $parts.Add((ConvertTo-CapsulenvProcessArgument -Argument $Profile))
     if ($Kind -eq 'Url') {
-        $parts.Add('-osint')
+        # Gecko's -osint safety gate accepts only the exact four-argument
+        # shape `app -osint -url URL`. A profile-specific portable handler
+        # necessarily adds `-profile <path>`, so combining the two makes Gecko
+        # exit 127 before opening the URL. The association is already scoped to
+        # http/https and `%1` is kept as one quoted argument; use Gecko's normal
+        # delegated-URL form while preserving the explicit portable profile.
         $parts.Add('-url')
     }
     $parts.Add('"%1"')
