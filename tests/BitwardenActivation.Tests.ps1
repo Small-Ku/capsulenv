@@ -16,6 +16,32 @@ Describe 'Capsulenv Bitwarden activation contracts' {
         $config.Bitwarden.StartOnEnter | Should -BeFalse
     }
 
+    It 'resolves the desktop executable and persisted state from the configured Scoop app selector' {
+        Mock Get-CapsulenvConfiguration {
+            @{
+                Bitwarden = @{
+                    App = 'global/custom-vault'
+                    ShortcutName = 'Vault Desktop'
+                    StatePath = 'state\data.json'
+                }
+            }
+        } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvScoopAppExecutable { 'X:\vault\vault.exe' } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvScoopAppPersistPath { 'X:\persist\custom-vault\state\data.json' } -ModuleName Capsulenv
+
+        $executable = & $script:Module { Get-CapsulenvBitwardenExecutable }
+        $statePath = & $script:Module { Get-CapsulenvBitwardenStatePath -AllowMissing }
+
+        $executable | Should -Be 'X:\vault\vault.exe'
+        $statePath | Should -Be 'X:\persist\custom-vault\state\data.json'
+        Should -Invoke Resolve-CapsulenvScoopAppExecutable -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $App -eq 'global/custom-vault' -and $ShortcutName -eq 'Vault Desktop'
+        }
+        Should -Invoke Resolve-CapsulenvScoopAppPersistPath -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $App -eq 'global/custom-vault' -and $RelativePath -eq 'state\data.json' -and $AllowMissing
+        }
+    }
+
     It 'does not abort shell activation when optional auto-start meets a foreign Bitwarden' {
         Mock Get-CapsulenvConfiguration {
             @{

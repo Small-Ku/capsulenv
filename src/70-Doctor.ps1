@@ -233,12 +233,21 @@ function Invoke-CapsulenvDoctor {
         -Detail $repairDetail))
 
     if ($configuration.Bitwarden.Enabled) {
-        $bitwarden = Get-CapsulenvBitwardenExecutable
-        $results.Add((New-CapsulenvCheckResult `
-            -Name 'Bitwarden desktop' `
-            -Passed ($null -ne $bitwarden) `
-            -Importance Optional `
-            -Detail $(if ($bitwarden) { $bitwarden } else { 'Not found' })))
+        $bitwarden = $null
+        try {
+            $bitwarden = Get-CapsulenvBitwardenExecutable
+            $results.Add((New-CapsulenvCheckResult `
+                -Name 'Bitwarden desktop' `
+                -Passed ($null -ne $bitwarden) `
+                -Importance Optional `
+                -Detail $(if ($bitwarden) { $bitwarden } else { 'Not found' })))
+        } catch {
+            $results.Add((New-CapsulenvCheckResult `
+                -Name 'Bitwarden desktop' `
+                -Passed $false `
+                -Importance Optional `
+                -Detail $_.Exception.Message))
+        }
 
         if ($bitwarden) {
             $bitwardenProcesses = @(Get-CapsulenvBitwardenProcesses -IncludeForeign)
@@ -310,23 +319,90 @@ function Invoke-CapsulenvDoctor {
         }
     }
 
-    foreach ($browser in @('Firefox', 'Zen', 'LibreWolf')) {
-        $definition = Get-CapsulenvBrowserDefinition -Browser $browser
-        if (-not $definition.Enabled) {
+    if ($configuration.SingBox.Enabled) {
+        try {
+            $singBoxStatus = Get-CapsulenvSingBoxStatus
+            $availabilityDetail = if ($singBoxStatus.Installed) {
+                [string]$singBoxStatus.Executable
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$singBoxStatus.AvailabilityError)) {
+                [string]$singBoxStatus.AvailabilityError
+            } else {
+                "Scoop app '$($singBoxStatus.App)' is not installed"
+            }
+            $results.Add((New-CapsulenvCheckResult `
+                -Name 'sing-box selected app' `
+                -Passed ([bool]$singBoxStatus.Installed) `
+                -Importance Optional `
+                -Detail $availabilityDetail))
+            if ($singBoxStatus.Installed) {
+                $results.Add((New-CapsulenvCheckResult `
+                    -Name 'sing-box persisted configuration' `
+                    -Passed ([bool]$singBoxStatus.Configured) `
+                    -Importance Optional `
+                    -Detail $(if ($singBoxStatus.Configured) { [string]$singBoxStatus.Configuration } else { 'No non-empty selected Scoop-persisted configuration' })))
+                $results.Add((New-CapsulenvCheckResult `
+                    -Name 'sing-box process ownership' `
+                    -Passed ([int]$singBoxStatus.ForeignProcesses -eq 0) `
+                    -Importance Optional `
+                    -Detail ("Running={0}; capsule-owned PIDs={1}; foreign same-name processes={2}" -f $singBoxStatus.Running, (@($singBoxStatus.CapsuleOwnedPids) -join ','), $singBoxStatus.ForeignProcesses)))
+            }
+        } catch {
+            $results.Add((New-CapsulenvCheckResult `
+                -Name 'sing-box selected app' `
+                -Passed $false `
+                -Importance Optional `
+                -Detail $_.Exception.Message))
+        }
+    }
+
+    $browserConfiguration = Get-CapsulenvConfiguration
+    foreach ($browserName in @($browserConfiguration.Browsers.Keys)) {
+        $definition = $browserConfiguration.Browsers[$browserName]
+        if ($definition -isnot [hashtable]) {
             continue
         }
-        $executable = Get-CapsulenvBrowserExecutable -Browser $browser
-        $results.Add((New-CapsulenvCheckResult `
-            -Name "$browser executable" `
-            -Passed ($null -ne $executable) `
-            -Importance Optional `
-            -Detail $(if ($executable) { $executable } else { 'Not found' })))
-        $profile = Get-CapsulenvBrowserProfilePath -Browser $browser
-        $results.Add((New-CapsulenvCheckResult `
-            -Name "$browser capsule profile" `
-            -Passed ($null -ne $profile) `
-            -Importance Optional `
-            -Detail $(if ($profile) { $profile } else { 'No Scoop-persisted profile found' })))
+        if ($definition.ContainsKey('Enabled') -and -not [bool]$definition.Enabled) {
+            continue
+        }
+        $app = if ($definition.ContainsKey('App')) { [string]$definition.App } else { [string]$browserName }
+        $displayName = if (
+            $definition.ContainsKey('DisplayName') -and
+            -not [string]::IsNullOrWhiteSpace([string]$definition.DisplayName)
+        ) {
+            [string]$definition.DisplayName
+        } else {
+            $app
+        }
+
+        try {
+            $executable = Get-CapsulenvBrowserExecutable -App $app
+            $results.Add((New-CapsulenvCheckResult `
+                -Name "$displayName executable" `
+                -Passed ($null -ne $executable) `
+                -Importance Optional `
+                -Detail $(if ($executable) { $executable } else { "Scoop app '$app' is not installed" })))
+        } catch {
+            $results.Add((New-CapsulenvCheckResult `
+                -Name "$displayName executable" `
+                -Passed $false `
+                -Importance Optional `
+                -Detail $_.Exception.Message))
+        }
+
+        try {
+            $profile = Get-CapsulenvBrowserProfilePath -App $app
+            $results.Add((New-CapsulenvCheckResult `
+                -Name "$displayName capsule profile" `
+                -Passed ($null -ne $profile) `
+                -Importance Optional `
+                -Detail $(if ($profile) { $profile } else { "No Scoop-persisted profile found for '$app'" })))
+        } catch {
+            $results.Add((New-CapsulenvCheckResult `
+                -Name "$displayName capsule profile" `
+                -Passed $false `
+                -Importance Optional `
+                -Detail $_.Exception.Message))
+        }
     }
 
     try {
@@ -375,6 +451,7 @@ function Initialize-CapsulenvIntegrations {
     }
     [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden
+    Initialize-CapsulenvSingBox
 }
 
 function Initialize-Capsulenv {
@@ -396,6 +473,7 @@ function Initialize-Capsulenv {
         -StrictToolRepairs:$StrictToolRepairs
     [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden
+    Initialize-CapsulenvSingBox
 
     $context = Get-CapsulenvContext
     Write-CapsulenvMessage -Level Success -Message "capsulenv initialized at $($context.Root)"

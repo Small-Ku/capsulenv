@@ -16,9 +16,32 @@ function Test-CapsulenvPortableToolExecutable {
 function Get-CapsulenvPortableToolExecutable {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string[]]$Candidates,
+        [string]$ScoopApp,
+        [string]$ScoopBinName,
+        [string]$ScoopExecutablePath,
+        [string[]]$Candidates = @(),
         [Parameter(Mandatory = $true)][string[]]$CommandNames
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($ScoopApp)) {
+        $installedScoopApp = Get-CapsulenvInstalledScoopApp -Selector $ScoopApp -AllowMissing
+        if ($null -ne $installedScoopApp) {
+            $parameters = @{ App = [string]$installedScoopApp.Selector }
+            if (-not [string]::IsNullOrWhiteSpace($ScoopExecutablePath)) {
+                $parameters.RelativePath = $ScoopExecutablePath
+            } elseif (-not [string]::IsNullOrWhiteSpace($ScoopBinName)) {
+                $parameters.BinName = $ScoopBinName
+            }
+            $resolvedScoopExecutable = Resolve-CapsulenvScoopAppExecutable @parameters
+            if (Test-CapsulenvPortableToolExecutable -Path $resolvedScoopExecutable) {
+                return $resolvedScoopExecutable
+            }
+            throw "Configured Scoop app '$($installedScoopApp.Selector)' does not expose a working portable tool executable."
+        }
+        # A configured Scoop app is preferred, but tool-data fallbacks and
+        # capsule-owned commands remain valid for bootstrapped/non-Scoop
+        # installations of the same tool. Never fall through to host PATH.
+    }
 
     foreach ($candidate in $Candidates) {
         $resolved = Resolve-CapsulenvPath -Path $candidate -AllowMissing
@@ -55,12 +78,14 @@ function Get-CapsulenvUvExecutable {
     [CmdletBinding()]
     param()
 
+    $settings = (Get-CapsulenvToolRelocationConfiguration).Uv
+    $binName = if ($settings.ContainsKey('BinName')) { [string]$settings.BinName } else { '' }
+    $executablePath = if ($settings.ContainsKey('ExecutablePath')) { [string]$settings.ExecutablePath } else { '' }
     return Get-CapsulenvPortableToolExecutable `
+        -ScoopApp ([string]$settings.App) `
+        -ScoopBinName $binName `
+        -ScoopExecutablePath $executablePath `
         -Candidates @(
-            'scoop\shims\uv.exe'
-            'scoop\apps\uv\current\uv.exe'
-            'scoop-global\shims\uv.exe'
-            'scoop-global\apps\uv\current\uv.exe'
             'tool-data\cargo\bin\uv.exe'
             'bin\uv.exe'
         ) `

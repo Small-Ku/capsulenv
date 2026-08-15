@@ -1,28 +1,46 @@
-function Get-CapsulenvBitwardenExecutable {
+function Get-CapsulenvBitwardenDefinition {
     [CmdletBinding()]
     param()
 
     $configuration = Get-CapsulenvConfiguration
-    return Find-CapsulenvExecutable `
-        -Candidates @($configuration.Bitwarden.ExecutableCandidates) `
-        -CommandNames @('Bitwarden.exe', 'bitwarden.exe')
+    return $configuration.Bitwarden
+}
+
+function Get-CapsulenvBitwardenExecutable {
+    [CmdletBinding()]
+    param()
+
+    $definition = Get-CapsulenvBitwardenDefinition
+    $parameters = @{
+        App = [string]$definition.App
+    }
+    foreach ($name in @('ExecutablePath', 'BinName', 'ShortcutName')) {
+        if ($definition.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace([string]$definition[$name])) {
+            $parameters[$name] = [string]$definition[$name]
+        }
+    }
+    return Resolve-CapsulenvScoopAppExecutable @parameters
 }
 
 function Get-CapsulenvBitwardenProcesses {
     [CmdletBinding()]
     param([switch]$IncludeForeign)
 
-    $portableRoots = New-Object System.Collections.Generic.List[string]
-    foreach ($root in @((Get-CapsulenvScoopRoot), (Get-CapsulenvScoopGlobalRoot))) {
-        foreach ($app in @('bitwarden', 'bitwarden-portable')) {
-            $portableRoots.Add(
-                ([System.IO.Path]::GetFullPath((Join-Path $root "apps\$app"))).TrimEnd('\', '/')
-            )
+    $definition = Get-CapsulenvBitwardenDefinition
+    $processName = 'Bitwarden'
+    try {
+        $executable = Get-CapsulenvBitwardenExecutable
+        if (-not [string]::IsNullOrWhiteSpace($executable)) {
+            $processName = [System.IO.Path]::GetFileNameWithoutExtension($executable)
         }
+    } catch {
+        # The configured app may not be installed yet. We still inspect the
+        # conventional process name so a host Bitwarden is never mistaken for
+        # a capsule-owned process during activation.
     }
 
     $result = New-Object System.Collections.Generic.List[object]
-    foreach ($process in @(Get-Process -Name 'Bitwarden' -ErrorAction SilentlyContinue)) {
+    foreach ($process in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
         $path = $null
         try {
             $path = [string]$process.Path
@@ -30,21 +48,11 @@ function Get-CapsulenvBitwardenProcesses {
             # If a process path cannot be inspected, it cannot be proven to
             # belong to this capsule and is therefore treated as foreign.
         }
+
         $owned = $false
         if (-not [string]::IsNullOrWhiteSpace($path)) {
             try {
-                $fullPath = [System.IO.Path]::GetFullPath($path)
-                foreach ($root in $portableRoots) {
-                    if (
-                        $fullPath.StartsWith(
-                            $root + [System.IO.Path]::DirectorySeparatorChar,
-                            [System.StringComparison]::OrdinalIgnoreCase
-                        )
-                    ) {
-                        $owned = $true
-                        break
-                    }
-                }
+                $owned = Test-CapsulenvScoopAppOwnsPath -App ([string]$definition.App) -Path $path
             } catch {
                 $owned = $false
             }
@@ -131,9 +139,10 @@ function Start-CapsulenvBitwarden {
         return
     }
 
-    $executable = Get-CapsulenvBitwardenExecutable
-    if (-not $executable) {
-        Write-CapsulenvMessage -Level Warning -Message 'Bitwarden desktop executable was not found. Install it in Scoop or update config/capsulenv.local.psd1.'
+    try {
+        $executable = Get-CapsulenvBitwardenExecutable
+    } catch {
+        Write-CapsulenvMessage -Level Warning -Message "Configured Bitwarden Scoop app '$($configuration.Bitwarden.App)' is unavailable: $($_.Exception.Message)"
         return
     }
 

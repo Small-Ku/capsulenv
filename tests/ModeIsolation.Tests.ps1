@@ -123,9 +123,12 @@ Describe 'Capsulenv install-mode isolation contracts' {
     It 'binds Capsulenv browser commands to Scoop-persisted profiles' {
         $config = Import-PowerShellDataFile (Join-Path $script:Root 'config/capsulenv.psd1')
         $config.UserIntegration.DefaultBrowser | Should -Be ''
-        @($config.Browsers.Firefox.ProfileCandidates).Count | Should -BeGreaterThan 0
-        @($config.Browsers.Zen.ProfileCandidates).Count | Should -BeGreaterThan 0
-        @($config.Browsers.LibreWolf.ProfileCandidates).Count | Should -BeGreaterThan 0
+        $config.Browsers.Firefox.App | Should -Be 'firefox'
+        $config.Browsers.Zen.App | Should -Be 'zen-browser'
+        $config.Browsers.LibreWolf.App | Should -Be 'librewolf'
+        $config.Browsers.Firefox.ProfilePath | Should -Be 'profile'
+        $config.Browsers.Zen.ProfilePath | Should -Be 'profile'
+        $config.Browsers.LibreWolf.ProfilePath | Should -Be 'Profiles\Default'
         $config.Browsers.Firefox.ProfileArgument | Should -Be '-profile'
         $config.Browsers.Zen.ProfileArgument | Should -Be '-profile'
         $config.Browsers.LibreWolf.ProfileArgument | Should -Be '-profile'
@@ -136,7 +139,8 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:BrowserSource | Should -Match '--host never falls back to a different Gecko product'
         $script:BrowserSource | Should -Match 'Test-CapsulenvPathUnderPortableScoop'
         $script:BrowserSource | Should -Match 'App Paths'
-        $script:BrowserSource | Should -Match '\$modeArguments = if \(\$UseHostExecutable -or \(Get-CapsulenvInstallMode\) -eq ''ShellOnly''\)'
+        $script:BrowserSource | Should -Match '\$modeArguments = if \('
+        $script:BrowserSource | Should -Match 'Get-CapsulenvInstallMode\) -eq ''ShellOnly'''
         $script:BrowserSource | Should -Match 'foreach \(\$modeArgument in @\(\$modeArguments\)\)'
     }
 

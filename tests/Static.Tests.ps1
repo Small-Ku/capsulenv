@@ -532,17 +532,38 @@ Describe 'Capsulenv static and relocation' {
                 -Condition ([string]$policyAction -in @('Allow', 'Skip')) `
                 -Message "Unexpected ShellOnly lifecycle policy action: $policyAction"
         }
-        foreach ($browser in @('Firefox', 'Zen', 'LibreWolf')) {
+        foreach ($browser in @('Firefox', 'FirefoxESR', 'Zen', 'LibreWolf')) {
             Assert-CapsulenvTest `
                 -Condition (-not $config.Browsers[$browser].ContainsKey('ProfileDir')) `
                 -Message "$browser profile must be owned by Scoop persist."
             Assert-CapsulenvTest `
                 -Condition (-not $config.Browsers[$browser].ContainsKey('CacheDir')) `
                 -Message "$browser cache must not be owned by capsulenv."
+            Assert-CapsulenvTest `
+                -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Browsers[$browser].App)) `
+                -Message "$browser must select a Scoop app manifest."
+            Assert-CapsulenvTest `
+                -Condition (-not [string]::IsNullOrWhiteSpace([string]$config.Browsers[$browser].ProfilePath)) `
+                -Message "$browser must bind a path under the selected app's Scoop persist root."
         }
         Assert-CapsulenvTest `
-            -Condition (@($config.Browsers.LibreWolf.ProfileCandidates) -contains 'scoop\persist\librewolf\Profiles\Default') `
+            -Condition ([string]$config.Browsers.LibreWolf.ProfilePath -eq 'Profiles\Default') `
             -Message 'LibreWolf must bind the Scoop-persisted portable default profile.'
+        Assert-CapsulenvTest `
+            -Condition (-not $config.Bitwarden.ContainsKey('ExecutableCandidates')) `
+            -Message 'Bitwarden executable selection must come from its configured Scoop app manifest.'
+        Assert-CapsulenvTest `
+            -Condition ([string]$config.Bitwarden.App -eq 'bitwarden') `
+            -Message 'Bitwarden must default to a manifest app selector.'
+        Assert-CapsulenvTest `
+            -Condition ([string]$config.SingBox.App -eq 'sing-box') `
+            -Message 'sing-box must default to a manifest app selector.'
+        Assert-CapsulenvTest `
+            -Condition ([string]$config.ToolStorage.Relocation.Uv.App -eq 'uv') `
+            -Message 'uv relocation must default to a manifest app selector.'
+        Assert-CapsulenvTest `
+            -Condition ([string]$config.ToolStorage.Relocation.Pixi.App -eq 'pixi') `
+            -Message 'Pixi relocation must default to a manifest app selector.'
 
         $plan = & $module { Get-CapsulenvEnvironmentPlan }
         Assert-CapsulenvTest `
@@ -738,6 +759,28 @@ Describe 'Capsulenv static and relocation' {
         Assert-CapsulenvTest `
             -Condition (-not $relocationSource.Contains('Get-ChildItem -Recurse')) `
             -Message 'Persist relocation must not recursively scan unapproved app data.'
+
+        $toolExecutableSource = @(
+            [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '37-ToolRelocation.ps1')),
+            [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '39-ToolWorkspaceRelocation.ps1'))
+        ) -join "`n"
+        Assert-CapsulenvTest `
+            -Condition $toolExecutableSource.Contains('Resolve-CapsulenvScoopAppExecutable') `
+            -Message 'Scoop-installed uv/Pixi tools must resolve their executable from installed manifest metadata.'
+        foreach ($legacyToolPath in @('scoop\apps\uv\current', 'scoop-global\apps\uv\current', 'scoop\apps\pixi\current', 'scoop-global\apps\pixi\current')) {
+            Assert-CapsulenvTest `
+                -Condition (-not $toolExecutableSource.Contains($legacyToolPath)) `
+                -Message "Tool relocation still hard-codes a Scoop app current path: $legacyToolPath"
+        }
+
+        $portableResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'scoop-capsulenv-portable-reset.ps1'))
+        $userResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'scoop-capsulenv-user-reset.ps1'))
+        $replaySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'scoop-capsulenv-replay.ps1'))
+        foreach ($scopedSource in @($portableResetSource, $userResetSource, $replaySource)) {
+            Assert-CapsulenvTest `
+                -Condition $scopedSource.Contains("'^(?i:(user|global))/(.+)$'") `
+                -Message 'Scoop reset/replay helper is missing user/global app-selector parsing.'
+        }
 
         $bitwardenSource = [System.IO.File]::ReadAllText(
             (Join-Path (Join-Path $root 'src') '55-BitwardenSshAgent.ps1')

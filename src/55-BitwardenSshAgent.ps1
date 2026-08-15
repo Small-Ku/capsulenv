@@ -1,19 +1,9 @@
-function Get-CapsulenvBitwardenScoopAppName {
+function Get-CapsulenvBitwardenScoopAppSelector {
     [CmdletBinding()]
-    param([string]$Executable)
+    param()
 
-    if ([string]::IsNullOrWhiteSpace($Executable)) {
-        $Executable = Get-CapsulenvBitwardenExecutable
-    }
-    if ([string]::IsNullOrWhiteSpace($Executable)) {
-        return $null
-    }
-
-    $normalized = [System.IO.Path]::GetFullPath($Executable)
-    if ($normalized -match '[\\/]apps[\\/](?<app>[^\\/]+)[\\/]') {
-        return [string]$Matches['app']
-    }
-    return $null
+    $configuration = Get-CapsulenvConfiguration
+    return [string]$configuration.Bitwarden.App
 }
 
 function Get-CapsulenvBitwardenStatePath {
@@ -21,49 +11,26 @@ function Get-CapsulenvBitwardenStatePath {
     param([switch]$AllowMissing)
 
     $configuration = Get-CapsulenvConfiguration
-    $context = Get-CapsulenvContext
-    $candidates = New-Object System.Collections.Generic.List[string]
-    $appNames = New-Object System.Collections.Generic.List[string]
+    $relativePath = if (
+        $configuration.Bitwarden.ContainsKey('StatePath') -and
+        -not [string]::IsNullOrWhiteSpace([string]$configuration.Bitwarden.StatePath)
+    ) {
+        [string]$configuration.Bitwarden.StatePath
+    } else {
+        'bitwarden-appdata\data.json'
+    }
 
-    $executable = Get-CapsulenvBitwardenExecutable
-    $detectedApp = Get-CapsulenvBitwardenScoopAppName -Executable $executable
-    foreach ($appName in @($detectedApp, 'bitwarden', 'bitwarden-portable')) {
-        if (-not [string]::IsNullOrWhiteSpace($appName) -and -not $appNames.Contains($appName)) {
-            $appNames.Add($appName)
+    try {
+        return Resolve-CapsulenvScoopAppPersistPath `
+            -App ([string]$configuration.Bitwarden.App) `
+            -RelativePath $relativePath `
+            -AllowMissing:$AllowMissing
+    } catch {
+        if ($AllowMissing) {
+            throw
         }
+        throw "Bitwarden persisted state was not found for Scoop app '$($configuration.Bitwarden.App)'. Start that app once or verify its persist link. $($_.Exception.Message)"
     }
-
-    if ($executable) {
-        $candidates.Add((Join-Path (Split-Path -Parent $executable) 'bitwarden-appdata\data.json'))
-    }
-
-    foreach ($rootValue in @($configuration.Scoop.Root, $configuration.Scoop.GlobalRoot)) {
-        $root = Resolve-CapsulenvPath -Path ([string]$rootValue) -AllowMissing
-        foreach ($appName in $appNames) {
-            $candidates.Add((Join-Path $root "persist\$appName\bitwarden-appdata\data.json"))
-            $candidates.Add((Join-Path $root "apps\$appName\current\bitwarden-appdata\data.json"))
-        }
-    }
-
-    $seen = @{}
-    foreach ($candidate in $candidates) {
-        $fullPath = [System.IO.Path]::GetFullPath($candidate)
-        if ($seen.ContainsKey($fullPath)) {
-            continue
-        }
-        $seen[$fullPath] = $true
-        if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
-            return $fullPath
-        }
-    }
-
-    if ($AllowMissing -and $candidates.Count -gt 0) {
-        return [System.IO.Path]::GetFullPath($candidates[0])
-    }
-
-    $expectedApp = if ($detectedApp) { $detectedApp } else { 'bitwarden' }
-    $expected = Join-Path $context.Root "scoop\apps\$expectedApp\current\bitwarden-appdata\data.json"
-    throw "Bitwarden persisted state was not found. Start the Scoop-installed desktop app once, or verify its persist link. Expected near: $expected"
 }
 
 function Get-CapsulenvBitwardenDesktopSettingsBackupPath {
@@ -546,10 +513,8 @@ function Set-CapsulenvBitwardenDesktopSshAgent {
 
     try {
         [void](Set-CapsulenvSessionEnvironment)
-        $appName = Get-CapsulenvBitwardenScoopAppName -Executable $executable
-        if ($appName) {
-            [void](Reset-CapsulenvScoop -Apps @($appName) -Quiet)
-        }
+        $appSelector = Get-CapsulenvBitwardenScoopAppSelector
+        [void](Reset-CapsulenvScoop -Apps @($appSelector) -Quiet)
 
         $statePath = Get-CapsulenvBitwardenStatePath -AllowMissing
         $state = Read-CapsulenvUtf8TextFile -Path $statePath -AllowMissing

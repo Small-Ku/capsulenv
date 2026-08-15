@@ -29,10 +29,11 @@ Setup and maintenance
   capsulenv.cmd cache ...
   capsulenv.cmd tools ...
   capsulenv.cmd bitwarden ...
+  capsulenv.cmd sing-box ...
   capsulenv.cmd rehydrate ...
 
 Use "capsulenv.cmd help <topic>" for details.
-Topics: app, browser, user, eject, seed, cache, tools, repair, offline, bitwarden
+Topics: app, browser, user, eject, seed, cache, tools, repair, offline, bitwarden, sing-box
 '@ | Write-Host
         }
         'app' {
@@ -49,13 +50,19 @@ app commands
         'browser' {
 @'
 browser commands
+  capsulenv.cmd browser <scoop-app> [--host] [browser arguments...]
   capsulenv.cmd firefox [--host] [browser arguments...]
   capsulenv.cmd zen [--host] [browser arguments...]
   capsulenv.cmd librewolf [--host] [browser arguments...]
 
-      By default the browser executable and profile both come from capsule
-      Scoop state. --host is explicit and uses only the same Gecko product's
-      machine executable with the capsule Scoop-persisted profile.
+      The primary selector is the installed Scoop manifest name, optionally
+      scoped as user/<app> or global/<app>. A matching Browsers entry describes
+      only Gecko-specific details such as the persisted profile path.
+
+      --host is explicit and uses only the configured product's machine
+      executable with the selected Scoop app's persisted profile. The three
+      short commands above remain compatibility aliases for firefox,
+      zen-browser, and librewolf.
 '@ | Write-Host
         }
         'user' {
@@ -172,6 +179,19 @@ Bitwarden SSH Agent commands
 Advanced: disable-windows-agent, restore-windows-agent, configure-git, restore-git.
 ShellOnly keeps Git/service changes process-only; User mode may own reversible
 current-user integration.
+'@ | Write-Host
+        }
+        'sing-box' {
+@'
+sing-box private-network commands
+  capsulenv.cmd sing-box status
+  capsulenv.cmd sing-box check
+  capsulenv.cmd sing-box connect
+  capsulenv.cmd sing-box disconnect [--force]
+
+The executable and configuration are resolved from SingBox.App and that
+installed Scoop manifest/persist root. Automatic connection only runs when the
+selected app is installed and its persisted configuration is non-empty.
 '@ | Write-Host
         }
         default {
@@ -674,10 +694,19 @@ function Invoke-Capsulenv {
         'seed' { Invoke-CapsulenvSeedCommand -Arguments $remaining }
         'cache' { Invoke-CapsulenvCacheCommand -Arguments $remaining }
         'tools' { Invoke-CapsulenvToolsCommand -Arguments $remaining }
-        'firefox' { Invoke-CapsulenvBrowserCommand -Browser Firefox -Arguments $remaining }
-        'zen' { Invoke-CapsulenvBrowserCommand -Browser Zen -Arguments $remaining }
-        'librewolf' { Invoke-CapsulenvBrowserCommand -Browser LibreWolf -Arguments $remaining }
+        'browser' {
+            if ($remaining.Count -lt 1) {
+                throw 'Usage: browser <scoop-app> [--host] [browser arguments...]'
+            }
+            Invoke-CapsulenvBrowserCommand `
+                -App ([string]$remaining[0]) `
+                -Arguments @($remaining | Select-Object -Skip 1)
+        }
+        'firefox' { Invoke-CapsulenvBrowserCommand -App firefox -Arguments $remaining }
+        'zen' { Invoke-CapsulenvBrowserCommand -App zen-browser -Arguments $remaining }
+        'librewolf' { Invoke-CapsulenvBrowserCommand -App librewolf -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }
+        'sing-box' { Invoke-CapsulenvSingBoxCommand -Arguments $remaining }
         'help' {
             $helpArguments = @($remaining)
             if ($helpArguments.Count -gt 1) { throw 'Usage: help [topic]' }

@@ -35,7 +35,7 @@ Describe 'Capsulenv Gecko browser launch contracts' {
                 param($CapsuleRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 [void](Get-CapsulenvConfiguration -Refresh)
-                Get-CapsulenvHostBrowserExecutable -Browser Firefox
+                Get-CapsulenvHostBrowserExecutable -App firefox
             } $temporaryRoot
             $resolved | Should -Be ([System.IO.Path]::GetFullPath($hostFirefox))
         } finally {
@@ -45,17 +45,30 @@ Describe 'Capsulenv Gecko browser launch contracts' {
         }
     }
 
+    It 'dispatches the primary browser command by Scoop app selector without a preset ValidateSet' {
+        Mock Start-CapsulenvBrowser {} -ModuleName Capsulenv
+
+        Invoke-Capsulenv -Arguments @('browser', 'global/my-gecko', 'https://example.invalid/')
+
+        Should -Invoke Start-CapsulenvBrowser -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $App -eq 'global/my-gecko' -and
+            -not $UseHostExecutable -and
+            @($Arguments).Count -eq 1 -and
+            $Arguments[0] -eq 'https://example.invalid/'
+        }
+    }
+
     It 'treats --host as a Capsulenv-only leading browser option' {
         Mock Start-CapsulenvBrowser {} -ModuleName Capsulenv
         & $script:Module {
-            Invoke-CapsulenvBrowserCommand -Browser LibreWolf -Arguments @('--host', 'https://example.invalid/')
+            Invoke-CapsulenvBrowserCommand -App librewolf -Arguments @('--host', 'https://example.invalid/')
         }
         Should -Invoke Start-CapsulenvBrowser -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $Browser -eq 'LibreWolf' -and $UseHostExecutable -and @($Arguments).Count -eq 1 -and $Arguments[0] -eq 'https://example.invalid/'
+            $App -eq 'librewolf' -and $UseHostExecutable -and @($Arguments).Count -eq 1 -and $Arguments[0] -eq 'https://example.invalid/'
         }
 
         & $script:Module {
-            { Invoke-CapsulenvBrowserCommand -Browser Firefox -Arguments @('https://example.invalid/', '--host') } |
+            { Invoke-CapsulenvBrowserCommand -App firefox -Arguments @('https://example.invalid/', '--host') } |
                 Should -Throw '*--host must be the first browser argument*'
         }
     }
@@ -88,7 +101,7 @@ Describe 'Capsulenv User default-browser integration' {
             Mock Get-CapsulenvHostIntegrationKey { 'host-key' } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserExecutable { $executable } -ModuleName Capsulenv
             Mock Get-CapsulenvBrowserProfilePath { $profile } -ModuleName Capsulenv
-            Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile' } } -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile'; DisplayName = 'LibreWolf' } } -ModuleName Capsulenv
             Mock Get-CapsulenvDefaultBrowserState { $null } -ModuleName Capsulenv
             Mock Test-CapsulenvCurrentUserRegistryKey { $false } -ModuleName Capsulenv
             Mock Get-CapsulenvCurrentUserRegistryRawValue { [pscustomobject]@{ Exists = $false; Value = $null } } -ModuleName Capsulenv
@@ -96,7 +109,7 @@ Describe 'Capsulenv User default-browser integration' {
             Mock Set-CapsulenvCurrentUserRegistryStringValue {} -ModuleName Capsulenv
             Mock Send-CapsulenvAssociationChanged {} -ModuleName Capsulenv
 
-            $registration = & $script:Module { Install-CapsulenvDefaultBrowserRegistration -Browser LibreWolf }
+            $registration = & $script:Module { Install-CapsulenvDefaultBrowserRegistration -App librewolf }
 
             $registration.RegisteredName | Should -Match '^Capsulenv LibreWolf'
             Should -Invoke Set-CapsulenvCurrentUserRegistryStringValue -ModuleName Capsulenv -Times 1 -ParameterFilter {
@@ -125,13 +138,55 @@ Describe 'Capsulenv User default-browser integration' {
         }
     }
 
+    It 'reuses exact schema-1 registration paths when the old preset maps to the selected Scoop app' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-default-browser-legacy-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            $executable = Join-Path $temporaryRoot 'LibreWolf/librewolf.exe'
+            $profile = Join-Path $temporaryRoot 'Profiles/Default'
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
+            [void](New-Item -ItemType Directory -Path $profile -Force)
+            '' | Set-Content -LiteralPath $executable -Encoding UTF8
+            $legacyState = [pscustomobject]@{
+                SchemaVersion = 1
+                Browser = 'LibreWolf'
+                RegisteredName = 'Capsulenv LibreWolf (legacy)'
+                ClientPath = 'Software\Clients\StartMenuInternet\Capsulenv.Legacy.LibreWolf'
+                UrlClassPath = 'Software\Classes\Capsulenv.Legacy.LibreWolf.URL'
+                HtmlClassPath = 'Software\Classes\Capsulenv.Legacy.LibreWolf.HTML'
+                UrlProgId = 'Capsulenv.Legacy.LibreWolf.URL'
+                HtmlProgId = 'Capsulenv.Legacy.LibreWolf.HTML'
+            }
+
+            Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserExecutable { $executable } -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserProfilePath { $profile } -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile'; DisplayName = 'LibreWolf' } } -ModuleName Capsulenv
+            Mock Get-CapsulenvDefaultBrowserState { $legacyState } -ModuleName Capsulenv
+            Mock Set-CapsulenvCurrentUserRegistryStringValue {} -ModuleName Capsulenv
+            Mock Send-CapsulenvAssociationChanged {} -ModuleName Capsulenv
+
+            $registration = & $script:Module { Install-CapsulenvDefaultBrowserRegistration -App librewolf }
+
+            $registration.UrlProgId | Should -Be $legacyState.UrlProgId
+            $registration.HtmlProgId | Should -Be $legacyState.HtmlProgId
+            $registration.ClientPath | Should -Be $legacyState.ClientPath
+            Should -Invoke Set-CapsulenvCurrentUserRegistryStringValue -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+                $SubKey -like '*\URLAssociations' -and $Name -eq 'https' -and $Value -eq $legacyState.UrlProgId
+            }
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
     It 'opens the targeted Windows Default Apps page only when the configured browser is not already selected' {
-        Mock Get-CapsulenvConfiguredDefaultBrowser { 'LibreWolf' } -ModuleName Capsulenv
+        Mock Get-CapsulenvConfiguredDefaultBrowser { 'librewolf' } -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
         Mock Install-CapsulenvDefaultBrowserRegistration {
-            [pscustomobject]@{ RegisteredName = 'Capsulenv LibreWolf (111111111111)'; DisplayName = 'LibreWolf (Capsulenv)' }
+            [pscustomobject]@{ RegisteredName = 'Capsulenv LibreWolf (111111111111)'; DisplayName = 'LibreWolf (Capsulenv)'; UrlProgId = 'Capsulenv.URL'; HtmlProgId = 'Capsulenv.HTML' }
         } -ModuleName Capsulenv
-        Mock Test-CapsulenvDefaultBrowserSelected { $false } -ModuleName Capsulenv
+        Mock Test-CapsulenvDefaultBrowserProgIdsSelected { $false } -ModuleName Capsulenv
         Mock Open-CapsulenvDefaultAppsSettings {} -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
@@ -140,7 +195,7 @@ Describe 'Capsulenv User default-browser integration' {
             $RegisteredName -eq 'Capsulenv LibreWolf (111111111111)'
         }
 
-        Mock Test-CapsulenvDefaultBrowserSelected { $true } -ModuleName Capsulenv
+        Mock Test-CapsulenvDefaultBrowserProgIdsSelected { $true } -ModuleName Capsulenv
         & $script:Module { Sync-CapsulenvConfiguredDefaultBrowser }
         Should -Invoke Open-CapsulenvDefaultAppsSettings -ModuleName Capsulenv -Times 1 -Exactly
     }
@@ -186,9 +241,9 @@ Describe 'Capsulenv User default-browser integration' {
     It 'refuses to unregister a portable browser while Windows still uses its UserChoice ProgIDs' {
         Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
         Mock Get-CapsulenvDefaultBrowserState {
-            [pscustomobject]@{ Browser = 'LibreWolf'; RegisteredName = 'Capsulenv LibreWolf (111111111111)' }
+            [pscustomobject]@{ Browser = 'LibreWolf'; RegisteredName = 'Capsulenv LibreWolf (111111111111)'; UrlProgId = 'Legacy.URL'; HtmlProgId = 'Legacy.HTML' }
         } -ModuleName Capsulenv
-        Mock Test-CapsulenvDefaultBrowserSelected { $true } -ModuleName Capsulenv
+        Mock Test-CapsulenvDefaultBrowserProgIdsSelected { $true } -ModuleName Capsulenv
         Mock Open-CapsulenvDefaultAppsSettings {} -ModuleName Capsulenv
 
         & $script:Module {

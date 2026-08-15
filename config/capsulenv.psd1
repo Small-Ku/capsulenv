@@ -91,9 +91,9 @@
 
     UserIntegration = @{
         # Empty by default: changing Windows defaults requires an explicit
-        # per-user choice. Set to Firefox, Zen, or LibreWolf in local config.
-        # In User mode Capsulenv registers a portable-profile-aware handler and
-        # opens Windows Default Apps directly to that application when needed.
+        # per-user choice. Set this to an installed Scoop app selector such as
+        # librewolf, firefox, user/firefox, or global/librewolf. The selector
+        # must have a matching Browsers entry below.
         DefaultBrowser = ''
     }
 
@@ -208,11 +208,18 @@
             AutoRepair = $true
             Uv = @{
                 Enabled = $true
+                # Prefer the executable exposed by this installed Scoop app
+                # manifest. Custom bucket app names and explicit scope selectors
+                # are supported; tool-data remains a non-Scoop fallback.
+                App = 'uv'
+                BinName = 'uv'
                 RepairManagedPython = $true
                 RepairGlobalTools = $true
             }
             Pixi = @{
                 Enabled = $true
+                App = 'pixi'
+                BinName = 'pixi'
 
                 # pixi-global.toml can contain version ranges and Pixi does not
                 # keep a documented global lock file. Keep global sync opt-in
@@ -231,26 +238,50 @@
         StartOnEnter = $false
         SetSshAuthSock = $true
         Authorization = 'always'
-        ExecutableCandidates = @(
-            'scoop\apps\bitwarden\current\Bitwarden.exe'
-            'scoop\apps\bitwarden-portable\current\Bitwarden.exe'
-            'scoop-global\apps\bitwarden\current\Bitwarden.exe'
-            'scoop-global\apps\bitwarden-portable\current\Bitwarden.exe'
-        )
+        # Installed Scoop app selector. This may point at any compatible
+        # Bitwarden desktop manifest, including a custom bucket app name.
+        App = 'bitwarden'
+        ShortcutName = 'Bitwarden'
+        # Relative to the selected app's Scoop persist root.
+        StatePath = 'bitwarden-appdata\data.json'
+    }
+
+    SingBox = @{
+        Enabled = $true
+        # Installed Scoop app selector. `user/` or `global/` may be used when
+        # the same manifest exists in both portable roots.
+        App = 'sing-box'
+        BinName = 'sing-box'
+        # Paths are relative to the selected app's Scoop persist root.
+        ConfigPath = 'config.json'
+        ConfigDirectory = ''
+        AutoConnect = $true
+        ExtraArguments = @()
     }
 
     Browsers = @{
         Firefox = @{
             Enabled = $true
-            CommandNames = @('firefox.exe')
-            ExecutableCandidates = @(
-                'scoop\apps\firefox\current\firefox.exe'
-                'scoop\apps\firefox-esr\current\firefox.exe'
+            App = 'firefox'
+            DisplayName = 'Firefox'
+            BinName = 'firefox'
+            ProfilePath = 'profile'
+            ProfileArgument = '-profile'
+            ShellOnlyArguments = @('-no-remote')
+            HostExecutableCandidates = @(
+                '%ProgramFiles%\Mozilla Firefox\firefox.exe'
+                '%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe'
             )
-            ProfileCandidates = @(
-                'scoop\persist\firefox\profile'
-                'scoop\persist\firefox-esr\profile'
-            )
+            HostAppPathNames = @('firefox.exe')
+            HostCommandNames = @('firefox.exe')
+        }
+
+        FirefoxESR = @{
+            Enabled = $true
+            App = 'firefox-esr'
+            DisplayName = 'Firefox ESR'
+            BinName = 'firefox'
+            ProfilePath = 'profile'
             ProfileArgument = '-profile'
             ShellOnlyArguments = @('-no-remote')
             HostExecutableCandidates = @(
@@ -263,17 +294,10 @@
 
         Zen = @{
             Enabled = $true
-            CommandNames = @('zen.exe')
-            ExecutableCandidates = @(
-                'scoop\apps\zen-browser\current\zen.exe'
-                'scoop\apps\zen-browser-bin\current\zen.exe'
-                'scoop\apps\zen\current\zen.exe'
-            )
-            ProfileCandidates = @(
-                'scoop\persist\zen-browser\profile'
-                'scoop\persist\zen-browser-bin\profile'
-                'scoop\persist\zen\profile'
-            )
+            App = 'zen-browser'
+            DisplayName = 'Zen Browser'
+            BinName = 'zen'
+            ProfilePath = 'profile'
             ProfileArgument = '-profile'
             ShellOnlyArguments = @('-no-remote')
             HostExecutableCandidates = @(
@@ -287,15 +311,10 @@
 
         LibreWolf = @{
             Enabled = $true
-            CommandNames = @('librewolf.exe')
-            ExecutableCandidates = @(
-                'scoop\apps\librewolf\current\LibreWolf\librewolf.exe'
-                'scoop-global\apps\librewolf\current\LibreWolf\librewolf.exe'
-            )
-            ProfileCandidates = @(
-                'scoop\persist\librewolf\Profiles\Default'
-                'scoop-global\persist\librewolf\Profiles\Default'
-            )
+            App = 'librewolf'
+            DisplayName = 'LibreWolf'
+            ExecutablePath = 'LibreWolf\librewolf.exe'
+            ProfilePath = 'Profiles\Default'
             ProfileArgument = '-profile'
             ShellOnlyArguments = @('-no-remote')
             HostExecutableCandidates = @(

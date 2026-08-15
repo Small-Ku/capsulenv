@@ -2,12 +2,14 @@ function Get-CapsulenvPixiExecutable {
     [CmdletBinding()]
     param()
 
+    $settings = (Get-CapsulenvToolRelocationConfiguration).Pixi
+    $binName = if ($settings.ContainsKey('BinName')) { [string]$settings.BinName } else { '' }
+    $executablePath = if ($settings.ContainsKey('ExecutablePath')) { [string]$settings.ExecutablePath } else { '' }
     return Get-CapsulenvPortableToolExecutable `
+        -ScoopApp ([string]$settings.App) `
+        -ScoopBinName $binName `
+        -ScoopExecutablePath $executablePath `
         -Candidates @(
-            'scoop\shims\pixi.exe'
-            'scoop\apps\pixi\current\pixi.exe'
-            'scoop-global\shims\pixi.exe'
-            'scoop-global\apps\pixi\current\pixi.exe'
             'tool-data\cargo\bin\pixi.exe'
             'tool-data\pixi\bin\pixi.exe'
         ) `
