@@ -58,7 +58,7 @@ Pester 6.1.0+ is the only test path:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-Tests cover static safety invariants, source/module parsing, runtime build, first install/update preservation, installed-module smoke behavior, ShellOnly/User isolation, Scoop bootstrap/reset/replay boundaries, app launcher metadata semantics, tool storage/relocation, browser ownership, Bitwarden scoped mutation and host-scoped integration state.
+Tests cover static safety invariants, source/module parsing, runtime build, first install/update preservation, installed-module smoke behavior, ShellOnly/User isolation, Scoop bootstrap/reset/replay boundaries, installed-manifest selector/executable semantics, tool storage/relocation, browser/default-browser ownership, sing-box process/config ownership, Bitwarden scoped mutation and host-scoped integration state.
 
 Where possible, test dangerous integration through isolated fixtures/static invariants instead of changing the real test host's global Git config, services, browser profiles or Scoop installation.
 

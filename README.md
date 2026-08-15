@@ -82,11 +82,11 @@ User mode 也可以把 capsule 裡指定的 Gecko browser 註冊成 Windows 的 
 
 ```powershell
 UserIntegration = @{
-    DefaultBrowser = 'LibreWolf'
+    DefaultBrowser = 'librewolf'
 }
 ```
 
-支援 `Firefox`、`Zen`、`LibreWolf`。下一次 `install-user`／`enable-user`／`user-shell` 會建立 Capsulenv-owned 的 `http`、`https`、`.htm`、`.html` registration，handler 直接綁定 capsule 的實體 Gecko executable 與 Scoop-persisted profile，然後在尚未選中時開啟該 application 的 Windows **Default Apps** 頁。現代 Windows 11 不允許一般程式可靠地靜默覆寫 `http/https` 的 `UserChoice`，所以最後的 **Set default** 仍由使用者在 Settings 確認；Capsulenv 不偽造 association hash。`restore-user` 若發現 Capsulenv browser 仍是 default，會先要求改選另一個 browser，再移除自己精確記錄的 registration。
+這裡指定的是**已安裝 Scoop app selector**，不是 Capsulenv browser preset；同名 app 同時存在 user/global root 時可寫 `user/firefox` 或 `global/librewolf`。`Browsers` 設定只補上 Gecko 特有的 profile path／launch argument，因此自訂 bucket 或改名 manifest 也可加入一個對應 entry。下一次 `install-user`／`enable-user`／`user-shell` 會建立 Capsulenv-owned 的 `http`、`https`、`.htm`、`.html` registration，handler 直接綁定該 app 的實體 Gecko executable 與 Scoop-persisted profile，然後在尚未選中時開啟該 application 的 Windows **Default Apps** 頁。現代 Windows 11 不允許一般程式可靠地靜默覆寫 `http/https` 的 `UserChoice`，所以最後的 **Set default** 仍由使用者在 Settings 確認；Capsulenv 不偽造 association hash。`restore-user` 若發現 Capsulenv browser 仍是 default，會先要求改選另一個 browser，再移除自己精確記錄的 registration。
 
 ## 啟動 Scoop GUI app
 
@@ -102,15 +102,14 @@ capsulenv.cmd app run <app> -- <runtime arguments...>
 
 Launcher 讀取**已安裝版本**的 Scoop `manifest.json`／`install.json`，直接啟動 shortcut target，不建立 `.lnk`。同一 app 同時存在 local/global root 時，使用 `user/<app>` 或 `global/<app>` 明確指定。
 
-Firefox、Zen 與 LibreWolf 另有 profile-aware 入口：
+Gecko 類 browser 的主要入口直接指定 Scoop app：
 
 ```bat
-capsulenv.cmd firefox
-capsulenv.cmd zen
-capsulenv.cmd librewolf
+capsulenv.cmd browser firefox
+capsulenv.cmd browser global/librewolf
 ```
 
-它們使用 Scoop `persist` 中的 capsule profile；ShellOnly 會額外避免把請求交給主機既有 browser process。若只想借用這台機器**同一 browser product** 的 Gecko executable，而仍打開 capsule profile，可明示 `--host`，例如 `capsulenv.cmd firefox --host`。Capsulenv 不會自動用 Firefox 代開 LibreWolf/Zen（或反向），亦不會在普通 browser command 中偷偷 fallback 到 host browser。
+`firefox`、`zen`、`librewolf` 三個舊短命令仍是 compatibility aliases。Browser integration 讀 installed manifest 的 `bin`／shortcut target，再使用同一 app 的 Scoop `persist` profile；ShellOnly 會額外避免把請求交給主機既有 browser process。若只想借用這台機器**同一 browser product** 的 Gecko executable，而仍打開 capsule profile，可明示 `--host`。Capsulenv 不會跨 product 猜 executable，也不會在普通 browser command 中偷偷 fallback 到 host browser。
 
 ## 從日用機一次性匯入
 
@@ -197,7 +196,10 @@ Capsulenv 的 maintenance/control plane 與工作 shell 分開：`install.cmd`�
 ```bat
 capsulenv.cmd reset
 capsulenv.cmd reset <app> [app...]
+capsulenv.cmd reset user/<app> global/<app>
 ```
+
+`ReplayHooks`、persist relocation repair 與 reset 都接受相同 selector；不帶 scope 時維持既有 user-first／兩-root 語義，需要精確指定同名安裝時使用 `user/` 或 `global/`。
 
 檢查離線可用性、預熱已安裝 apps 的 Scoop download cache、或比較 installed version 與 USB local bucket snapshot：
 
@@ -225,7 +227,20 @@ ShellOnly 只使用 process-only Git SSH 設定且不改 Windows `ssh-agent` ser
 capsulenv.cmd bitwarden restore
 ```
 
-Capsulenv 不複製、重建或重新序列化 Bitwarden vault/app state；更精確的 safety contract 見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+Capsulenv 不複製、重建或重新序列化 Bitwarden vault/app state；`Bitwarden.App` 可改成任何相容的 installed Scoop app selector，而 executable 與 state path 仍由該 app 的 manifest/persist ownership 決定。更精確的 safety contract 見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+
+## sing-box 私有網絡
+
+若 capsule 已由 Scoop 安裝 sing-box 並在它自己的 persist store 放好非空設定，Capsulenv 可檢查並啟動該 instance：
+
+```bat
+capsulenv.cmd sing-box status
+capsulenv.cmd sing-box check
+capsulenv.cmd sing-box connect
+capsulenv.cmd sing-box disconnect --force
+```
+
+預設 `SingBox.App = 'sing-box'`、`ConfigPath = 'config.json'` 且 `AutoConnect = $true`；未安裝或 persisted config 為空時 activation 只略過，不會下載、生成或猜測 VPN/Tailscale 設定。自訂 bucket／改名 manifest 可把 `SingBox.App` 改成對應 selector，必要時再指定 `BinName`／`ExecutablePath`。
 
 ## 更新與移除
 

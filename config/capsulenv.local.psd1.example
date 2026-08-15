@@ -12,16 +12,19 @@
         # manifests treat it as a one-shot transformation.
         # ReplayHooks replaces the default allow-list as one unit.
         # Use @{} to disable automatic hook replay entirely.
+        # Keys are installed Scoop app selectors. Use user/<app> or
+        # global/<app> when a rule must target one scope exactly.
         # ReplayHooks = @{
         #     firefox = @('post_install')
-        #     'zen-browser' = @('post_install')
+        #     'global/zen-browser' = @('post_install')
         # }
 
 
         # RelocationRepairs also replaces the default allow-list as one unit.
         # Use @{} to disable all persisted text path repairs.
+        # Keys accept the same <app> / user/<app> / global/<app> selector.
         # RelocationRepairs = @{
-        #     'some-app' = @(
+        #     'user/some-app' = @(
         #         @{
         #             Path = 'config\settings.json'
         #             Format = 'json' # text | json
@@ -35,14 +38,28 @@
 
     Bitwarden = @{
         StartOnEnter = $false
+        # Any compatible installed Scoop app selector.
+        # App = 'global/my-bitwarden'
+        # ShortcutName = 'Bitwarden'
+        # StatePath = 'bitwarden-appdata\data.json'
         # always | never | remember-until-lock
         Authorization = 'always'
     }
 
+    SingBox = @{
+        # Any compatible installed Scoop app selector. Empty/missing persisted
+        # config makes AutoConnect a no-op rather than a download/provision step.
+        # App = 'global/my-sing-box'
+        # BinName = 'sing-box'
+        # ConfigPath = 'config.json'
+        # ConfigDirectory = ''
+        # AutoConnect = $true
+    }
+
     UserIntegration = @{
-        # Optional. User mode registers the portable browser with Windows and
-        # opens its Default Apps page when it is not already selected.
-        # DefaultBrowser = 'LibreWolf'
+        # Optional installed Scoop app selector. User mode registers the matching
+        # Browsers entry with Windows and opens Default Apps when needed.
+        # DefaultBrowser = 'global/librewolf'
     }
 
     Browsers = @{
@@ -51,7 +68,16 @@
         }
         # LibreWolf = @{
         #     Enabled = $false
+        #     # App = 'global/librewolf'
         #     # HostExecutableCandidates = @('D:\Apps\LibreWolf\librewolf.exe')
+        # }
+        # MyGeckoFork = @{
+        #     Enabled = $true
+        #     App = 'my-gecko-fork'
+        #     BinName = 'my-browser'
+        #     ProfilePath = 'profile'
+        #     ProfileArgument = '-profile'
+        #     ShellOnlyArguments = @('-no-remote')
         # }
     }
 
@@ -74,6 +100,10 @@
     # PathVariables are directories, FileVariables are file paths whose parent
     # and an empty file are initialized inside CAPSULENV_ROOT when storage auto-init is enabled.
     # ToolStorage = @{
+    #     Relocation = @{
+    #         Uv = @{ App = 'global/my-uv'; BinName = 'uv' }
+    #         Pixi = @{ App = 'my-pixi'; BinName = 'pixi' }
+    #     }
     #     FileVariables = @{
     #         SCCACHE_CONF = 'tool-data\sccache\config.toml'
     #     }

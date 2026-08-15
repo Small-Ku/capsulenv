@@ -121,6 +121,22 @@ capsulenv.cmd seed powershell
 
 私人 module 本體仍應部署到 `PowerShell/Modules/`。若需要把 host Git/Scoop inventory 也轉成 USB-owned source of truth，可分別執行 `seed git` / `seed scoop`。Seed 不是雙向同步；詳細 filtering/overwrite semantics 見 [`TOOLS.md`](TOOLS.md#one-way-host-seeding)。
 
+## 從 v0.14.x app preset/path candidates 遷移
+
+v0.15 把 browser、Bitwarden、sing-box，以及 Scoop-installed uv/Pixi 的 executable identity 統一到 installed Scoop app selector。Runtime 讀 selected app 的 installed `manifest.json`／`install.json`，不再靠一組 `scoop\apps\...\current` candidates 猜是哪一個 package。
+
+舊 `UserIntegration.DefaultBrowser = 'Firefox'`／`'LibreWolf'` 仍能按 app 名匹配；但舊 `Firefox` preset 曾順帶 fallback 到 `firefox-esr`，v0.15 不再跨 manifest 猜 package，若實際安裝 ESR 請指定 `firefox-esr`。舊 `Zen` preset 同樣應改成實際 manifest selector：
+
+```powershell
+@{
+    UserIntegration = @{ DefaultBrowser = 'zen-browser' }
+}
+```
+
+若 local config 曾覆寫 `Bitwarden.ExecutableCandidates`，改為 `Bitwarden.App`，並按需要指定 `ShortcutName`／`BinName`／`ExecutablePath`；persisted `data.json` 仍留在該 Scoop app 的 persist root，不要搬到 Capsulenv 自建資料夾。自訂 Gecko manifest 則加入一個 `Browsers` entry，至少指定 `App`、`ProfilePath`、`ProfileArgument`，executable 可由 manifest 唯一 `bin` 自動解出或以 `BinName`／`ExecutablePath` 消歧。
+
+`Scoop.ReplayHooks`、`Scoop.RelocationRepairs` 與 reset 現在也接受 `user/<app>`／`global/<app>`。只有在同名 app 同時存在兩個 root 或 rule 本身必須精確限制 scope 時才需要加 prefix；無 scope 的既有設定仍保留原有語義。
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：
