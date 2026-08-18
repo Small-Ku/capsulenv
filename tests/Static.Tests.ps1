@@ -893,6 +893,11 @@ Describe 'Capsulenv static and relocation' {
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot $mutableDirectory))) `
                     -Message "Deployment unexpectedly created mutable runtime state: $mutableDirectory"
             }
+            foreach ($bundleOnlyPath in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
+                Assert-CapsulenvTest `
+                    -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot $bundleOnlyPath))) `
+                    -Message "Deployment unexpectedly copied bundle-only content: $bundleOnlyPath"
+            }
             $sentinel = Join-Path (Join-Path $installRoot 'workspace') 'keep.txt'
             [void](New-Item -ItemType Directory -Path (Split-Path -Parent $sentinel) -Force)
             'preserve' | Set-Content -LiteralPath $sentinel -Encoding UTF8
@@ -926,6 +931,7 @@ Describe 'Capsulenv static and relocation' {
                 'Copy-CapsulenvInstallFile',
                 '.capsulenv-install.json',
                 'ManagedFiles',
+                'InstallFiles',
                 'SchemaVersion = 3',
                 'Install destination must not be inside the source repository'
             )) {

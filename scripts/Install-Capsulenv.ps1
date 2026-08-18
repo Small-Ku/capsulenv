@@ -93,8 +93,9 @@ if (Test-Path -LiteralPath $runtimeSourceMetadataPath -PathType Leaf) {
     $runtimeSourceMetadata = Get-Content -LiteralPath $runtimeSourceMetadataPath -Raw | ConvertFrom-Json
     if (
         $null -eq $runtimeSourceMetadata.SchemaVersion -or
-        [int]$runtimeSourceMetadata.SchemaVersion -ne 2 -or
-        $null -eq $runtimeSourceMetadata.ManagedFiles
+        [int]$runtimeSourceMetadata.SchemaVersion -notin @(2, 3) -or
+        $null -eq $runtimeSourceMetadata.ManagedFiles -or
+        ([int]$runtimeSourceMetadata.SchemaVersion -ge 3 -and $null -eq $runtimeSourceMetadata.PSObject.Properties['InstallFiles'])
     ) {
         throw 'This prebuilt capsulenv runtime does not contain an installable runtime manifest. Rebuild it with the current Build-Capsulenv.ps1.'
     }
@@ -136,8 +137,14 @@ try {
             Version = [string]$runtimeSourceMetadata.Version
             SourceCommit = $runtimeSourceMetadata.SourceCommit
         }
+        $installFileProperty = $runtimeSourceMetadata.PSObject.Properties['InstallFiles']
+        $installFiles = if ($null -ne $installFileProperty) {
+            @($installFileProperty.Value)
+        } else {
+            @($runtimeSourceMetadata.ManagedFiles)
+        }
         $newManagedFiles = @(
-            $runtimeSourceMetadata.ManagedFiles | ForEach-Object { [string]$_ } | Sort-Object -Unique
+            $installFiles | ForEach-Object { [string]$_ } | Sort-Object -Unique
         )
         foreach ($relative in $newManagedFiles) {
             $sourcePath = Resolve-CapsulenvManagedInstallPath -Root $buildRoot -RelativePath $relative
@@ -150,7 +157,7 @@ try {
             -OutputPath $buildRoot `
             -IncludeDevelopmentFiles:$IncludeDevelopmentFiles
         $newManagedFiles = @(
-            $build.ManagedFiles | ForEach-Object { [string]$_ } | Sort-Object -Unique
+            $build.InstallFiles | ForEach-Object { [string]$_ } | Sort-Object -Unique
         )
     }
     $oldManagedFiles = if ($null -ne $existingMarker -and $null -ne $existingMarker.ManagedFiles) {

@@ -131,13 +131,45 @@ try {
     )
     $managedFiles = @($managedFiles + '.capsulenv-runtime.json' | Sort-Object -Unique)
 
+    $installFiles = @(
+        'capsulenv.cmd'
+        'bin/firefox-capsulenv.cmd'
+        'bin/librewolf-capsulenv.cmd'
+        'bin/zen-capsulenv.cmd'
+        'config/capsulenv.psd1'
+        'config/capsulenv.local.psd1.example'
+        Get-ChildItem -LiteralPath $moduleDestination -File -Recurse -Force | ForEach-Object {
+            $_.FullName.Substring($outputRoot.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')
+        }
+    )
+    if ($IncludeDevelopmentFiles) {
+        $developmentInstallFiles = @(
+            'AGENTS.md'
+            'Capsulenv.psd1'
+            'Merge-ModuleScripts.ps1'
+            'PSScriptAnalyzerSettings.psd1'
+            'scripts/Analyze-Capsulenv.ps1'
+            'scripts/Build-Capsulenv.ps1'
+            'scripts/Test-Capsulenv.ps1'
+            Get-ChildItem -LiteralPath (Join-Path $outputRoot 'src') -File -Recurse -Force | ForEach-Object {
+                $_.FullName.Substring($outputRoot.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')
+            }
+            Get-ChildItem -LiteralPath (Join-Path $outputRoot 'tests') -File -Recurse -Force | ForEach-Object {
+                $_.FullName.Substring($outputRoot.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')
+            }
+        )
+        $installFiles = @($installFiles + $developmentInstallFiles)
+    }
+    $installFiles = @($installFiles | Sort-Object -Unique)
+
     $metadata = [ordered]@{
-        SchemaVersion = 2
+        SchemaVersion = 3
         Version = [string]$build.ModuleVersion
         SourceCommit = $commit
         BuiltAtUtc = [DateTime]::UtcNow.ToString('o')
         DevelopmentFilesIncluded = [bool]$IncludeDevelopmentFiles
         ManagedFiles = $managedFiles
+        InstallFiles = $installFiles
     }
     $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $outputRoot '.capsulenv-runtime.json') -Encoding UTF8
 
@@ -147,6 +179,7 @@ try {
         ModulePath = Join-Path $moduleDestination 'Capsulenv.psd1'
         SourceCommit = $commit
         ManagedFiles = $managedFiles
+        InstallFiles = $installFiles
     }
 } finally {
     if (Test-Path -LiteralPath $temporaryBuild) {
