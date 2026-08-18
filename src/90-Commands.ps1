@@ -69,7 +69,9 @@ browser commands
 @'
 user integration commands
   capsulenv.cmd user-shell [--force]
-      Take over/synchronize current-user integration and open a shell.
+      Explicitly take over/synchronize persistent current-user integration and
+      open a User-mode shell. Nested Capsulenv commands inherit User mode.
+      A later standalone capsulenv.cmd still defaults to ShellOnly.
 
   capsulenv.cmd install-user [--force]
   capsulenv.cmd enable-user [--force]
@@ -79,7 +81,9 @@ user integration commands
       Gecko browser and open its Default Apps page when confirmation is needed.
 
   capsulenv.cmd restore-user
-      Restore Capsulenv-owned current-user settings and return to ShellOnly.
+      Restore Capsulenv-owned current-user settings and remove this capsule's
+      isolated Start Menu shortcut namespace. Fresh invocations are ShellOnly
+      by default even before this persistent takeover is restored.
 '@ | Write-Host
         }
         'eject' {
@@ -146,8 +150,10 @@ tool relocation commands
 repair commands
   capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs]
       [--skip-tool-repairs] [--strict-tool-repairs]
-      Repair relocation according to install mode. Normal shell startup invokes
-      relocation repair automatically when required.
+      Repair relocation according to the current session mode. A standalone
+      invocation defaults to ShellOnly; run it inside user-shell for User-mode
+      repair semantics. Normal shell startup invokes relocation repair when
+      required.
 
   capsulenv.cmd init [...]
       Compatibility/advanced alias for explicit full initialization.

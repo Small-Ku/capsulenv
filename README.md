@@ -34,7 +34,7 @@ capsulenv.cmd status
 capsulenv.cmd version
 ```
 
-`status` 只讀本地狀態，快速顯示 mode、Scoop app 數量、relocation、managed project links／tool workspaces 與 offline run readiness；深入檢查才使用 `doctor`。命令概覽與分層說明：
+`status` 只讀本地狀態，會把目前 **session mode** 與 `PersistentUserIntegration` 分開顯示，再列 Scoop app 數量、relocation、managed project links／tool workspaces 與 offline run readiness；深入檢查才使用 `doctor`。命令概覽與分層說明：
 
 ```bat
 capsulenv.cmd help
@@ -49,7 +49,7 @@ capsulenv.cmd help repair
 | **ShellOnly**（預設） | 私人 Laptop、已有自己環境的電腦 | `SCOOP`、PATH、tool vars 只存在 Capsulenv process tree |
 | **User** | 你在一段時間內獨佔、重開機會洗掉狀態的共用電腦 | 把此 capsule 註冊成目前 Windows user 的 Scoop；Capsulenv 會保存可還原的原始 user environment |
 
-ShellOnly 不需要額外設定，直接 `capsulenv.cmd shell`。它也會排除可辨識的 foreign Scoop shims，避免 capsule 缺少某個 command 時意外落到主機 Scoop。
+ShellOnly 不需要額外設定。從普通 host terminal 啟動新的 `capsulenv.cmd`／`capsulenv.cmd shell` **一律先以 ShellOnly session 開始**；先前在同一 Windows user 上做過 User takeover，不會把下一次獨立 invocation 靜默升格成 User。只有顯式 `user-shell`／`install-user`，或由 `user-shell` 開出的 process tree，才使用 User session semantics。ShellOnly 也會排除可辨識的 foreign Scoop shims，避免 capsule 缺少某個 command 時意外落到主機 Scoop。
 
 在共用／洗機電腦上，可把以下命令當日常入口：
 
@@ -57,7 +57,7 @@ ShellOnly 不需要額外設定，直接 `capsulenv.cmd shell`。它也會排除
 capsulenv.cmd user-shell
 ```
 
-它會在需要時安裝／刷新 User ownership、處理 relocation，然後開 shell。工作完畢可執行：
+它會在需要時安裝／刷新 **persistent User ownership**、處理 relocation，然後開一個明確標記為 User 的 shell；該 shell 裡再執行的 Capsulenv command 會繼承 User session。離開 `user-shell` 不等於撤銷 takeover：Windows user 的可還原 integration 仍保留到 `restore-user`，但之後從普通 host terminal 新開的 `capsulenv.cmd` 仍預設 ShellOnly。工作完畢可執行：
 
 ```bat
 capsulenv.cmd eject
@@ -76,7 +76,9 @@ capsulenv.cmd install-user
 capsulenv.cmd restore-user
 ```
 
-同一支 USB 可以在一台機器保持 ShellOnly，在另一台機器使用 User；mode 是「目前 machine/user 是否由此 capsule 接管」，不是 USB 的永久 profile。
+同一支 USB 可以在一台機器只使用 ShellOnly，在另一台機器保留 User takeover。Capsulenv 將 **session mode** 與 **persistent User ownership** 分開：前者每次新 invocation 預設 ShellOnly，後者是 machine/user-scoped、可由 `restore-user` 還原的 host state；兩者都不是 USB 的永久 profile。
+
+User mode 允許 Scoop 依 manifest 建立 shortcuts，但 Capsulenv 不讓 portable Scoop 與主機既有 Scoop 共用 `Programs\Scoop Apps`。所有由 Capsulenv User policy 建立的 Start Menu shortcuts 都隔離到 `Programs\Capsulenv Apps\<capsule-id-prefix>`；`restore-user` 只移除目前 capsule 擁有的這個 namespace，不會刪主機 Scoop 的 shortcuts。
 
 User mode 也可以把 capsule 裡指定的 Gecko browser 註冊成 Windows 的 default-app candidate。這是 opt-in；在 `config/capsulenv.local.psd1` 加入例如：
 

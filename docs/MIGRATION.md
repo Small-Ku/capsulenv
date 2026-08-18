@@ -200,6 +200,20 @@ E:\capenv\capsulenv.cmd version
 Installer 仍只 transactional replacement managed program files；`scoop/`、persist、cache、workspace、private modules、local config 與 host integration state 都不因此重建。
 
 
+## v0.16.2 session mode / User shortcut isolation
+
+0.16.2 將兩個先前容易混淆的概念拆開：新的 Capsulenv invocation **預設永遠是 ShellOnly session**；`.capsulenv/user-integrations/<machine-user-hash>/` 中的 User ledger 只代表 persistent takeover/restore ownership，不再自動把之後從普通 host terminal 啟動的 `capsulenv.cmd` 變成 User。需要 User semantics 時明確使用 `user-shell`／`install-user`；在 `user-shell` process tree 內的 nested commands 會繼承 User。離開 child shell 不會自動 undo takeover，仍以 `restore-user` 還原 host。
+
+0.16.1 及更早的 User reset/native Scoop lifecycle 可能把 portable app shortcut 寫進 Scoop 預設的 `Programs\Scoop Apps`，與主機既有 Scoop 共用 namespace。0.16.2 起 Capsulenv User policy 將自己的 Scoop shortcuts 隔離到：
+
+```text
+Programs\Capsulenv Apps\<capsule-id-prefix>
+```
+
+`restore-user` 只會刪除此 capsule-specific namespace。升級時**不會自動清理舊 `Scoop Apps`**，因為其中可能同時有 foreign Scoop 擁有的 `.lnk`，Capsulenv 沒有足夠 ownership evidence 可以安全區分。若舊版已污染該資料夾，請只移除 target 明確落在此 capsule root 下的舊 shortcut；若主機 Scoop shortcut 曾被同名覆寫，讓主機自己的 Scoop 再執行其正常 reset/reinstall 來重建，而不要讓 Capsulenv 猜測原始 target。
+
+同版也讓 uv managed-Python relocation 對外部 JSON schema fail-safe：缺少 `key`/`path` 的 record 只警告並跳過，不再因 PowerShell StrictMode property access 中止整批 rehydrate。
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：
