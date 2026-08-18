@@ -3,10 +3,7 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$Destination,
     [switch]$Force,
-    [switch]$IncludeDevelopmentFiles,
-    [ValidateSet('ShellOnly', 'User')]
-    [string]$Mode,
-    [switch]$SkipScoopBootstrap
+    [switch]$IncludeDevelopmentFiles
 )
 
 $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -115,23 +112,12 @@ if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
 }
 if (
     $null -ne $existingMarker -and
-    ($null -eq $existingMarker.SchemaVersion -or [int]$existingMarker.SchemaVersion -notin @(1, 2))
+    ($null -eq $existingMarker.SchemaVersion -or [int]$existingMarker.SchemaVersion -notin @(1, 2, 3))
 ) {
     throw "Unsupported capsulenv install marker schema: $($existingMarker.SchemaVersion)"
 }
 if ($hasContents -and $null -eq $existingMarker -and -not $Force) {
     throw "Destination is not empty and was not installed by capsulenv: $destinationRoot. Pass -Force to adopt it without deleting unrelated data."
-}
-
-# Integration mode is host/user ownership, not a capsule-global property. The
-# authoritative current mode is resolved by the installed module after runtime
-# files are in place. Install metadata only records the last requested mode.
-$currentMode = 'ShellOnly'
-$effectiveMode = if ($PSBoundParameters.ContainsKey('Mode')) { [string]$Mode } else { $null }
-$markerMode = if ($null -ne $existingMarker -and [string]$existingMarker.InstallMode -in @('ShellOnly', 'User')) {
-    [string]$existingMarker.InstallMode
-} else {
-    'ShellOnly'
 }
 
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-install-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -220,26 +206,11 @@ try {
         Copy-CapsulenvInstallFile -Source $source -Destination $destinationPath
     }
 
-    foreach ($mutableDirectory in @(
-        'scoop',
-        'scoop-global',
-        'cache',
-        'tool-data',
-        'project-cache',
-        'workspace',
-        'PowerShell/Modules',
-        '.capsulenv',
-        'bin'
-    )) {
-        [void](New-Item -ItemType Directory -Path (Join-Path $destinationRoot $mutableDirectory) -Force)
-    }
-
     $installMetadata = [ordered]@{
-        SchemaVersion = 2
+        SchemaVersion = 3
         Version = [string]$build.Version
         InstalledAtUtc = [DateTime]::UtcNow.ToString('o')
         SourceCommit = $build.SourceCommit
-        InstallMode = $markerMode
         ManagedFiles = $newManagedFiles
     }
     $temporaryMarker = Join-Path $destinationRoot ('.capsulenv-install-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
@@ -258,8 +229,6 @@ try {
         Launcher = Join-Path $destinationRoot 'capsulenv.cmd'
         UpdatedExistingInstallation = $null -ne $existingMarker
         DevelopmentFilesIncluded = [bool]$IncludeDevelopmentFiles
-        InstallMode = $effectiveMode
-        ScoopBootstrapSkipped = [bool]$SkipScoopBootstrap
     }
 } catch {
     $installError = $_
@@ -285,74 +254,6 @@ try {
 } finally {
     if (Test-Path -LiteralPath $temporaryRoot) {
         Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
-    }
-}
-
-$previousProcessEnvironment = @{}
-foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) {
-    $previousProcessEnvironment[[string]$entry.Key] = [string]$entry.Value
-}
-$previousCapsulenvModules = @(Get-Module Capsulenv)
-$installedModule = Join-Path (Join-Path (Join-Path $destinationRoot 'modules') 'Capsulenv') 'Capsulenv.psd1'
-try {
-    $env:CAPSULENV_ROOT = $destinationRoot
-    Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-    Import-Module $installedModule -Force -DisableNameChecking
-
-    $bootstrapOnThisHost = (-not $SkipScoopBootstrap) -and ($env:OS -eq 'Windows_NT' -or $PSVersionTable.PSVersion.Major -le 5)
-    if ($bootstrapOnThisHost) {
-        [void](Set-CapsulenvSessionEnvironment)
-        [void](Initialize-CapsulenvScoopBootstrap)
-    } else {
-        [void](Ensure-CapsulenvScoopPortableConfig)
-    }
-
-    $currentMode = Get-CapsulenvInstallMode
-    if (-not $PSBoundParameters.ContainsKey('Mode')) {
-        $effectiveMode = $currentMode
-    }
-
-    if ($effectiveMode -eq 'User') {
-        Install-CapsulenvUserEnvironment -Force:($currentMode -eq 'User')
-    } elseif ($currentMode -eq 'User') {
-        Restore-CapsulenvUserEnvironment
-    } else {
-        Set-CapsulenvInstallMode -Mode ShellOnly
-    }
-    $installResult.InstallMode = $effectiveMode
-
-    # Commit the requested ownership mode to install metadata only after the
-    # mode transition itself succeeded. If restore-user/install-user fails,
-    # the marker therefore continues to describe the still-effective mode.
-    $committedMarker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
-    $committedMarker.InstallMode = $effectiveMode
-    $temporaryModeMarker = Join-Path $destinationRoot ('.capsulenv-mode-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
-    try {
-        $committedMarker | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporaryModeMarker -Encoding UTF8
-        Copy-CapsulenvInstallFile -Source $temporaryModeMarker -Destination $markerPath
-    } finally {
-        if (Test-Path -LiteralPath $temporaryModeMarker -PathType Leaf) {
-            Remove-Item -LiteralPath $temporaryModeMarker -Force -ErrorAction SilentlyContinue
-        }
-    }
-} finally {
-    Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-    foreach ($previousModule in $previousCapsulenvModules) {
-        if (
-            -not [string]::IsNullOrWhiteSpace([string]$previousModule.Path) -and
-            (Test-Path -LiteralPath $previousModule.Path -PathType Leaf)
-        ) {
-            Import-Module $previousModule.Path -Force -DisableNameChecking
-        }
-    }
-    $currentProcessEnvironment = [Environment]::GetEnvironmentVariables('Process')
-    foreach ($name in @($currentProcessEnvironment.Keys)) {
-        if (-not $previousProcessEnvironment.ContainsKey([string]$name)) {
-            [Environment]::SetEnvironmentVariable([string]$name, $null, 'Process')
-        }
-    }
-    foreach ($name in $previousProcessEnvironment.Keys) {
-        [Environment]::SetEnvironmentVariable([string]$name, [string]$previousProcessEnvironment[$name], 'Process')
     }
 }
 

@@ -141,22 +141,17 @@ Describe 'Capsulenv build and install' {
                 -Condition (@($installMarker.ManagedFiles) -contains '.capsulenv-runtime.json') `
                 -Message 'Installer does not own the runtime metadata file.'
             Assert-CapsulenvBuildInstallTest `
-                -Condition ([int]$installMarker.SchemaVersion -eq 2) `
-                -Message 'Installer did not write the install-mode-aware marker schema.'
+                -Condition ([int]$installMarker.SchemaVersion -eq 3) `
+                -Message 'Installer did not write the deployment-only marker schema.'
             Assert-CapsulenvBuildInstallTest `
-                -Condition ([string]$installMarker.InstallMode -eq 'ShellOnly') `
-                -Message 'Fresh installation must default to ShellOnly mode.'
+                -Condition ($null -eq $installMarker.PSObject.Properties['InstallMode']) `
+                -Message 'Deployment metadata must not own host/user integration mode.'
             Assert-CapsulenvBuildInstallTest `
-                -Condition ((Get-Content -LiteralPath (Join-Path $installRoot 'scoop/config.json') -Raw).Trim() -eq '{}') `
-                -Message 'Installer did not establish the portable Scoop config boundary.'
-            $modeStatePaths = @(Get-ChildItem -LiteralPath (Join-Path (Join-Path $installRoot '.capsulenv') 'user-integrations') -Filter 'install-mode.json' -File -Recurse -ErrorAction SilentlyContinue)
+                -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot 'scoop'))) `
+                -Message 'Deployment unexpectedly bootstrapped mutable Scoop state.'
             Assert-CapsulenvBuildInstallTest `
-                -Condition ($modeStatePaths.Count -eq 1) `
-                -Message 'Fresh installation did not create exactly one host-scoped integration ledger.'
-            $modeState = Get-Content -LiteralPath $modeStatePaths[0].FullName -Raw | ConvertFrom-Json
-            Assert-CapsulenvBuildInstallTest `
-                -Condition ([string]$modeState.Mode -eq 'ShellOnly') `
-                -Message 'Fresh installation did not persist ShellOnly mode state for the current host/user.'
+                -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot '.capsulenv'))) `
+                -Message 'Deployment unexpectedly created host-scoped Capsulenv state.'
 
             $unmanagedPath = Join-Path $installRoot 'unmanaged.txt'
             $localConfigPath = Join-Path (Join-Path $installRoot 'config') 'capsulenv.local.psd1'
@@ -164,6 +159,7 @@ Describe 'Capsulenv build and install' {
             $privateModuleStatePath = Join-Path (Join-Path (Join-Path (Join-Path $installRoot 'PowerShell') 'Modules') 'PrivateTest') 'preserved.txt'
             'keep-me' | Set-Content -LiteralPath $unmanagedPath -Encoding UTF8
 '@{ ToolStorage = @{ Enabled = $false } }' | Set-Content -LiteralPath $localConfigPath -Encoding UTF8
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $cacheStatePath) -Force)
             'cache-state' | Set-Content -LiteralPath $cacheStatePath -Encoding UTF8
             [void](New-Item -ItemType Directory -Path (Split-Path -Parent $privateModuleStatePath) -Force)
             'module-state' | Set-Content -LiteralPath $privateModuleStatePath -Encoding UTF8
