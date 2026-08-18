@@ -104,18 +104,40 @@ Describe 'Capsulenv portable workflow contracts' {
         }
     }
 
-    It 'makes user-shell idempotent and keeps eject separate from restore-user' {
+    It 'defaults a fresh invocation to ShellOnly and inherits User only inside an explicit User process tree' {
+        $oldMode = $env:CAPSULENV_MODE
+        try {
+            Remove-Item Env:CAPSULENV_MODE -ErrorAction SilentlyContinue
+            (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'ShellOnly'
+
+            $env:CAPSULENV_MODE = 'User'
+            (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'User'
+
+            $env:CAPSULENV_MODE = 'invalid'
+            (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'ShellOnly'
+        } finally {
+            if ($null -eq $oldMode) {
+                Remove-Item Env:CAPSULENV_MODE -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_MODE = $oldMode
+            }
+        }
+    }
+
+    It 'makes user-shell explicit and keeps persistent ownership separate from default session mode' {
         $environmentSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/30-Environment.ps1') -Raw
         $commandsSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/90-Commands.ps1') -Raw
         $lifecycleSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/72-Lifecycle.ps1') -Raw
 
         $environmentSource | Should -Match '\$ledgerWasUser = \(\$backupExists -and \$null -ne \$ledgerState -and \[string\]\$ledgerState\.Mode -eq ''User''\)'
         $environmentSource | Should -Match '\$alreadyUser = \(\$backupExists -and \$currentMode -eq ''User''\)'
+        $environmentSource | Should -Match '\$currentMode = Get-CapsulenvUserIntegrationMode'
+        $environmentSource | Should -Match '\$refreshBackup = \(\(Get-CapsulenvUserIntegrationMode\) -ne ''User''\)'
         $environmentSource | Should -Match '\$RefreshBackup = \$true'
         $commandsSource | Should -Match "'user-shell'"
         $commandsSource | Should -Match 'Enter-CapsulenvUserShell -Force:'
         $environmentSource | Should -Match 'Install-CapsulenvUserEnvironment -Force:\$Force -RefreshBackup:\$refreshBackup'
-        $environmentSource | Should -Match 'Invoke-CapsulenvChildShell'
+        $environmentSource | Should -Match 'Invoke-CapsulenvChildShell -IntegrationMode User -SkipUserIntegrationSync'
         $commandsSource | Should -Match "'eject'"
         $commandsSource | Should -Match "'status'"
         $commandsSource | Should -Match 'help <topic>'

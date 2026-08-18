@@ -87,6 +87,9 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match "'ScoopRoot', 'ScoopGlobalRoot'"
         $script:EnvironmentSource | Should -Match 'SCOOP_CACHE'
         $script:EnvironmentSource | Should -Match 'ShellOnlyLifecyclePolicy \| ConvertTo-Json -Compress'
+        $script:EnvironmentSource.Contains('[string]$IntegrationMode = (Get-CapsulenvInstallMode)') | Should -BeTrue
+        $script:EnvironmentSource.Contains("SetEnvironmentVariable('CAPSULENV_MODE', `$IntegrationMode, 'Process')") | Should -BeTrue
+        $script:EnvironmentSource.Contains("if ([string]`$env:CAPSULENV_MODE -eq 'User')") | Should -BeTrue
         $script:EnvironmentSource | Should -Match "CAPSULENV_SCOOP_LIFECYCLE_POLICY.*'Process'"
         $script:BootstrapSource.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1"') | Should -BeTrue
         $script:BootstrapSource.Contains('set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"') | Should -BeTrue
