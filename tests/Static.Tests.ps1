@@ -65,13 +65,22 @@ Describe 'Capsulenv static and relocation' {
         $controlBootstrapSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'Initialize-CapsulenvControlHost.ps1'))
         foreach ($requiredBootstrapBehavior in @(
             "[System.IO.Path]::Combine(`$PSHOME, 'Modules')",
-            "'Microsoft.PowerShell.Utility.psd1'",
-            'Import-Module -Name $utilityManifest -Force -ErrorAction Stop',
-            'Get-Command -Name Import-PowerShellDataFile -CommandType Cmdlet'
+            '[System.IO.Directory]::Exists($builtInModuleRoot)',
+            '$env:PSModulePath = $builtInModuleRoot'
         )) {
             Assert-CapsulenvTest `
                 -Condition $controlBootstrapSource.Contains($requiredBootstrapBehavior) `
-                -Message "Control-host bootstrap is missing required built-in module isolation: $requiredBootstrapBehavior"
+                -Message "Control-host bootstrap is missing required built-in module path isolation: $requiredBootstrapBehavior"
+        }
+        foreach ($forbiddenBootstrapDependency in @(
+            'Import-PowerShellDataFile',
+            'Microsoft.PowerShell.Utility',
+            'Import-Module',
+            'Get-Command'
+        )) {
+            Assert-CapsulenvTest `
+                -Condition (-not $controlBootstrapSource.Contains($forbiddenBootstrapDependency)) `
+                -Message "Control-host bootstrap must stay language/.NET-only: $forbiddenBootstrapDependency"
         }
         $runtimeEntrySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'Invoke-Capsulenv.ps1'))
         $installerEntrySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
@@ -101,6 +110,16 @@ Describe 'Capsulenv static and relocation' {
         Assert-CapsulenvTest `
             -Condition $testRunnerSource.Contains("Analyze-Capsulenv.ps1") `
             -Message 'The single test entrypoint must run compatibility analysis before Pester.'
+        $analyzerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Analyze-Capsulenv.ps1'))
+        foreach ($requiredBoundaryPolicy in @(
+            'ControlBootstrapCommands',
+            'Import-PowerShellDataFile',
+            'Control-host bootstrap must remain PowerShell language/.NET-only'
+        )) {
+            Assert-CapsulenvTest `
+                -Condition $analyzerSource.Contains($requiredBoundaryPolicy) `
+                -Message "Static analyzer is missing control-host dependency policy: $requiredBoundaryPolicy"
+        }
         $analyzerSettingsSource = [System.IO.File]::ReadAllText((Join-Path $root 'PSScriptAnalyzerSettings.psd1'))
         foreach ($requiredAnalyzerPolicy in @(
             'PSUseCompatibleSyntax',
