@@ -55,13 +55,33 @@ Describe 'Capsulenv static and relocation' {
             'call :SelectWindowsPowerShell "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"',
             'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectWindowsPowerShell "%%P"',
             '$PSVersionTable.PSEdition -eq ''Desktop''',
-            '$PSVersionTable.PSVersion.Major -eq 5',
+            '$PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -ge 1',
             '"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass'
         )) {
             Assert-CapsulenvTest `
                 -Condition $launcherSource.Contains($requiredControlHostBehavior) `
                 -Message "Capsulenv control launcher is missing required Windows PowerShell behavior: $requiredControlHostBehavior"
         }
+        $controlBootstrapSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Initialize-CapsulenvControlHost.ps1'))
+        foreach ($requiredBootstrapBehavior in @(
+            "[System.IO.Path]::Combine(`$PSHOME, 'Modules')",
+            "'Microsoft.PowerShell.Utility.psd1'",
+            'Import-Module -Name $utilityManifest -Force -ErrorAction Stop',
+            'Get-Command -Name Import-PowerShellDataFile -CommandType Cmdlet'
+        )) {
+            Assert-CapsulenvTest `
+                -Condition $controlBootstrapSource.Contains($requiredBootstrapBehavior) `
+                -Message "Control-host bootstrap is missing required built-in module isolation: $requiredBootstrapBehavior"
+        }
+        foreach ($entryScriptName in @('Invoke-Capsulenv.ps1', 'Install-Capsulenv.ps1')) {
+            $entrySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') $entryScriptName))
+            $bootstrapIndex = $entrySource.IndexOf("Initialize-CapsulenvControlHost.ps1", [System.StringComparison]::Ordinal)
+            $strictModeIndex = $entrySource.IndexOf('Set-StrictMode', [System.StringComparison]::Ordinal)
+            Assert-CapsulenvTest `
+                -Condition ($bootstrapIndex -ge 0 -and $strictModeIndex -gt $bootstrapIndex) `
+                -Message "$entryScriptName must initialize the isolated control host before normal runtime commands."
+        }
+
         foreach ($forbiddenControlHostBehavior in @(
             'FindScoopPwsh',
             'where pwsh.exe',
@@ -71,6 +91,22 @@ Describe 'Capsulenv static and relocation' {
             Assert-CapsulenvTest `
                 -Condition (-not $launcherSource.Contains($forbiddenControlHostBehavior)) `
                 -Message "Capsulenv control launcher must not depend on portable pwsh: $forbiddenControlHostBehavior"
+        }
+
+        $testRunnerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Test-Capsulenv.ps1'))
+        Assert-CapsulenvTest `
+            -Condition $testRunnerSource.Contains("Analyze-Capsulenv.ps1") `
+            -Message 'The single test entrypoint must run compatibility analysis before Pester.'
+        $analyzerSettingsSource = [System.IO.File]::ReadAllText((Join-Path $root 'PSScriptAnalyzerSettings.psd1'))
+        foreach ($requiredAnalyzerPolicy in @(
+            'PSUseCompatibleSyntax',
+            'PSUseCompatibleCommands',
+            "TargetVersions = @('5.1')",
+            'win-8_x64_10.0.17763.0_5.1.17763.316_x64_4.0.30319.42000_framework'
+        )) {
+            Assert-CapsulenvTest `
+                -Condition $analyzerSettingsSource.Contains($requiredAnalyzerPolicy) `
+                -Message "Static analysis is missing Windows PowerShell 5.1 policy: $requiredAnalyzerPolicy"
         }
 
         $doctorSource = [System.IO.File]::ReadAllText(
@@ -866,7 +902,7 @@ Describe 'Capsulenv static and relocation' {
                 'call :SelectWindowsPowerShell "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"',
                 'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectWindowsPowerShell "%%P"',
                 '$PSVersionTable.PSEdition -eq ''Desktop''',
-                '$PSVersionTable.PSVersion.Major -eq 5'
+                '$PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -ge 1'
             )) {
                 Assert-CapsulenvTest `
                     -Condition $installCmdSource.Contains($requiredInstallerControlHostBehavior) `

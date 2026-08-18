@@ -5,6 +5,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $testsRoot = Join-Path (Join-Path $PSScriptRoot '..') 'tests'
+$analysisScript = Join-Path $PSScriptRoot 'Analyze-Capsulenv.ps1'
+& $analysisScript | Out-Host
+
 $pester = Get-Module Pester -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
 if ($null -eq $pester) {
     throw 'Pester is required to run the capsulenv test suite. Install/import Pester 6.1.0 or newer.'

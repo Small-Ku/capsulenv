@@ -9,6 +9,8 @@ param(
     [switch]$SkipScoopBootstrap
 )
 
+. ([System.IO.Path]::Combine($PSScriptRoot, 'Initialize-CapsulenvControlHost.ps1'))
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
