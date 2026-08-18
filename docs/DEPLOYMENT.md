@@ -79,7 +79,7 @@ Development checkout 則可 fallback 到 source `module-runtime/Invoke-Capsulenv
 
 在 deployed capsule 設 `CAPSULENV_FORCE_REBUILD=1` 不會嘗試現場 compile，也不會讓 capsule 失去啟動能力；它只提示應從 development checkout 或新版 release bundle deploy 新 generated module。
 
-`install.cmd` 與 installed `capsulenv.cmd` 都固定以 **Windows PowerShell 5.1** 作 control host。Control bootstrap 先恢復 `$PSHOME\Modules` 並以絕對路徑載入 Windows PowerShell built-in Utility module，避免 inherited portable `PSModulePath` shadow 系統 cmdlets。Interactive `shell`/`user-shell` 完成 activation 後才啟動 capsule Scoop 的 PowerShell 7。
+`install.cmd` 與 installed `capsulenv.cmd` 都固定以 **Windows PowerShell 5.1** 作 control host。Control bootstrap 只用 PowerShell language/.NET 把 `$PSHOME\Modules` 恢復到 inherited `PSModulePath` 最前，不 import/probe Utility 等 built-in modules；Capsulenv `.psd1` 由 module 內建的 safe AST data-file reader 處理。Interactive `shell`/`user-shell` 完成 activation 後才啟動 capsule Scoop 的 PowerShell 7。
 
 ## Release/update workflow
 
