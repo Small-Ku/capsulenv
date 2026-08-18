@@ -190,9 +190,9 @@ function Invoke-CapsulenvEject {
         }
     }
 
-    # Deliberately do not call Restore-CapsulenvUserEnvironment here. User mode
-    # represents integration ownership for the current user session, not a
-    # teardown obligation. restore-user remains an explicit reversible action.
+    # Deliberately do not call Restore-CapsulenvUserEnvironment here. Persistent
+    # User integration is host ownership state, not the lifetime of this process
+    # tree. restore-user remains an explicit reversible action.
     $mode = Get-CapsulenvInstallMode
     $persistentMode = Get-CapsulenvUserIntegrationMode
     if ($persistentMode -eq 'User') {
@@ -383,6 +383,7 @@ function Get-CapsulenvStatus {
         Version = Get-CapsulenvRuntimeVersion
         Root = $context.Root
         Mode = Get-CapsulenvInstallMode
+        PersistentUserIntegration = ((Get-CapsulenvUserIntegrationMode) -eq 'User')
         ScoopApps = $installedApps.Count
         Relocation = if ($relocationRequired) { 'Pending' } else { 'Ready' }
         ProjectLinks = $projectLinks.Count
