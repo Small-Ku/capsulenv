@@ -84,11 +84,13 @@ If Scoop core or Main is missing, bootstrap prefers Git and performs shallow sin
 
 ## PowerShell bootstrap and profile isolation
 
-`capsulenv.cmd` first searches capsule Scoop installations for a physical PowerShell 7 executable, preferring local Scoop over portable-global Scoop and avoiding stale `current` links when possible. Only then does it fall back through capsule shims/inherited PATH and finally Windows PowerShell 5.1.
+`capsulenv.cmd` 的 **control plane** 固定使用 Windows PowerShell 5.1：先驗證 canonical `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`，再只接受同樣為 Desktop edition 5.1+ 的 `powershell.exe` PATH candidate。它不透過 capsule Scoop `pwsh` 啟動 control plane，因為 relocation/reset 本身可能正在重建該 app 的 `current` link 或 shim。Interactive/project shell 的 executable selection 是另一條 runtime path，可獨立使用 capsule-owned PowerShell 7。
+
+Control entry scripts 在讀 config/module manifest 前先執行 `Initialize-CapsulenvControlHost.ps1`。該 bootstrap 將 control host 自己的 `$PSHOME/Modules` 放到 inherited `PSModulePath` 最前，並以 absolute manifest path 載入 built-in `Microsoft.PowerShell.Utility`，再驗證 `Import-PowerShellDataFile` 存在。這個 boundary 是必要的：由 Capsulenv interactive shell 繼承回來的 portable/private module path 可以繼續存在，但不能 shadow OS control host 的 built-in Utility module。
 
 Entry points use process-scope `-ExecutionPolicy Bypass`; Capsulenv never calls `Set-ExecutionPolicy` or writes execution-policy registry values. Group Policy remains authoritative.
 
-PowerShell package ownership remains with Scoop. The portable private-module root defaults to `PowerShell/Modules/`; it is prepended to the session `PSModulePath`, while its first entry is exposed as `CAPSULENV_MODULE_ROOT`.
+PowerShell package ownership remains with Scoop. The portable private-module root defaults to `PowerShell/Modules/`; it is prepended to the **interactive/runtime session** `PSModulePath`, while its first entry is exposed as `CAPSULENV_MODULE_ROOT`. Control-host bootstrap does not change that ownership; it only establishes a deterministic built-in-module prefix before Capsulenv runtime code starts.
 
 ShellOnly starts its child PowerShell with `-NoProfile`, then explicitly dot-sources only capsule-owned Scoop `pwsh` `$PSHOME\profile.ps1` and `$PSHOME\Microsoft.PowerShell_profile.ps1`. It never treats a fallback host PowerShell executable's `$PSHOME` profile as capsule data. This prevents host CurrentUser profiles from running after Capsulenv has established isolation.
 

@@ -158,6 +158,17 @@ Windows default-browser detection 也不再只讀 legacy `UserChoice`；v0.15.6 
 
 v0.15.7 起，只要 User integration state 仍追蹤該 browser registration，普通 User-mode activation 與 `install-user --force` 都會原地刷新 Capsulenv 自己擁有的 ProgID，即使目前 `UserIntegration.DefaultBrowser` 已留空。留空只會停止 Default Apps 提示，不會阻止 runtime upgrade 修復既有 registration。更新後可用 `capsulenv.cmd doctor` 直接比較 tracked URL handler 的 actual/expected command；不應再需要用 ProcMon 才能確認是否仍在執行舊 handler。
 
+### v0.15.8：control host 隔離 built-in PowerShell modules
+
+若從 Capsulenv interactive shell 再執行 `capsulenv.cmd` 時遇到 `Import-PowerShellDataFile` 無法辨識，請直接用 v0.15.8 或更新的 **外部 runtime bundle** 覆蓋 managed runtime，而不要在故障中的 capsule 內嘗試 `CAPSULENV_FORCE_REBUILD`：
+
+```bat
+X:\capsulenv-0.15.8\install.cmd E:\capenv
+E:\capenv\capsulenv.cmd version
+```
+
+v0.15.8 的 control entrypoint 會先以 `$PSHOME/Modules` 隔離並載入 Windows PowerShell 自己的 built-in Utility module，因此從 portable/private `PSModulePath` 繼承回來的 module 不再能 shadow control plane；batch launcher 也明確拒絕 Windows PowerShell 5.0。這只改 managed runtime/bootstrap，不移動 Scoop apps、persist、workspace 或 local config。
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：
