@@ -87,10 +87,13 @@ Describe 'Capsulenv portable workflow contracts' {
                 $offline.MissingInstalledManifests | Should -Be 0
                 $offline.CacheFiles | Should -Be 1
 
+                Set-CapsulenvInstallMode -Mode User -ManagedPathEntries @()
                 '{"Version":"0.13.0-test"}' | Set-Content -LiteralPath (Join-Path $CapsuleRoot '.capsulenv-runtime.json') -Encoding UTF8
                 $status = Get-CapsulenvStatus
                 $status.Version | Should -Be '0.13.0-test'
                 $status.Root | Should -Be ([System.IO.Path]::GetFullPath($CapsuleRoot))
+                $status.Mode | Should -Be 'ShellOnly'
+                $status.PersistentUserIntegration | Should -BeTrue
                 $status.ScoopApps | Should -Be 1
                 $status.Relocation | Should -Be 'Pending'
                 $status.ProjectLinks | Should -Be 0
@@ -104,11 +107,13 @@ Describe 'Capsulenv portable workflow contracts' {
         }
     }
 
-    It 'defaults a fresh invocation to ShellOnly and inherits User only inside an explicit User process tree' {
+    It 'defaults a fresh invocation to ShellOnly even when persistent User ownership exists' {
         $oldMode = $env:CAPSULENV_MODE
+        Mock Test-CapsulenvCurrentUserIntegrationOwnership { $true } -ModuleName Capsulenv
         try {
             Remove-Item Env:CAPSULENV_MODE -ErrorAction SilentlyContinue
             (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'ShellOnly'
+            Should -Invoke Test-CapsulenvCurrentUserIntegrationOwnership -ModuleName Capsulenv -Times 0 -Exactly
 
             $env:CAPSULENV_MODE = 'User'
             (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'User'
