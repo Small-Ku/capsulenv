@@ -460,7 +460,10 @@ function Invoke-CapsulenvDoctor {
 
 function Initialize-CapsulenvIntegrations {
     [CmdletBinding()]
-    param()
+    param(
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+    )
 
     [void](Initialize-CapsulenvScoopBootstrap)
     $configuration = Get-CapsulenvConfiguration
@@ -469,7 +472,7 @@ function Initialize-CapsulenvIntegrations {
         (Test-CapsulenvScoopRehydrationRequired)
     ) {
         Write-CapsulenvMessage -Level Info -Message 'Portable Scoop root or host changed; rehydrating installed apps...'
-        Invoke-CapsulenvScoopRehydrate
+        Invoke-CapsulenvScoopRehydrate -IntegrationMode $IntegrationMode
     }
     [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden

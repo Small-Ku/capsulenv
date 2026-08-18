@@ -196,7 +196,10 @@ function Get-CapsulenvForeignScoopShimPaths {
 
 function Set-CapsulenvSessionEnvironment {
     [CmdletBinding()]
-    param()
+    param(
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+    )
 
     $plan = Get-CapsulenvEnvironmentPlan
     $configuration = Get-CapsulenvConfiguration
@@ -219,7 +222,7 @@ function Set-CapsulenvSessionEnvironment {
     }
     # Process-only control plane for the capsule-owned Scoop shim. These are
     # intentionally not part of the User environment plan or reversible ledger.
-    [Environment]::SetEnvironmentVariable('CAPSULENV_MODE', (Get-CapsulenvInstallMode), 'Process')
+    [Environment]::SetEnvironmentVariable('CAPSULENV_MODE', $IntegrationMode, 'Process')
     $scoopLifecyclePolicyJson = $configuration.Scoop.ShellOnlyLifecyclePolicy | ConvertTo-Json -Compress
     [Environment]::SetEnvironmentVariable('CAPSULENV_SCOOP_LIFECYCLE_POLICY', $scoopLifecyclePolicyJson, 'Process')
     $sessionPath = Remove-CapsulenvPathEntries `
@@ -277,7 +280,7 @@ function Get-CapsulenvInstallModeState {
     }
 }
 
-function Get-CapsulenvInstallMode {
+function Get-CapsulenvUserIntegrationMode {
     [CmdletBinding()]
     param()
 
@@ -290,6 +293,20 @@ function Get-CapsulenvInstallMode {
 
     $state = Get-CapsulenvInstallModeState
     if ($null -ne $state -and [string]$state.Mode -eq 'User') {
+        return 'User'
+    }
+    return 'ShellOnly'
+}
+
+function Get-CapsulenvInstallMode {
+    [CmdletBinding()]
+    param()
+
+    # Session mode is invocation-scoped. A new capsulenv.cmd process defaults to
+    # ShellOnly even when this capsule owns persistent User integration on the
+    # host. Commands launched from an explicit User shell inherit User through
+    # this process-only variable.
+    if ([string]$env:CAPSULENV_MODE -eq 'User') {
         return 'User'
     }
     return 'ShellOnly'
@@ -671,7 +688,7 @@ function Install-CapsulenvUserEnvironment {
     $backupExists = Test-Path -LiteralPath $backupPath -PathType Leaf
     $ledgerState = Get-CapsulenvInstallModeState
     $ledgerWasUser = ($backupExists -and $null -ne $ledgerState -and [string]$ledgerState.Mode -eq 'User')
-    $currentMode = Get-CapsulenvInstallMode
+    $currentMode = Get-CapsulenvUserIntegrationMode
     if ($currentMode -eq 'User' -and -not $backupExists) {
         throw "The current Windows user already points at this capsule, but its reversible environment backup is missing: $backupPath"
     }
@@ -687,7 +704,7 @@ function Install-CapsulenvUserEnvironment {
         throw "A user-environment backup already exists but this capsule is not recorded as the active User integration: $backupPath. Restore it first or pass -Force to reapply without replacing the original backup."
     }
 
-    $plan = Set-CapsulenvSessionEnvironment
+    $plan = Set-CapsulenvSessionEnvironment -IntegrationMode User
     [void](Initialize-CapsulenvScoopBootstrap)
     $configuration = Get-CapsulenvConfiguration
     $rehydrationRequired = (
@@ -759,12 +776,12 @@ function Enter-CapsulenvUserShell {
     # its actual User environment has already been restored by the machine.
     # user-shell is the convenience-first entrypoint: if this host is not
     # currently integrated, refresh that host's reversible backup before takeover.
-    $refreshBackup = ((Get-CapsulenvInstallMode) -ne 'User')
+    $refreshBackup = ((Get-CapsulenvUserIntegrationMode) -ne 'User')
     Install-CapsulenvUserEnvironment -Force:$Force -RefreshBackup:$refreshBackup
     # Install-CapsulenvUserEnvironment already synchronized persistent User
     # integrations, including the configured default browser. Do not immediately
     # repeat the prompt while entering the child shell.
-    Invoke-CapsulenvChildShell -SkipUserIntegrationSync
+    Invoke-CapsulenvChildShell -IntegrationMode User -SkipUserIntegrationSync
 }
 
 function Enable-CapsulenvUserEnvironment {
@@ -803,6 +820,7 @@ function Restore-CapsulenvUserEnvironment {
     }
     Remove-Item -LiteralPath $backupPath -Force
     Set-CapsulenvInstallMode -Mode ShellOnly
+    [Environment]::SetEnvironmentVariable('CAPSULENV_MODE', 'ShellOnly', 'Process')
     try {
         Initialize-CapsulenvGitOpenSshSession
     } catch {
@@ -815,12 +833,14 @@ function Invoke-CapsulenvChildShell {
     [CmdletBinding()]
     param(
         [string]$Command,
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode),
         [switch]$SkipUserIntegrationSync
     )
 
-    [void](Set-CapsulenvSessionEnvironment)
-    Initialize-CapsulenvIntegrations
-    if (-not $SkipUserIntegrationSync -and (Get-CapsulenvInstallMode) -eq 'User') {
+    [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
+    Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode
+    if (-not $SkipUserIntegrationSync -and $IntegrationMode -eq 'User') {
         # A normal `capsulenv.cmd` activation must observe persistent User
         # integration config changes too. Previously DefaultBrowser was parsed
         # and validated here but only synchronized by install-user/user-shell,
@@ -831,7 +851,7 @@ function Invoke-CapsulenvChildShell {
     $shellPath = Get-CapsulenvInteractivePowerShellExecutable
     $launchPlan = Get-CapsulenvPowerShellChildLaunchPlan `
         -ShellPath $shellPath `
-        -IntegrationMode (Get-CapsulenvInstallMode) `
+        -IntegrationMode $IntegrationMode `
         -Command $Command
     $childShell = [string]$launchPlan.ShellPath
     $childArguments = @($launchPlan.Arguments)

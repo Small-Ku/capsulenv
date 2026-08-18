@@ -194,10 +194,11 @@ function Invoke-CapsulenvEject {
     # represents integration ownership for the current user session, not a
     # teardown obligation. restore-user remains an explicit reversible action.
     $mode = Get-CapsulenvInstallMode
-    if ($mode -eq 'User') {
-        Write-CapsulenvMessage -Level Warning -Message 'User integration remains active. Run restore-user before removing the capsule from a host that will continue to be used.'
+    $persistentMode = Get-CapsulenvUserIntegrationMode
+    if ($persistentMode -eq 'User') {
+        Write-CapsulenvMessage -Level Warning -Message 'Persistent User integration remains active. Run restore-user before removing the capsule from a host that will continue to be used.'
     }
-    Write-CapsulenvMessage -Level Success -Message "Capsulenv session ejected. Install mode remains $mode. State: $statePath"
+    Write-CapsulenvMessage -Level Success -Message "Capsulenv session ejected. Session mode was $mode; persistent integration is $persistentMode. State: $statePath"
     return [pscustomobject]@{
         Mode = $mode
         DirtyRepositories = $dirtyRepositories.Count
