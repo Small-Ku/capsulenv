@@ -11,7 +11,9 @@ Merge-ModuleScripts.ps1           deterministic module merger
 scripts/Invoke-Capsulenv.ps1      PowerShell entrypoint used by capsulenv.cmd
 scripts/Build-Capsulenv.ps1       produce minimal redistributable runtime
 scripts/Install-Capsulenv.ps1     transactional runtime installer/updater
-scripts/Test-Capsulenv.ps1        single Pester test entrypoint
+scripts/Analyze-Capsulenv.ps1     Windows PowerShell compatibility analysis
+scripts/Test-Capsulenv.ps1        single analysis + Pester test entrypoint
+PSScriptAnalyzerSettings.psd1      checked-in WinPS 5.1 analyzer policy
 tests/*.Tests.ps1                 Pester coverage
 config/capsulenv.psd1             default runtime configuration
 config/capsulenv.local.psd1.example local override example
@@ -52,13 +54,15 @@ Detailed managed-file/update semantics are canonical in [`DEPLOYMENT.md`](DEPLOY
 
 ## Tests
 
-Pester 6.1.0+ is the only test path:
+`scripts/Test-Capsulenv.ps1` is the single test entrypoint. Development/test environments require **PSScriptAnalyzer 1.25.0+** and **Pester 6.1.0+**:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-Tests cover static safety invariants, source/module parsing, runtime build, first install/update preservation, installed-module smoke behavior, ShellOnly/User isolation, Scoop bootstrap/reset/replay boundaries, installed-manifest selector/executable semantics, tool storage/relocation, browser/default-browser ownership, sing-box process/config ownership, Bitwarden scoped mutation and host-scoped integration state.
+The entrypoint runs static compatibility analysis before Pester. `PSScriptAnalyzerSettings.psd1` enables `PSUseCompatibleSyntax` for PowerShell 5.1 and `PSUseCompatibleCommands` against a Windows PowerShell 5.1 compatibility profile over runtime/module/build scripts. Development-only analyzer/Pester drivers are excluded from that runtime command profile because their tooling APIs intentionally target the supplied modern development toolchain. A compatibility diagnostic is a test failure, not a warning.
+
+Pester then covers static safety invariants, source/module parsing, control-host `PSModulePath` contamination/shadowing regression, runtime build, first install/update preservation, installed-module smoke behavior, ShellOnly/User isolation, Scoop bootstrap/reset/replay boundaries, installed-manifest selector/executable semantics, tool storage/relocation, browser/default-browser ownership, sing-box process/config ownership, Bitwarden scoped mutation and host-scoped integration state.
 
 Where possible, test dangerous integration through isolated fixtures/static invariants instead of changing the real test host's global Git config, services, browser profiles or Scoop installation.
 

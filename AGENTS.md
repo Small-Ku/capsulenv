@@ -17,7 +17,7 @@
 - Add module source under ordered `src/*.ps1`; mark public exports with the existing `##MOD_EXEC## Export-ModuleMember` convention.
 - Windows PowerShell 5.1 compatibility is required. Avoid unguarded PowerShell 7-only syntax/runtime behavior.
 - Generated `.build/`, `modules/`, Scoop roots, caches/tool state, local config, SSH keys, Bitwarden data, browser profiles and workspace data are not source files and must not be committed.
-- Pester 6.1.0+ via `scripts/Test-Capsulenv.ps1` is the single test path. Add regression coverage for ownership boundaries and real CLI dispatch semantics, not only helper internals.
+- PSScriptAnalyzer 1.25.0+ compatibility analysis followed by Pester 6.1.0+, both via `scripts/Test-Capsulenv.ps1`, is the single test path. Keep the checked-in Windows PowerShell 5.1 syntax/command policy enabled and add regression coverage for ownership boundaries and real CLI dispatch semantics, not only helper internals.
 
 ## Documentation ownership
 
