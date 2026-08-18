@@ -113,6 +113,7 @@ Describe 'Capsulenv static and relocation' {
         $analyzerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Analyze-Capsulenv.ps1'))
         foreach ($requiredBoundaryPolicy in @(
             'ControlBootstrapCommands',
+            'ScoopGatewayBootstrapViolations',
             'Import-PowerShellDataFile',
             'Control-host bootstrap must remain PowerShell language/.NET-only'
         )) {

@@ -94,6 +94,17 @@ if ($sessionModeViolations.Count -gt 0) {
     throw "Capsulenv session-mode ownership analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
+$scoopGatewayPath = Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-gateway.ps1'
+$scoopGatewayBootstrapViolations = @(
+    Get-CapsulenvScoopGatewayBootstrapViolations -Path $scoopGatewayPath
+)
+if ($scoopGatewayBootstrapViolations.Count -gt 0) {
+    $detail = $scoopGatewayBootstrapViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv Scoop gateway bootstrap analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
 $toolRelocationPath = Join-Path (Join-Path $root 'src') '37-ToolRelocation.ps1'
 $externalJsonViolations = @(
     Get-CapsulenvExternalJsonMemberViolations `
@@ -123,5 +134,6 @@ if ($diagnostics.Count -gt 0) {
     ForbiddenRuntimeCommands = $forbiddenRuntimeUses.Count
     HostIntegrationOwnershipViolations = $hostIntegrationViolations.Count
     SessionModeBoundaryViolations = $sessionModeViolations.Count
+    ScoopGatewayBootstrapViolations = $scoopGatewayBootstrapViolations.Count
     ExternalJsonUnsafeMemberAccess = $externalJsonViolations.Count
 }
