@@ -87,7 +87,9 @@ If Scoop core or Main is missing, bootstrap prefers Git and performs shallow sin
 
 `capsulenv.cmd` 的 **control plane** 固定使用 Windows PowerShell 5.1：先驗證 canonical `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`，再只接受同樣為 Desktop edition 5.1+ 的 `powershell.exe` PATH candidate。它不透過 capsule Scoop `pwsh` 啟動 control plane，因為 relocation/reset 本身可能正在重建該 app 的 `current` link 或 shim。Interactive/project shell 的 executable selection 是另一條 runtime path，可獨立使用 capsule-owned PowerShell 7。
 
-Control entry scripts 在讀 config/module manifest 前先執行 `Initialize-CapsulenvControlHost.ps1`。該 bootstrap 將 control host 自己的 `$PSHOME/Modules` 放到 inherited `PSModulePath` 最前，並以 absolute manifest path 載入 built-in `Microsoft.PowerShell.Utility`，再驗證 `Import-PowerShellDataFile` 存在。這個 boundary 是必要的：由 Capsulenv interactive shell 繼承回來的 portable/private module path 可以繼續存在，但不能 shadow OS control host 的 built-in Utility module。
+Control entry scripts 在任何一般 cmdlet/autoload 前先執行 `Initialize-CapsulenvControlHost.ps1`。該 bootstrap 嚴格限制為 PowerShell language + .NET：只把 control host 自己的 `$PSHOME/Modules` 放到 inherited `PSModulePath` 最前，不主動 import 或 probe 任何 built-in module。由 Capsulenv interactive shell 繼承回來的 portable/private module path 可以繼續存在，但不能排走 OS control host 的 built-in module roots。
+
+Capsulenv 自己的 `.psd1` config/module metadata 不依賴 `Import-PowerShellDataFile`。Private `Import-CapsulenvPowerShellDataFile` 直接使用 PowerShell parser，要求檔案只有一個頂層 `HashtableAst`，並以 `SafeGetValue()` 建構資料；command invocation、額外 statement 或其他 dynamic expression 都 fail closed。如此 control bootstrap 不再把某一個 Utility cmdlet 的存在當成 portable runtime 的前置條件。
 
 Entry points use process-scope `-ExecutionPolicy Bypass`; Capsulenv never calls `Set-ExecutionPolicy` or writes execution-policy registry values. Group Policy remains authoritative.
 

@@ -186,6 +186,19 @@ Installed launcher 直接進 `modules\Capsulenv\runtime\Invoke-Capsulenv.ps1`；
 
 Installer 自 v0.16.0 起也不再 bootstrap Scoop、建立 mutable directories、import installed module 或切換 ShellOnly/User。Fresh deploy 後第一次 `capsulenv.cmd` 自己完成必要 bootstrap/rehydrate；User integration 仍以 runtime commands 顯式管理。
 
+### v0.16.1：移除 control plane 對 `Import-PowerShellDataFile` 的依賴
+
+v0.16.0 的 bootstrap 仍假設 Windows PowerShell 5.1 built-in `Microsoft.PowerShell.Utility` 一定會 export `Import-PowerShellDataFile`。若 host 的 Utility module 不提供該 cmdlet，installer 會在真正 deployment 前直接失敗。v0.16.1 不再 import/probe Utility；bootstrap 只恢復 `$PSHOME/Modules`，而 Capsulenv 自己的 `.psd1` 由 safe AST reader 讀取。
+
+遇到下列 v0.16.0 錯誤時，直接從 v0.16.1 或更新的 development checkout/release bundle 重跑 deployment 即可；這是 Capsulenv 程式更新，不是 relocation/reinstall Scoop：
+
+```bat
+X:\capsulenv-0.16.1\install.cmd E:\capenv
+E:\capenv\capsulenv.cmd version
+```
+
+Installer 仍只 transactional replacement managed program files；`scoop/`、persist、cache、workspace、private modules、local config 與 host integration state 都不因此重建。
+
 
 ## 升級後驗證
 
