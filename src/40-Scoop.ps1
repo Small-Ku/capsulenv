@@ -41,10 +41,15 @@ function Invoke-CapsulenvScoopCommand {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string[]]$Arguments,
-        [switch]$AllowFailure
+        [switch]$AllowFailure,
+        [switch]$UseGateway
     )
 
-    $scoop = Get-CapsulenvScoopExecutable
+    $scoop = if ($UseGateway) {
+        Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-gateway.ps1'
+    } else {
+        Get-CapsulenvScoopExecutable
+    }
     if (-not $scoop) {
         throw 'Scoop is not installed in the configured portable root.'
     }
@@ -81,7 +86,7 @@ function Reset-CapsulenvScoop {
     }
 
     if (-not $Quiet) {
-        Write-CapsulenvMessage -Level Info -Message 'Rebuilding Scoop current links, shims, shortcuts, environment entries, and persist links for the installed user...'
+        Write-CapsulenvMessage -Level Info -Message 'Rebuilding Scoop current links, shims, Capsulenv-owned Start Menu shortcuts, environment entries, and persist links for the installed user...'
     }
     return [bool](Invoke-CapsulenvUserScoopReset -Apps $Apps -DeferRunningApps:$DeferRunningApps)
 }

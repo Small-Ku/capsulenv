@@ -618,7 +618,7 @@ function Seed-CapsulenvScoopInventory {
         if ($mode -eq 'User') {
             [void](Set-CapsulenvSessionEnvironment)
             [void](Initialize-CapsulenvScoopBootstrap)
-            [void](Invoke-CapsulenvScoopCommand -Arguments @('import', $destination))
+            [void](Invoke-CapsulenvScoopCommand -Arguments @('import', $destination) -UseGateway)
             $applyStrategy = 'NativeImport'
         } else {
             if ($null -eq $hostScoop) {

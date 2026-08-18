@@ -15,6 +15,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ResetGuardSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-process-guard.ps1') -Raw
         $script:ScoopGatewaySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-gateway.ps1') -Raw
         $script:ScoopShellOnlyPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-shellonly-policy.ps1') -Raw
+        $script:ScoopUserPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-policy.ps1') -Raw
         . (Join-Path $script:Root 'src/05-DataFile.ps1')
     }
 
@@ -43,6 +44,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:UserResetSource.Contains("':defer' { `$deferRunningApps = `$true }") | Should -BeTrue
         $script:UserResetSource | Should -Match '\$deferred = \$true'
         $script:UserResetSource | Should -Match 'if \(\$deferred\) \{ exit 2 \}'
+        $script:UserResetSource | Should -Match 'scoop-capsulenv-user-policy.ps1'
         $script:UserResetSource | Should -Match 'create_startmenu_shortcuts'
         $script:UserResetSource | Should -Match 'env_add_path'
         $script:UserResetSource | Should -Match 'env_set'
@@ -57,6 +59,10 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ScoopGatewaySource | Should -Match "'install', 'download', 'virustotal', 'import'"
         $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop update'
         $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop install'
+        $script:ScoopGatewaySource | Should -Match "scoop-capsulenv-user-policy\.ps1"
+        $script:ScoopGatewaySource | Should -Match "integrationMode -eq 'User'"
+        $script:ScoopUserPolicySource | Should -Match "'Capsulenv Apps'"
+        $script:ScoopUserPolicySource | Should -Not -Match "'Scoop Apps'"
         $script:ScoopGatewaySource.Contains('$script:CapsulenvGatewayPath = [System.IO.Path]::GetFullPath($PSCommandPath)') | Should -BeTrue
         $script:ScoopGatewaySource.Contains('$gatewayPath = $script:CapsulenvGatewayPath') | Should -BeTrue
         $script:ScoopGatewaySource.Contains("`$ps1Text = ('# {0}{1}' -f `$gatewayPath") | Should -BeTrue
@@ -114,6 +120,8 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'Sync-CapsulenvConfiguredDefaultBrowser'
         $script:EnvironmentSource | Should -Match 'Assert-CapsulenvDefaultBrowserRestorable'
         $script:EnvironmentSource | Should -Match 'Restore-CapsulenvDefaultBrowserRegistration'
+        $script:EnvironmentSource | Should -Match 'Remove-CapsulenvUserStartMenuShortcuts'
+        $script:EnvironmentSource | Should -Match "'Capsulenv Apps'"
         $script:DefaultBrowserSource | Should -Match 'registeredAppUser='
         $script:DefaultBrowserSource | Should -Match 'UserChoice hashes'
         $script:DefaultBrowserSource | Should -Match 'HostIntegrationKey'

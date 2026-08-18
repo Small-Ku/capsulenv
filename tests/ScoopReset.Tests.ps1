@@ -76,6 +76,7 @@ function is_admin { $false }
         foreach ($name in @('system.ps1', 'install.ps1', 'versions.ps1', 'shortcuts.ps1')) {
             Set-Content -LiteralPath (Join-Path $fakeLib $name) -Value '' -Encoding UTF8
         }
+        Copy-Item -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-policy.ps1') -Destination (Join-Path $fakeScripts 'scoop-capsulenv-user-policy.ps1')
         @'
 function Test-CapsulenvResetHasBlockingProcesses {
     param([string]$App, [bool]$Global)
