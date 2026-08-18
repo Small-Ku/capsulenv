@@ -18,6 +18,7 @@ Describe 'Capsulenv build and install' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-build-install-test-{0}" -f [Guid]::NewGuid().ToString('N'))
         $buildRoot = Join-Path $temporaryRoot 'build'
         $installRoot = Join-Path $temporaryRoot 'install'
+        $relocatedInstallRoot = Join-Path $temporaryRoot 'relocated-install'
         $prebuiltInstallRoot = Join-Path $temporaryRoot 'prebuilt-install'
 
         try {
@@ -169,6 +170,19 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot '.capsulenv'))) `
                 -Message 'Deployment unexpectedly created host-scoped Capsulenv state.'
+
+            [void](New-Item -ItemType Directory -Path $relocatedInstallRoot -Force)
+            Get-ChildItem -LiteralPath $installRoot -Force | Copy-Item -Destination $relocatedInstallRoot -Recurse -Force
+            $relocationRootOriginal = $env:CAPSULENV_ROOT
+            try {
+                $env:CAPSULENV_ROOT = $installRoot
+                & (Join-Path $relocatedInstallRoot 'modules/Capsulenv/runtime/Invoke-Capsulenv.ps1') help
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition ([System.IO.Path]::GetFullPath($env:CAPSULENV_ROOT) -eq [System.IO.Path]::GetFullPath($relocatedInstallRoot)) `
+                    -Message 'Relocated installed runtime trusted inherited CAPSULENV_ROOT instead of its new module location.'
+            } finally {
+                $env:CAPSULENV_ROOT = $relocationRootOriginal
+            }
 
             $unmanagedPath = Join-Path $installRoot 'unmanaged.txt'
             $localConfigPath = Join-Path (Join-Path $installRoot 'config') 'capsulenv.local.psd1'
