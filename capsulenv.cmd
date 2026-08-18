@@ -21,6 +21,6 @@ exit /b %ERRORLEVEL%
 :SelectWindowsPowerShell
 if defined CAPSULENV_CONTROL_POWERSHELL exit /b 0
 if not exist "%~1" exit /b 0
-"%~1" -NoLogo -NoProfile -Command "if ($PSVersionTable.PSEdition -eq 'Desktop' -and $PSVersionTable.PSVersion.Major -eq 5) { exit 0 } else { exit 1 }" >nul 2>nul
+"%~1" -NoLogo -NoProfile -Command "if ($PSVersionTable.PSEdition -eq 'Desktop' -and $PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -ge 1) { exit 0 } else { exit 1 }" >nul 2>nul
 if not errorlevel 1 set "CAPSULENV_CONTROL_POWERSHELL=%~f1"
 exit /b 0

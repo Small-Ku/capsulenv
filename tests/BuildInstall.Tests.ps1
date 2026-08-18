@@ -36,6 +36,9 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition (Test-Path -LiteralPath (Join-Path $buildRoot 'scripts/Install-Capsulenv.ps1') -PathType Leaf) `
                 -Message 'Minimal runtime is not directly installable: installer script is missing.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (Test-Path -LiteralPath (Join-Path $buildRoot 'scripts/Initialize-CapsulenvControlHost.ps1') -PathType Leaf) `
+                -Message 'Runtime build did not include the isolated control-host bootstrap.'
             $runtimeMetadata = Get-Content -LiteralPath (Join-Path $buildRoot '.capsulenv-runtime.json') -Raw | ConvertFrom-Json
             Assert-CapsulenvBuildInstallTest `
                 -Condition ([int]$runtimeMetadata.SchemaVersion -eq 2) `

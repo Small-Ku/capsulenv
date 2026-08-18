@@ -55,6 +55,7 @@ try {
         @{ Source = 'install.cmd'; Destination = 'install.cmd' }
         @{ Source = 'README.md'; Destination = 'README.md' }
         @{ Source = 'scripts/Install-Capsulenv.ps1'; Destination = 'scripts/Install-Capsulenv.ps1' }
+        @{ Source = 'scripts/Initialize-CapsulenvControlHost.ps1'; Destination = 'scripts/Initialize-CapsulenvControlHost.ps1' }
         @{ Source = 'bin/firefox-capsulenv.cmd'; Destination = 'bin/firefox-capsulenv.cmd' }
         @{ Source = 'bin/zen-capsulenv.cmd'; Destination = 'bin/zen-capsulenv.cmd' }
         @{ Source = 'bin/librewolf-capsulenv.cmd'; Destination = 'bin/librewolf-capsulenv.cmd' }
@@ -97,6 +98,8 @@ try {
             'AGENTS.md',
             'Capsulenv.psd1',
             'Merge-ModuleScripts.ps1',
+            'PSScriptAnalyzerSettings.psd1',
+            'scripts/Analyze-Capsulenv.ps1',
             'scripts/Build-Capsulenv.ps1',
             'scripts/Test-Capsulenv.ps1'
         )) {
