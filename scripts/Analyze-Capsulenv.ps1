@@ -35,6 +35,59 @@ $diagnostics = @(
     }
 )
 
+function Get-CapsulenvCommandAsts {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        $Path,
+        [ref]$tokens,
+        [ref]$parseErrors
+    )
+    if ($parseErrors -and $parseErrors.Count -gt 0) {
+        throw "Static command-boundary parse failed: $Path"
+    }
+    return @(
+        $ast.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
+            $true
+        )
+    )
+}
+
+$controlBootstrapPath = Join-Path (Join-Path $root 'module-runtime') 'Initialize-CapsulenvControlHost.ps1'
+$controlBootstrapCommands = @(Get-CapsulenvCommandAsts -Path $controlBootstrapPath)
+if ($controlBootstrapCommands.Count -gt 0) {
+    $detail = $controlBootstrapCommands | ForEach-Object {
+        '{0}:{1}: {2}' -f $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber, $_.Extent.Text
+    }
+    throw "Control-host bootstrap must remain PowerShell language/.NET-only; command dependencies are forbidden:`n$($detail -join [Environment]::NewLine)"
+}
+
+$forbiddenRuntimeCommands = @('Import-PowerShellDataFile')
+$forbiddenRuntimeUses = @(
+    foreach ($path in $paths) {
+        foreach ($commandAst in @(Get-CapsulenvCommandAsts -Path $path)) {
+            $commandName = $commandAst.GetCommandName()
+            if ($commandName -and $commandName -in $forbiddenRuntimeCommands) {
+                [pscustomobject]@{
+                    Path = $path
+                    Line = $commandAst.Extent.StartLineNumber
+                    Column = $commandAst.Extent.StartColumnNumber
+                    Command = $commandName
+                }
+            }
+        }
+    }
+)
+if ($forbiddenRuntimeUses.Count -gt 0) {
+    $detail = $forbiddenRuntimeUses | ForEach-Object {
+        '{0}:{1}:{2}: forbidden runtime dependency {3}' -f $_.Path, $_.Line, $_.Column, $_.Command
+    }
+    throw "Capsulenv runtime command-boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
 if ($diagnostics.Count -gt 0) {
     $detail = $diagnostics | ForEach-Object {
         '{0}:{1}:{2} [{3}] {4}' -f $_.ScriptPath, $_.Line, $_.Column, $_.RuleName, $_.Message
@@ -46,4 +99,6 @@ if ($diagnostics.Count -gt 0) {
     AnalyzerVersion = [string]$analyzer.Version
     FilesAnalyzed = $paths.Count
     Diagnostics = 0
+    ControlBootstrapCommands = $controlBootstrapCommands.Count
+    ForbiddenRuntimeCommands = $forbiddenRuntimeUses.Count
 }
