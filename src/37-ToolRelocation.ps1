@@ -322,6 +322,39 @@ function Test-CapsulenvTextReferencesRelocation {
     return [int]$converted.ReplacementCount -gt 0
 }
 
+function Get-CapsulenvObjectPropertyValue {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$InputObject,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+    $property = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
+}
+
+function Expand-CapsulenvJsonRecords {
+    [CmdletBinding()]
+    param([AllowNull()]$Value)
+
+    if ($null -eq $Value) {
+        return
+    }
+    if ($Value -is [System.Array]) {
+        foreach ($entry in $Value) {
+            Expand-CapsulenvJsonRecords -Value $entry
+        }
+        return
+    }
+    Write-Output $Value
+}
+
 function Get-CapsulenvUvManagedPythonInstallations {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$UvExecutable)
@@ -338,18 +371,21 @@ function Get-CapsulenvUvManagedPythonInstallations {
             '--no-progress'
         )
     try {
-        $items = @($result.StdOut | ConvertFrom-Json)
+        $parsed = $result.StdOut | ConvertFrom-Json
+        $items = @(Expand-CapsulenvJsonRecords -Value $parsed)
     } catch {
         throw "uv returned invalid JSON while listing managed Python installations: $($_.Exception.Message)"
     }
 
     $prefix = $pythonRoot + [System.IO.Path]::DirectorySeparatorChar
     $seen = @{}
+    $ignoredRecords = 0
     $installations = New-Object System.Collections.Generic.List[object]
     foreach ($item in $items) {
-        $key = [string]$item.key
-        $path = [string]$item.path
+        $key = [string](Get-CapsulenvObjectPropertyValue -InputObject $item -Name 'key')
+        $path = [string](Get-CapsulenvObjectPropertyValue -InputObject $item -Name 'path')
         if ([string]::IsNullOrWhiteSpace($key) -or [string]::IsNullOrWhiteSpace($path)) {
+            $ignoredRecords++
             continue
         }
         try {
@@ -370,9 +406,12 @@ function Get-CapsulenvUvManagedPythonInstallations {
         $seen[$identity] = $true
         $installations.Add([pscustomobject]@{
             Key = $key
-            Version = [string]$item.version
+            Version = [string](Get-CapsulenvObjectPropertyValue -InputObject $item -Name 'version')
             Path = $fullPath
         })
+    }
+    if ($ignoredRecords -gt 0) {
+        Write-CapsulenvMessage -Level Warning -Message "Ignored $ignoredRecords malformed uv managed-Python JSON record(s); relocation repair was skipped for those records."
     }
     return $installations.ToArray()
 }
