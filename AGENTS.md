@@ -16,6 +16,8 @@
 - `capsulenv.cmd` stays a thin launcher. Environment/ownership logic belongs in the PowerShell module.
 - Add module source under ordered `src/*.ps1`; mark public exports with the existing `##MOD_EXEC## Export-ModuleMember` convention.
 - Windows PowerShell 5.1 compatibility is required. Avoid unguarded PowerShell 7-only syntax/runtime behavior.
+- Installed runtime execution must be self-contained under `capsulenv.cmd` + `modules/Capsulenv` and must not depend on root `scripts/`, release-bundle metadata, or source/compiler files. Drive/host relocation is runtime rehydration, never an installer requirement.
+- Installer/build code owns deployment only: merge/build and transactional replacement of managed program files. It must not bootstrap Scoop, create mutable runtime state, or choose/apply User integration mode.
 - Generated `.build/`, `modules/`, Scoop roots, caches/tool state, local config, SSH keys, Bitwarden data, browser profiles and workspace data are not source files and must not be committed.
 - PSScriptAnalyzer 1.25.0+ compatibility analysis followed by Pester 6.1.0+, both via `scripts/Test-Capsulenv.ps1`, is the single test path. Keep the checked-in Windows PowerShell 5.1 syntax/command policy enabled and add regression coverage for ownership boundaries and real CLI dispatch semantics, not only helper internals.
 

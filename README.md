@@ -23,7 +23,7 @@ scoop install git pwsh
 
 ShellOnly 中的 `scoop` 入口會保持安裝資料、`persist`、shims 在 capsule 內，但不把 Scoop/app PATH 寫入 Windows User/Machine environment，也不建立 Start Menu shortcuts。Manifest 若帶有 `pre_install`／`post_install`／installer 等任意 lifecycle code，只有內容與已審核 fingerprint 完全一致才會執行；未知或已變更的 script 會在 mutation 前停止並印出 fingerprint。不要直接執行 `scoop\apps\scoop\current\bin\scoop.ps1` 來繞過這層 ShellOnly policy。
 
-之後搬到另一個 drive letter 或另一台電腦，直接再執行 `capsulenv.cmd`；shell 啟動會按需要自動 rehydrate。
+之後搬到另一個 drive letter 或另一台電腦，**不要重新安裝**；直接在新位置執行 `capsulenv.cmd`，shell 啟動會按需要自行偵測 relocation 並 rehydrate。
 
 日常常用入口：
 
@@ -251,7 +251,7 @@ X:\capsulenv-release\install.cmd D:\Portable\capsulenv
 D:\Portable\capsulenv\capsulenv.cmd version
 ```
 
-Installer 只替換 bundle manifest 列出的 managed runtime files；`scoop/`、`tool-data/`、`cache/`、`workspace/`、`PowerShell/Modules/`、`.capsulenv/`、local config 與其他 unmanaged files 會保留，mutation 失敗時會回滾 runtime replacement。不要用舊 installed capsule 內附的 installer 當成「自動更新器」；它只帶著當時那一版 payload。**Source patch / Git commit 也不是 deployed runtime update**：minimal runtime 執行的是 bundle 內預先 merge 好的 `modules\Capsulenv`，因此要讓 source 修正進入既有 `F:\capenv`，必須先 build/取得新版 runtime bundle，再從另一個 staging directory 執行它的 `install.cmd F:\capenv`。
+Installer 只替換 release manifest 的 destination `InstallFiles`：portable launcher、config/bin helpers 與預先 merge 的 `modules\Capsulenv`；`scoop/`、`tool-data/`、`cache/`、`workspace/`、`PowerShell/Modules/`、`.capsulenv/`、local config 與其他 unmanaged files 會保留，mutation 失敗時會回滾。Installer/README/docs 與 bundle metadata 留在 staging bundle，不會安裝到 capsule。**Source patch / Git commit 也不是 deployed runtime update**：要讓 source 修正進入既有 `F:\capenv`，從 development checkout 或新版 release bundle 對它重新 deploy generated module/runtime payload 即可。
 
 Capsulenv 是 portable directory，沒有另外的 machine-wide uninstaller。要永久移除一支 capsule：先在仍使用 User mode 的 host 上執行 `restore-user`，再 `eject`；確認不再需要 USB 內的 `workspace/`、`tool-data/`、Scoop `persist` 等 user data 後，刪除整個 capsule directory。若只想移除 runtime、保留資料供之後重裝，直接保留目錄並用新版 bundle 對同一 destination 安裝即可。
 

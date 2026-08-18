@@ -22,7 +22,7 @@ Capsulenv 自己只擁有四類狀態：
 ```text
 capsulenv/
 ├─ capsulenv.cmd                    thin launcher
-├─ modules/Capsulenv/               installed merged runtime module
+├─ modules/Capsulenv/               installed merged runtime module + runtime resources
 ├─ config/                          default + local override
 ├─ bin/                             capsule launch helpers / common tool bins
 ├─ PowerShell/Modules/              private user modules
@@ -32,11 +32,12 @@ capsulenv/
 ├─ tool-data/                       persistent toolchains/config/global tools
 ├─ project-cache/                   backing store for explicit project links
 ├─ workspace/                       recommended portable source workspace
-├─ .capsulenv/                      identity, relocation/user/link registries
-└─ .capsulenv-runtime.json          built-runtime metadata
+└─ .capsulenv/                      identity, relocation/user/link registries
 ```
 
-Development-only `src/`, `tests/`, `.build/` and merge/build scripts are not required by the minimal installed runtime. See [`DEVELOPMENT.md`](DEVELOPMENT.md).
+Development-only `src/`, `tests`, `.build/` and merge/build scripts are not required by the minimal installed runtime. Release-only installer/docs/`.capsulenv-runtime.json` are likewise staging artifacts rather than installed runtime dependencies. The stable launcher enters `modules/Capsulenv/runtime/Invoke-Capsulenv.ps1`; helper scripts consumed by the module live under that same module-owned `runtime/` directory. See [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+Relocation is a runtime invariant, not a deployment action. Copying/moving the whole capsule to another drive or host must remain bootable through the installed launcher/module package alone; first activation at the new location may rebuild host/path-sensitive Scoop links and metadata, but must not require installer/source files.
 
 ## Two integration modes
 

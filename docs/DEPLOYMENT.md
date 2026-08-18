@@ -1,26 +1,45 @@
 # Build and deployment
 
-這份文件是 source checkout -> installable runtime bundle -> installed capsule 的 developer/deployment reference。一般使用者第一次安裝與兩種使用模式請從 [`../README.md`](../README.md) 開始；mode ownership 的內部 contract 見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
+這份文件是 source checkout -> release bundle -> installed capsule 的 developer/deployment reference。一般使用者流程見 [`../README.md`](../README.md)；runtime ownership 見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
 
-## Runtime build
+## Deployment boundary
 
-Development checkout 可直接從 `src/*.ps1` deterministic merge module；正式部署應先產生預建 runtime：
+Installer 只負責**產生／取得 generated module，並 transactional deploy managed program files**。它不是 portable runtime initializer，也不是 host integration tool。
+
+因此 installer 不會 bootstrap Scoop、不會建立 `scoop/`、`cache/`、`workspace/`、`.capsulenv/` 等 mutable state、不會 import installed Capsulenv module，也不會選擇 ShellOnly/User mode。Fresh deployment 完成後第一次執行 destination 的 `capsulenv.cmd`，runtime 才按目前 drive/host 自行 bootstrap/rehydrate；User integration 只由 `user-shell`／`enable-user`／`restore-user` 等顯式 runtime command 管理。
+
+這個分界也意味著：**換 drive letter、搬整個 directory、換電腦不是 install/update。** 已安裝 capsule 應直接從新位置執行 `capsulenv.cmd`，由 runtime relocation logic 處理。
+
+## Build a release bundle
+
+Development checkout 可 deterministic merge `src/*.ps1` 並建立 release bundle：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv
 ```
 
-Minimal runtime bundle 包含 `install.cmd`／installer、launcher、prebuilt `modules\Capsulenv`、runtime scripts/config、README 與 docs，不需要 `src/`、tests、`Merge-ModuleScripts.ps1` 或 build script。`.capsulenv-runtime.json` schema 2 列出版本、source commit 與完整 `ManagedFiles`，因此 bundle 本身就是 installer payload。需要 source/tests 的診斷包時才使用：
+Release bundle 是 staging/distribution artifact，包含：
+
+- `install.cmd` + `scripts/Install-Capsulenv.ps1`；
+- `capsulenv.cmd`；
+- generated `modules/Capsulenv/`，其中 `runtime/` 擁有 control entrypoint 與 Scoop helper resources；
+- default config / launch helpers；
+- README/docs；
+- `.capsulenv-runtime.json` bundle manifest。
+
+它不需要 `src/`、tests 或 module merger。需要診斷 bundle 時才使用：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv-dev -IncludeDevelopmentFiles
 ```
 
+`.capsulenv-runtime.json` schema 3 把兩個 surface 分開：`ManagedFiles` 描述整個 release bundle，供完整性/packaging 使用；`InstallFiles` 才是 installer 寫入 destination 的 managed payload。正常 minimal payload 只含 portable launcher、config/bin helpers 與 `modules/Capsulenv/**`。Installer、README/docs 與 `.capsulenv-runtime.json` 本身留在 staging bundle，不複製到長期 capsule。
+
 Builder 會先清空 output tree，因此拒絕 repository root、repository ancestor，以及不在 `dist/` 下的 source-local output。
 
 ## Install or update a destination
 
-Source checkout 與 prebuilt bundle 都提供同一入口：
+Source checkout 與 release bundle 都提供同一入口：
 
 ```bat
 install.cmd D:\Portable\capsulenv
@@ -32,15 +51,11 @@ install.cmd D:\Portable\capsulenv
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-Capsulenv.ps1 -Destination D:\Portable\capsulenv
 ```
 
-從 source checkout 執行時，installer 先在 temporary directory 呼叫 builder 產生新 runtime；從 prebuilt bundle 執行時，直接驗證 `.capsulenv-runtime.json` schema 2／`ManagedFiles` 並以該 bundle 作 payload，不需要 `src/` 或 build script。Destination 不可等於、位於 installer source 內或成為其 ancestor。
+從 source checkout 執行時，installer 在 temporary directory 呼叫 builder，取得 generated module + `InstallFiles`；從 release bundle 執行時，驗證 `.capsulenv-runtime.json`，schema 3 使用 `InstallFiles`。為遷移舊 release，schema 2 bundle 仍可使用其 `ManagedFiles` 作 legacy payload。Destination 不可等於、位於 installer source 內或成為其 ancestor。
 
-Runtime launcher 同樣明確區分兩種 artifact。若 `src/`、`Capsulenv.psd1` 與 `Merge-ModuleScripts.ps1` 同時存在，視為 development checkout，每次 entry 都從 source clean-merge `.build/Capsulenv`，不會因殘留 `modules/Capsulenv` 而執行 stale generated code。Minimal deployed runtime 則沒有 compiler/source，只可載入 bundle 自帶的 `modules/Capsulenv`；launcher 會比對 `.capsulenv-runtime.json.Version` 與 module manifest `ModuleVersion`，若不一致便拒絕執行 partial/mixed runtime。`CAPSULENV_FORCE_REBUILD=1` 在 minimal runtime 不可能完成 rebuild，因此只會警告並繼續使用已驗證 prebuilt module；真正更新必須從**另一個新版 runtime bundle directory** 執行其 installer。
+Destination 的 `.capsulenv-install.json` 是 update ownership boundary。舊 managed files 會先備份；已不屬新 `InstallFiles` 的舊 runtime files會移除；新增/替換採 temporary-file replacement。若 mutation 失敗，installer 逆序還原 managed files 與 marker。這也讓從舊版升級時，曾經安裝到 root 的 `scripts/` runtime helpers、bundle docs/installer metadata 能退出 installed surface，而不碰 unmanaged data。
 
-`install.cmd` 與 installed `capsulenv.cmd` 的 bootstrap 固定使用 **Windows PowerShell 5.1 control plane**，不再以 capsule/PATH 上的 `pwsh.exe` 啟動 installer 或 maintenance command。兩者先驗證 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 是 Desktop PowerShell 5.x，再逐一驗證 PATH 上的 `powershell.exe` fallback；不會 fallback 到 PowerShell 7。這讓 update/rehydrate 可以安全重建 `scoop\apps\pwsh\current` 與 `scoop\shims\pwsh.exe`，即使 destination 剛搬 drive letter 或舊 pwsh shim 仍在 PATH。PowerShell 7 是另一個角色：`shell`/`user-shell` 完成 control-plane activation 後才從 capsule Scoop `apps\pwsh` 啟動 interactive shell。
-
-兩條路徑最後都以 `.capsulenv-install.json` 的 `ManagedFiles` 作 update boundary。舊 managed files 會先備份，新增/替換採 temporary-file replacement；若 mutation 階段失敗，installer 逆序還原已記錄的 managed files/marker。成功後 installer 會印出 installed/updated destination 與下一個 `capsulenv.cmd` command。
-
-Installer 不接管 mutable/user data。以下典型內容跨 update 保留：
+Installer 不接管以下 mutable/user data：
 
 ```text
 scoop/
@@ -54,50 +69,48 @@ PowerShell/Modules/
 config/capsulenv.local.psd1
 ```
 
-Destination 中與 install marker 無關的其他檔案同樣不會因正常 update 被刪除。對一個非空、但沒有 `.capsulenv-install.json` 的目錄，必須明確 `-Force` 才採用為 install destination；`-Force` 也不代表刪除未知內容。
+Destination 中與 install marker 無關的其他檔案同樣保留。對非空、但沒有 `.capsulenv-install.json` 的目錄，必須明確 `-Force` 才採用；`-Force` 也不代表刪除未知內容。
 
-## Release bundle contract
+## Runtime artifact contract
 
-Release artifact 應發佈 `Build-Capsulenv.ps1` 的 minimal output，而不是 source checkout，也不是某個已經使用過、含 mutable data 的 installed capsule。使用者應把 bundle 解壓到 staging directory，再用其中的 installer 寫入長期 portable destination。
+`capsulenv.cmd` 優先啟動 `modules\Capsulenv\runtime\Invoke-Capsulenv.ps1`。因此 deployed capsule 的 control/runtime code 由同一個 generated module package 擁有，不依賴 root `scripts/`、README/docs、`.capsulenv-runtime.json` 或 source compiler。
 
-更新同理：取得**新版** bundle，從新版 bundle 對既有 destination 再跑 `install.cmd`。Installed capsule 內也有 installer 檔案，是因為它們屬 runtime managed surface；但該 installer 只附帶當前版本 payload，並不自行下載新版本。
+Development checkout 則可 fallback 到 source `module-runtime/Invoke-Capsulenv.ps1`；若 `src/`、`Capsulenv.psd1` 與 `Merge-ModuleScripts.ps1` 同時存在，entrypoint 每次從 source clean-merge `.build/Capsulenv`，避免 stale generated module shadow source changes。
 
-`capsulenv.cmd version` 讀取 local runtime metadata；`capsulenv.cmd status` 則在版本之外提供 mode 與本地 readiness 概覽。
+在 deployed capsule 設 `CAPSULENV_FORCE_REBUILD=1` 不會嘗試現場 compile，也不會讓 capsule 失去啟動能力；它只提示應從 development checkout 或新版 release bundle deploy 新 generated module。
 
-## Install mode request
+`install.cmd` 與 installed `capsulenv.cmd` 都固定以 **Windows PowerShell 5.1** 作 control host。Control bootstrap 先恢復 `$PSHOME\Modules` 並以絕對路徑載入 Windows PowerShell built-in Utility module，避免 inherited portable `PSModulePath` shadow 系統 cmdlets。Interactive `shell`/`user-shell` 完成 activation 後才啟動 capsule Scoop 的 PowerShell 7。
 
-Installer 預設請求 ShellOnly：
+## Release/update workflow
 
-```bat
-install.cmd D:\Portable\capsulenv
-```
-
-要在安裝完成後把 capsule 接管為目前 Windows user 的 Scoop：
+Release artifact 應是 `Build-Capsulenv.ps1` output，而不是 source checkout，也不是含 mutable data 的 installed capsule。更新既有 capsule時，取得新版 checkout/bundle，從**外部 staging/source directory**對相同 destination 再跑 installer：
 
 ```bat
-install.cmd D:\Portable\capsulenv -Mode User
+X:\capsulenv-release\install.cmd F:\capenv
+F:\capenv\capsulenv.cmd version
 ```
 
-不帶 `-Mode` 的 update 會讓 runtime 根據目前 machine/user ownership 決定有效模式，而不是把 USB 上「上次在哪台機器使用的 mode」當成全域 profile。詳細判定與 backup contract 只在 [`ARCHITECTURE.md`](ARCHITECTURE.md) 定義。
+Installed capsule 本身故意不再帶 installer。這使「deployment source」與「portable destination」明確分離；destination 只需要能啟動、自行 relocation/rehydrate 的 runtime package。
 
-## Scoop bootstrap during install
+若只是：
 
-正常 Windows install 在 runtime files 到位後初始化 capsule session，確保 capsule-local Scoop config 存在，並在缺少 Scoop/Main 時進行 bootstrap。Bootstrap source/depth 由 `config\capsulenv.psd1` 的 `Scoop.Bootstrap` 控制。
+```text
+E:\capenv -> F:\capenv
+old PC      -> new PC
+```
 
-`-SkipScoopBootstrap` 只供 development/offline packaging checks 等已知情境；它不應成為一般 fresh Windows install 的預設。即使略過 bootstrap，installer 仍建立 portable Scoop config boundary，避免之後直接載入 host user config。
-
-Bootstrap implementation 與 host-Git transport boundary 見 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
+不要跑 installer。直接執行 `F:\capenv\capsulenv.cmd`。
 
 ## Development-file deployment
 
-`Install-Capsulenv.ps1 -IncludeDevelopmentFiles` 從 source checkout 執行時會令 temporary runtime 包含 source/tests/AGENTS/build scripts，再由相同 transactional managed-file mechanism 安裝。Prebuilt minimal bundle 無法憑空加入未打包的 development files；若需要它們，release/build 階段就必須使用 `-IncludeDevelopmentFiles`。這適合需要在 target machine 直接除錯或跑完整 tests 的情境，不是一般 portable runtime 所需。
+`Install-Capsulenv.ps1 -IncludeDevelopmentFiles` 從 source checkout 執行時會讓 temporary build 的 development source/tests 也列入 `InstallFiles`；prebuilt bundle 必須本身以 `Build-Capsulenv.ps1 -IncludeDevelopmentFiles` 建立才有這些檔案。此模式只供 target-machine debugging，不是正常 portable runtime contract。
 
 ## Release/update checks
 
-在提交 installer/build 改動前，至少執行：
+提交 build/installer/runtime packaging 改動前，執行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-Build/install tests 必須持續驗證：minimal runtime 可直接 import/執行、source-local destructive output guard 有效、重複 update 保留 local config/mutable directories/unmanaged files，以及 failed managed-file mutation 可回滾。
+Tests 必須持續驗證：release bundle 與 destination payload 分離、installed runtime 不依賴 bundle metadata/root scripts、舊 managed runtime 可退出 installed surface、update 保留 local config/mutable directories/unmanaged files，以及 failed mutation 可 rollback。
