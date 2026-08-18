@@ -890,10 +890,11 @@ Describe 'Capsulenv static and relocation' {
                 -Message 'Installer did not deploy the prebuilt module.'
             foreach ($mutableDirectory in @('scoop', 'scoop-global', 'cache', 'tool-data', 'project-cache', 'workspace', '.capsulenv')) {
                 Assert-CapsulenvTest `
-                    -Condition (Test-Path -LiteralPath (Join-Path $installRoot $mutableDirectory) -PathType Container) `
-                    -Message "Installer did not create mutable directory: $mutableDirectory"
+                    -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot $mutableDirectory))) `
+                    -Message "Deployment unexpectedly created mutable runtime state: $mutableDirectory"
             }
             $sentinel = Join-Path (Join-Path $installRoot 'workspace') 'keep.txt'
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $sentinel) -Force)
             'preserve' | Set-Content -LiteralPath $sentinel -Encoding UTF8
             & (Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1') -Destination $installRoot | Out-Null
             Assert-CapsulenvTest `
@@ -920,24 +921,31 @@ Describe 'Capsulenv static and relocation' {
             Assert-CapsulenvTest `
                 -Condition $invokeSource.Contains('Import-Module $modulePath -Force -DisableNameChecking') `
                 -Message 'Runtime launcher must suppress unapproved-verb warnings from its internal Capsulenv import.'
-            Assert-CapsulenvTest `
-                -Condition $installerSource.Contains('Import-Module $installedModule -Force -DisableNameChecking') `
-                -Message 'Installer must suppress unapproved-verb warnings from its internal Capsulenv import.'
             foreach ($requiredInstallerBehavior in @(
                 'rollbackRecords',
                 'Copy-CapsulenvInstallFile',
                 '.capsulenv-install.json',
                 'ManagedFiles',
-                'Install destination must not be inside the source repository',
+                'SchemaVersion = 3',
+                'Install destination must not be inside the source repository'
+            )) {
+                Assert-CapsulenvTest `
+                    -Condition $installerSource.Contains($requiredInstallerBehavior) `
+                    -Message "Installer is missing transactional deployment behavior: $requiredInstallerBehavior"
+            }
+            foreach ($forbiddenInstallerBehavior in @(
                 "[ValidateSet('ShellOnly', 'User')]",
                 '[switch]$SkipScoopBootstrap',
                 'Initialize-CapsulenvScoopBootstrap',
                 'Ensure-CapsulenvScoopPortableConfig',
-                'InstallMode = $effectiveMode'
+                'Install-CapsulenvUserEnvironment',
+                'Restore-CapsulenvUserEnvironment',
+                'Set-CapsulenvInstallMode',
+                'Import-Module $installedModule'
             )) {
                 Assert-CapsulenvTest `
-                    -Condition $installerSource.Contains($requiredInstallerBehavior) `
-                    -Message "Installer is missing transactional/ownership behavior: $requiredInstallerBehavior"
+                    -Condition (-not $installerSource.Contains($forbiddenInstallerBehavior)) `
+                    -Message "Installer must remain deployment-only: $forbiddenInstallerBehavior"
             }
         } finally {
             if (Test-Path -LiteralPath $distributionRoot) {
