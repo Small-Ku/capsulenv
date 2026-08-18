@@ -116,6 +116,9 @@ Describe 'Capsulenv build and install' {
             }
 
             $installerPath = Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'
+            function Import-PowerShellDataFile {
+                throw 'sentinel: Capsulenv installer/runtime must not depend on Import-PowerShellDataFile'
+            }
             $environmentSentinels = [ordered]@{
                 CAPSULENV_ROOT = 'caller-capsulenv-root'
                 SCOOP = 'caller-scoop-root'
