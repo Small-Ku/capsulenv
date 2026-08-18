@@ -52,28 +52,11 @@ if ($canCompileModule) {
         -Clean
     $modulePath = $build.ModulePath
 } elseif (Test-Path -LiteralPath $prebuiltModule -PathType Leaf) {
-    # Minimal deployed runtimes intentionally do not ship src/ or the merger.
-    # CAPSULENV_FORCE_REBUILD must therefore never make an otherwise valid
-    # portable runtime unbootable; updating its merged module requires a newer
-    # prebuilt runtime bundle through install.cmd.
+    # A deployed capsule owns one self-contained module package. Runtime entry
+    # points and helper resources live beside its manifest, so relocation does
+    # not depend on release-bundle metadata or repository build scripts.
     if ($forceRebuild) {
-        Write-Warning 'CAPSULENV_FORCE_REBUILD was ignored because this is a deployed prebuilt runtime. Update Capsulenv from a newer runtime bundle to replace modules\Capsulenv.'
-    }
-
-    $runtimeMetadataPath = Join-Path $root '.capsulenv-runtime.json'
-    if (Test-Path -LiteralPath $runtimeMetadataPath -PathType Leaf) {
-        $runtimeMetadata = Get-Content -LiteralPath $runtimeMetadataPath -Raw | ConvertFrom-Json
-        $moduleMetadata = Import-PowerShellDataFile -Path $prebuiltModule
-        if (
-            $null -ne $runtimeMetadata.Version -and
-            $null -ne $moduleMetadata.ModuleVersion -and
-            -not [System.StringComparer]::OrdinalIgnoreCase.Equals(
-                [string]$runtimeMetadata.Version,
-                [string]$moduleMetadata.ModuleVersion
-            )
-        ) {
-            throw "Capsulenv runtime metadata version $($runtimeMetadata.Version) does not match prebuilt module version $($moduleMetadata.ModuleVersion). Reinstall/update this capsule from one complete runtime bundle."
-        }
+        Write-Warning 'CAPSULENV_FORCE_REBUILD was ignored because this is a deployed module runtime. Update Capsulenv from a development checkout or newer release bundle to replace modules\Capsulenv.'
     }
     $modulePath = $prebuiltModule
 } else {
