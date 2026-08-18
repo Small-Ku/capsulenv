@@ -23,6 +23,8 @@ Describe 'Capsulenv User Scoop shortcut isolation' {
         $source | Should -Match "'Capsulenv Apps'"
         $source | Should -Not -Match "'Scoop Apps'"
         $source | Should -Match 'CAPSULENV_ID'
+        $source | Should -Match 'Programs'
+        $source | Should -Match 'function shortcut_folder'
     }
 
     It 'routes User-mode mutating Scoop commands through the User policy' {
@@ -30,5 +32,6 @@ Describe 'Capsulenv User Scoop shortcut isolation' {
         $source | Should -Match "integrationMode -eq 'User'"
         $source | Should -Match 'scoop-capsulenv-user-policy\.ps1'
         $source | Should -Match '\$command -in \$policyCommands'
+        $source | Should -Match '\$source\.Insert\(\$insertionPoint\.Index'
     }
 }
