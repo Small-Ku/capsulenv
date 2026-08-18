@@ -11,7 +11,8 @@ Merge-ModuleScripts.ps1           deterministic module merger
 module-runtime/*.ps1               module-owned entrypoint/helper resource sources
 scripts/Build-Capsulenv.ps1       produce redistributable release bundle
 scripts/Install-Capsulenv.ps1     transactional runtime installer/updater
-scripts/Analyze-Capsulenv.ps1     Windows PowerShell compatibility analysis
+scripts/Analyze-Capsulenv.ps1     Windows PowerShell compatibility + architecture analysis
+scripts/Capsulenv.StaticAnalysis.ps1 testable custom AST ownership rules
 scripts/Test-Capsulenv.ps1        single analysis + Pester test entrypoint
 PSScriptAnalyzerSettings.psd1      checked-in WinPS 5.1 analyzer policy
 tests/*.Tests.ps1                 Pester coverage
@@ -60,9 +61,11 @@ Detailed managed-file/update semantics are canonical in [`DEPLOYMENT.md`](DEPLOY
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 ```
 
-The entrypoint runs static compatibility analysis before Pester. `PSScriptAnalyzerSettings.psd1` enables `PSUseCompatibleSyntax` for PowerShell 5.1 and `PSUseCompatibleCommands` against a Windows PowerShell 5.1 compatibility profile over runtime/module/build scripts. Development-only analyzer/Pester drivers are excluded from that runtime command profile because their tooling APIs intentionally target the supplied modern development toolchain. A compatibility diagnostic is a test failure, not a warning.
+The entrypoint runs static analysis before Pester. `PSScriptAnalyzerSettings.psd1` enables `PSUseCompatibleSyntax` for PowerShell 5.1 and `PSUseCompatibleCommands` against a Windows PowerShell 5.1 compatibility profile over runtime/module/build scripts. Development-only analyzer/Pester drivers are excluded from that runtime command profile because their tooling APIs intentionally target the supplied modern development toolchain. A compatibility diagnostic is a test failure, not a warning.
 
-Pester then covers static safety invariants, source/module parsing, control-host `PSModulePath` contamination/shadowing regression, runtime build, first install/update preservation, installed-module smoke behavior, fresh-session ShellOnly defaults versus persistent User ownership, capsule-specific User Start Menu isolation, Scoop bootstrap/reset/replay boundaries, installed-manifest selector/executable semantics, external uv JSON/StrictMode tolerance, tool storage/relocation, browser/default-browser ownership, sing-box process/config ownership, Bitwarden scoped mutation and host-scoped integration state.
+`Capsulenv.StaticAnalysis.ps1` adds fail-closed AST architecture gates for invariants that ordinary PSScriptAnalyzer cannot express. The current gates require the control bootstrap to remain command-free, forbid runtime `Import-PowerShellDataFile`, prevent runtime code from targeting the foreign Scoop `Programs\Scoop Apps` namespace, reserve Scoop's `shortcut_folder` override to the capsule-owned User policy and require that policy to keep the `Capsulenv Apps` namespace, require `Get-CapsulenvInstallMode` to stay command-free and select User only from process-scoped `CAPSULENV_MODE`, and reject direct member access on declared untrusted external JSON record variables such as uv's `$item`. When adding another external JSON ingestion boundary, register its record variable(s) in the analyzer rather than relying on StrictMode/runtime failures.
+
+The custom rules are themselves tested with synthetic negative and positive fixtures in `tests/ArchitectureAnalysis.Tests.ps1`: each ownership rule must demonstrate that a representative forbidden implementation fails static analysis and its approved form passes. Pester then covers the corresponding runtime behavior plus source/module parsing, control-host `PSModulePath` contamination/shadowing regression, runtime build, first install/update preservation, installed-module smoke behavior, fresh-session ShellOnly defaults versus persistent User ownership, capsule-specific User Start Menu isolation, Scoop bootstrap/reset/replay boundaries, installed-manifest selector/executable semantics, external uv JSON/StrictMode tolerance, tool storage/relocation, browser/default-browser ownership, sing-box process/config ownership, Bitwarden scoped mutation and host-scoped integration state.
 
 Where possible, test dangerous integration through isolated fixtures/static invariants instead of changing the real test host's global Git config, services, browser profiles or Scoop installation.
 
