@@ -239,3 +239,82 @@ function Get-CapsulenvExternalJsonMemberViolations {
         }
     )
 }
+
+function Get-CapsulenvScoopGatewayBootstrapViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    [void](Get-CapsulenvStaticAst -Path $fullPath)
+    $source = [System.IO.File]::ReadAllText($fullPath)
+    $violations = New-Object System.Collections.Generic.List[object]
+
+    $requirements = @(
+        [pscustomobject]@{
+            Rule = 'ScoopGatewayBootstrapCapture'
+            Pattern = '(?m)\$upstreamSource\s*=\s*\[System\.IO\.File\]::ReadAllText\(\$upstream\)'
+            Detail = 'intercepted Scoop commands must capture the installed upstream dispatcher bootstrap'
+        },
+        [pscustomobject]@{
+            Rule = 'ScoopGatewayDispatchBoundary'
+            Pattern = 'switch\\s\*\\\(\\s\*\\\$subCommand'
+            Detail = 'gateway must locate the installed Scoop command-dispatch boundary'
+        },
+        [pscustomobject]@{
+            Rule = 'ScoopGatewayDispatchGuard'
+            Pattern = '(?m)if\s*\(\s*-not\s+\$dispatcherBoundary\.Success\s*\)'
+            Detail = 'gateway must fail closed when the installed Scoop dispatch boundary is unknown'
+        },
+        [pscustomobject]@{
+            Rule = 'ScoopGatewayBootstrapSlice'
+            Pattern = '(?m)\$bootstrapSource\s*=\s*\$upstreamSource\.Substring\(\s*0\s*,\s*\$dispatcherBoundary\.Index\s*\)'
+            Detail = 'gateway must slice the installed upstream dispatcher at the validated dispatch boundary'
+        },
+        [pscustomobject]@{
+            Rule = 'ScoopGatewayCoreBootstrapGuard'
+            Pattern = 'lib\[\\\\/\]core\\\.ps1'
+            Detail = 'captured upstream bootstrap must be checked for Scoop lib/core.ps1'
+        },
+        [pscustomobject]@{
+            Rule = 'ScoopGatewayBootstrapPrepend'
+            Pattern = '(?m)\$source\s*=\s*\$bootstrapSource\s*\+[^\r\n]*\+\s*\$source'
+            Detail = 'captured upstream bootstrap must execute before the transformed libexec source'
+        }
+    )
+
+    foreach ($requirement in $requirements) {
+        if ($source -notmatch $requirement.Pattern) {
+            $violations.Add([pscustomobject]@{
+                Rule = $requirement.Rule
+                Path = $fullPath
+                Line = 1
+                Column = 1
+                Detail = $requirement.Detail
+            })
+        }
+    }
+
+    $prependMatch = [regex]::Match(
+        $source,
+        '(?m)^\$source\s*=\s*\$bootstrapSource\s*\+[^\r\n]*\+\s*\$source\s*$'
+    )
+    $policyInsertMatch = [regex]::Match(
+        $source,
+        '(?m)^\s*\$source\s*=\s*\$source\.Insert\(\$insertionPoint\.Index,'
+    )
+    if (
+        $prependMatch.Success -and
+        $policyInsertMatch.Success -and
+        $prependMatch.Index -gt $policyInsertMatch.Index
+    ) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'ScoopGatewayBootstrapOrder'
+            Path = $fullPath
+            Line = 1
+            Column = 1
+            Detail = 'upstream Scoop bootstrap must be prepended before Capsulenv policy injection'
+        })
+    }
+
+    return $violations.ToArray()
+}

@@ -125,4 +125,34 @@ function Get-CapsulenvUvManagedPythonInstallations {
                 -RecordVariables @('item')
         ).Count | Should -Be 0
     }
+
+    It 'rejects a Scoop gateway that executes transformed libexec without upstream bootstrap' {
+        $fixture = New-CapsulenvStaticFixture -Name 'gateway-no-bootstrap.ps1' -Source @'
+$upstream = 'scoop.ps1'
+$source = [System.IO.File]::ReadAllText('scoop-install.ps1')
+$insertionPoint = [regex]::Match($source, '(?m)^\$opt\s*,')
+$source = $source.Insert($insertionPoint.Index, '. policy.ps1')
+'@
+        $violations = @(Get-CapsulenvScoopGatewayBootstrapViolations -Path $fixture)
+        $violations.Count | Should -BeGreaterThan 0
+        @($violations.Rule) | Should -Contain 'ScoopGatewayBootstrapCapture'
+        @($violations.Rule) | Should -Contain 'ScoopGatewayBootstrapPrepend'
+    }
+
+    It 'accepts a Scoop gateway that replays the installed dispatcher bootstrap before policy injection' {
+        $fixture = New-CapsulenvStaticFixture -Name 'gateway-bootstrap.ps1' -Source @'
+$upstream = 'scoop.ps1'
+$source = [System.IO.File]::ReadAllText('scoop-install.ps1')
+$upstreamSource = [System.IO.File]::ReadAllText($upstream)
+$dispatcherBoundary = [regex]::Match($upstreamSource, '(?m)^switch\s*\(\s*\$subCommand\s*\)\s*\{')
+if (-not $dispatcherBoundary.Success) { throw 'bad dispatch boundary' }
+$bootstrapSource = $upstreamSource.Substring(0, $dispatcherBoundary.Index)
+if ($bootstrapSource -notmatch '(?i)lib[\\/]core\.ps1') { throw 'bad core bootstrap' }
+$source = $bootstrapSource + "`r`n" + $source
+$insertionPoint = [regex]::Match($source, '(?m)^\$opt\s*,')
+$source = $source.Insert($insertionPoint.Index, '. policy.ps1')
+'@
+        @(Get-CapsulenvScoopGatewayBootstrapViolations -Path $fixture).Count | Should -Be 0
+    }
+
 }
