@@ -130,6 +130,22 @@ if (-not (Test-Path -LiteralPath $libexec -PathType Leaf)) {
 $source = [System.IO.File]::ReadAllText($libexec)
 $changed = $false
 
+# Scoop's public bin/scoop.ps1 establishes core/config/bucket/command helpers
+# before dispatching into libexec. Capsulenv executes a transformed libexec copy
+# so it can inject policy after command-specific libraries load; prepend the
+# exact bootstrap prefix from this installed Scoop version rather than assuming
+# those functions/variables leaked from a caller session.
+$upstreamSource = [System.IO.File]::ReadAllText($upstream)
+$dispatcherBoundary = [regex]::Match($upstreamSource, '(?m)^switch\s*\(\s*\$subCommand\s*\)\s*\{')
+if (-not $dispatcherBoundary.Success) {
+    throw 'Unsupported Scoop dispatcher layout: Capsulenv could not locate the command dispatch boundary.'
+}
+$bootstrapSource = $upstreamSource.Substring(0, $dispatcherBoundary.Index)
+if ($bootstrapSource -notmatch '(?i)lib[\\/]core\.ps1') {
+    throw 'Unsupported Scoop dispatcher layout: the pre-dispatch bootstrap does not load lib/core.ps1.'
+}
+$source = $bootstrapSource + "`r`n" + $source
+
 if ($command -in $policyCommands) {
     $insertionPoint = [regex]::Match($source, '(?m)^\$opt\s*,')
     if (-not $insertionPoint.Success) {
