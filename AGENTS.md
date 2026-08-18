@@ -4,6 +4,8 @@
 
 - Scoop is the single source of truth for application files, installed manifests, `persist` data, browser profiles, shims, shortcuts and manifest lifecycle scripts. Never add a parallel Capsulenv app-data/profile store.
 - ShellOnly is the default. Capsulenv activation/bootstrap/rehydrate may change process state but must not adopt or persistently rewrite a foreign host/user Scoop installation.
+- A fresh Capsulenv invocation defaults to ShellOnly even when persistent User ownership exists. Only explicit User entrypoints/process inheritance select User session semantics; the host-scoped ledger is restore authority, not session-mode selection.
+- User-mode Scoop shortcuts must use a capsule-specific Start Menu namespace and must never share or overwrite a foreign Scoop `Programs\Scoop Apps` namespace.
 - User integration must be explicit, host-scoped and reversible from an exact backup under `.capsulenv/user-integrations/<machine-user-hash>/`. Never treat mode as a capsule-global trust profile.
 - Relocation repair must use the owning tool whenever possible. ShellOnly Scoop repair may rebuild only capsule-owned `current`/shim/persist links; User mode may use native `scoop reset`.
 - Lifecycle replay must read each installed version's `manifest.json` and `install.json`, never substitute the latest bucket manifest. Arbitrary `pre_install` replay is never safe-by-default.

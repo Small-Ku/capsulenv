@@ -130,7 +130,7 @@ capsulenv.cmd tools repair uv --dry-run --last
 capsulenv.cmd tools repair uv --last --strict
 ```
 
-Managed Python installs are enumerated using uv's existing installation keys and reinstalled by exact key; Capsulenv never issues a target-less reinstall that could silently select a different default Python.
+Managed Python installs are enumerated using uv's existing installation keys and reinstalled by exact key; Capsulenv never issues a target-less reinstall that could silently select a different default Python. The JSON boundary is treated as untrusted external-tool output: records are flattened and fields are read through presence checks under StrictMode. A malformed/incomplete record is warned and skipped rather than aborting the whole relocation or inventing an install key.
 
 For global tools, Capsulenv reads each `uv-receipt.toml`, obtains the installed package version from the existing environment, relocates only known OldRoot -> NewRoot receipt metadata, and asks uv to reinstall the same tool/version. The version is supplied to the command rather than rewriting the saved requirement, preserving extras/index/local/VCS intent encoded in the receipt. An uninterpretable receipt/version is reported and left untouched.
 
