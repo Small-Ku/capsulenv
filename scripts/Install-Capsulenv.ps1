@@ -9,7 +9,15 @@ param(
     [switch]$SkipScoopBootstrap
 )
 
-. ([System.IO.Path]::Combine($PSScriptRoot, 'Initialize-CapsulenvControlHost.ps1'))
+$sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$controlBootstrap = Join-Path $sourceRoot 'module-runtime\Initialize-CapsulenvControlHost.ps1'
+if (-not (Test-Path -LiteralPath $controlBootstrap -PathType Leaf)) {
+    $controlBootstrap = Join-Path $sourceRoot 'modules\Capsulenv\runtime\Initialize-CapsulenvControlHost.ps1'
+}
+if (-not (Test-Path -LiteralPath $controlBootstrap -PathType Leaf)) {
+    throw "Capsulenv control-host bootstrap is missing: $controlBootstrap"
+}
+. $controlBootstrap
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -67,7 +75,6 @@ function Copy-CapsulenvInstallFile {
     }
 }
 
-$sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $destinationRoot = [System.IO.Path]::GetFullPath($Destination)
 $sourceComparison = $sourceRoot.TrimEnd([char[]]'\/')
 $destinationComparison = $destinationRoot.TrimEnd([char[]]'\/')

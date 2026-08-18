@@ -15,7 +15,14 @@ if not defined CAPSULENV_CONTROL_POWERSHELL (
     exit /b 1
 )
 
-"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_ROOT%\scripts\Invoke-Capsulenv.ps1" %*
+set "CAPSULENV_ENTRY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\Invoke-Capsulenv.ps1"
+if not exist "%CAPSULENV_ENTRY%" set "CAPSULENV_ENTRY=%CAPSULENV_ROOT%\module-runtime\Invoke-Capsulenv.ps1"
+if not exist "%CAPSULENV_ENTRY%" (
+    echo capsulenv runtime entrypoint is missing: %CAPSULENV_ENTRY%
+    exit /b 1
+)
+
+"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_ENTRY%" %*
 exit /b %ERRORLEVEL%
 
 :SelectWindowsPowerShell

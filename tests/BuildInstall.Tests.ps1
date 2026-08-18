@@ -37,7 +37,7 @@ Describe 'Capsulenv build and install' {
                 -Condition (Test-Path -LiteralPath (Join-Path $buildRoot 'scripts/Install-Capsulenv.ps1') -PathType Leaf) `
                 -Message 'Minimal runtime is not directly installable: installer script is missing.'
             Assert-CapsulenvBuildInstallTest `
-                -Condition (Test-Path -LiteralPath (Join-Path $buildRoot 'scripts/Initialize-CapsulenvControlHost.ps1') -PathType Leaf) `
+                -Condition (Test-Path -LiteralPath (Join-Path $buildRoot 'modules/Capsulenv/runtime/Initialize-CapsulenvControlHost.ps1') -PathType Leaf) `
                 -Message 'Runtime build did not include the isolated control-host bootstrap.'
             $runtimeMetadata = Get-Content -LiteralPath (Join-Path $buildRoot '.capsulenv-runtime.json') -Raw | ConvertFrom-Json
             Assert-CapsulenvBuildInstallTest `
@@ -53,7 +53,7 @@ Describe 'Capsulenv build and install' {
             $forceRebuildOriginal = [Environment]::GetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', 'Process')
             try {
                 [Environment]::SetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', '1', 'Process')
-                & (Join-Path $buildRoot 'scripts/Invoke-Capsulenv.ps1') help
+                & (Join-Path $buildRoot 'modules/Capsulenv/runtime/Invoke-Capsulenv.ps1') help
             } finally {
                 [Environment]::SetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', $forceRebuildOriginal, 'Process')
             }
@@ -65,7 +65,7 @@ Describe 'Capsulenv build and install' {
                 $runtimeMetadataMismatch.Version = '99.99.99'
                 $runtimeMetadataMismatch | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeMetadataPathForMismatch -Encoding UTF8
                 {
-                    & (Join-Path $buildRoot 'scripts/Invoke-Capsulenv.ps1') help
+                    & (Join-Path $buildRoot 'modules/Capsulenv/runtime/Invoke-Capsulenv.ps1') help
                 } | Should -Throw '*runtime metadata version 99.99.99 does not match prebuilt module version*'
             } finally {
                 [System.IO.File]::WriteAllText($runtimeMetadataPathForMismatch, $runtimeMetadataOriginalText)
@@ -210,7 +210,7 @@ Describe 'Capsulenv build and install' {
                 $env:PSModulePath = $previousModulePath
             }
 
-            & (Join-Path (Join-Path $installRoot 'scripts') 'Invoke-Capsulenv.ps1') help
+            & (Join-Path $installRoot 'modules/Capsulenv/runtime/Invoke-Capsulenv.ps1') help
             Write-Host 'capsulenv build/install Pester checks passed.' -ForegroundColor Green
         } finally {
             Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
