@@ -169,6 +169,24 @@ E:\capenv\capsulenv.cmd version
 
 v0.15.8 的 control entrypoint 會先以 `$PSHOME/Modules` 隔離並載入 Windows PowerShell 自己的 built-in Utility module，因此從 portable/private `PSModulePath` 繼承回來的 module 不再能 shadow control plane；batch launcher 也明確拒絕 Windows PowerShell 5.0。這只改 managed runtime/bootstrap，不移動 Scoop apps、persist、workspace 或 local config。
 
+
+### v0.16.0：deployment 與 portable relocation 分離
+
+v0.16.0 把 release bundle 與 installed capsule 的 ownership 明確拆開。Release bundle 的 `.capsulenv-runtime.json` schema 3 同時列出完整 `ManagedFiles` 與 destination-only `InstallFiles`；正常安裝只把 `capsulenv.cmd`、config/bin helpers 與 generated `modules/Capsulenv/**` 寫到長期 capsule。Installer、README/docs 與 bundle metadata 留在 staging directory。
+
+更新自 v0.15.x 時仍從新版 development checkout／release bundle 對既有 destination 執行一次 installer。新版 install marker 會把舊版本曾管理的 root `scripts/` helper、installed installer/docs/runtime metadata 從 managed surface 移除，同時保留 Scoop/persist/cache/workspace/private modules/local config 等 mutable data。
+
+完成這次程式更新後，日常 relocation 不再與 installer 有任何關係。例如把 `E:\capenv` 整個搬到 `F:\capenv` 或插到另一台 Windows，只需：
+
+```bat
+F:\capenv\capsulenv.cmd
+```
+
+Installed launcher 直接進 `modules\Capsulenv\runtime\Invoke-Capsulenv.ps1`；gateway/reset/replay/policy/control-host bootstrap 也都由同一 module package 擁有。`.capsulenv-runtime.json` 缺席不影響啟動。`CAPSULENV_FORCE_REBUILD=1` 在 deployed runtime 只會提示從 development checkout／新版 bundle 更新 generated module，不再嘗試依靠 installed source/compiler 自救。
+
+Installer 自 v0.16.0 起也不再 bootstrap Scoop、建立 mutable directories、import installed module 或切換 ShellOnly/User。Fresh deploy 後第一次 `capsulenv.cmd` 自己完成必要 bootstrap/rehydrate；User integration 仍以 runtime commands 顯式管理。
+
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：

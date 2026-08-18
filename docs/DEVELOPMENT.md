@@ -8,8 +8,8 @@
 src/*.ps1                         Capsulenv module source, ordered by filename
 Capsulenv.psd1                    module manifest
 Merge-ModuleScripts.ps1           deterministic module merger
-scripts/Invoke-Capsulenv.ps1      PowerShell entrypoint used by capsulenv.cmd
-scripts/Build-Capsulenv.ps1       produce minimal redistributable runtime
+module-runtime/*.ps1               module-owned entrypoint/helper resource sources
+scripts/Build-Capsulenv.ps1       produce redistributable release bundle
 scripts/Install-Capsulenv.ps1     transactional runtime installer/updater
 scripts/Analyze-Capsulenv.ps1     Windows PowerShell compatibility analysis
 scripts/Test-Capsulenv.ps1        single analysis + Pester test entrypoint
@@ -19,7 +19,7 @@ config/capsulenv.psd1             default runtime configuration
 config/capsulenv.local.psd1.example local override example
 ```
 
-A development checkout may build/merge the module on entry. A deployed runtime imports the prebuilt merged module under `modules/Capsulenv/` and does not need `src/`, tests or the merger.
+A development checkout may build/merge the module on entry. `Merge-ModuleScripts.ps1` copies `module-runtime/*.ps1` into generated `modules/Capsulenv/runtime/`, so a deployed runtime imports and launches entirely from the module package; it does not need root `scripts/`, `src/`, tests, bundle metadata or the merger.
 
 ## Editing the module
 
@@ -46,7 +46,7 @@ Development entry uses source + deterministic merge as needed. Do not commit gen
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv
 ```
 
-The minimal runtime contains the launcher, prebuilt module, runtime scripts/config, README and shipped docs. Development source/tests are excluded unless `-IncludeDevelopmentFiles` is explicit.
+The release bundle contains installer/docs plus the portable payload. Its `InstallFiles` subset is narrower: launcher, config/bin helpers and the generated module package. Development source/tests are excluded unless `-IncludeDevelopmentFiles` is explicit.
 
 Build output may not overwrite the repository root. A source-local output must stay under `dist/`; this is deliberately enforced because the builder replaces its output tree.
 
