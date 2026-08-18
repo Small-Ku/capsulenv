@@ -62,7 +62,7 @@ Describe 'Capsulenv static and relocation' {
                 -Condition $launcherSource.Contains($requiredControlHostBehavior) `
                 -Message "Capsulenv control launcher is missing required Windows PowerShell behavior: $requiredControlHostBehavior"
         }
-        $controlBootstrapSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Initialize-CapsulenvControlHost.ps1'))
+        $controlBootstrapSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'Initialize-CapsulenvControlHost.ps1'))
         foreach ($requiredBootstrapBehavior in @(
             "[System.IO.Path]::Combine(`$PSHOME, 'Modules')",
             "'Microsoft.PowerShell.Utility.psd1'",
@@ -73,13 +73,17 @@ Describe 'Capsulenv static and relocation' {
                 -Condition $controlBootstrapSource.Contains($requiredBootstrapBehavior) `
                 -Message "Control-host bootstrap is missing required built-in module isolation: $requiredBootstrapBehavior"
         }
-        foreach ($entryScriptName in @('Invoke-Capsulenv.ps1', 'Install-Capsulenv.ps1')) {
-            $entrySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') $entryScriptName))
-            $bootstrapIndex = $entrySource.IndexOf("Initialize-CapsulenvControlHost.ps1", [System.StringComparison]::Ordinal)
-            $strictModeIndex = $entrySource.IndexOf('Set-StrictMode', [System.StringComparison]::Ordinal)
+        $runtimeEntrySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'Invoke-Capsulenv.ps1'))
+        $installerEntrySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
+        foreach ($entry in @(
+            [pscustomobject]@{ Name = 'Invoke-Capsulenv.ps1'; Source = $runtimeEntrySource },
+            [pscustomobject]@{ Name = 'Install-Capsulenv.ps1'; Source = $installerEntrySource }
+        )) {
+            $bootstrapIndex = $entry.Source.IndexOf('Initialize-CapsulenvControlHost.ps1', [System.StringComparison]::Ordinal)
+            $strictModeIndex = $entry.Source.IndexOf('Set-StrictMode', [System.StringComparison]::Ordinal)
             Assert-CapsulenvTest `
                 -Condition ($bootstrapIndex -ge 0 -and $strictModeIndex -gt $bootstrapIndex) `
-                -Message "$entryScriptName must initialize the isolated control host before normal runtime commands."
+                -Message "$($entry.Name) must initialize the isolated control host before normal runtime commands."
         }
 
         foreach ($forbiddenControlHostBehavior in @(
@@ -874,7 +878,7 @@ Describe 'Capsulenv static and relocation' {
                 -Condition $builderSource.Contains('Source-local build output must remain under the dist directory') `
                 -Message 'Runtime builder does not protect source directories from destructive output paths.'
 
-            & (Join-Path $runtimeRoot 'scripts\Invoke-Capsulenv.ps1') help
+            & (Join-Path $runtimeRoot 'modules\Capsulenv\runtime\Invoke-Capsulenv.ps1') help
 
             $installRoot = Join-Path $distributionRoot 'installed'
             $installed = & (Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1') -Destination $installRoot
@@ -912,7 +916,7 @@ Describe 'Capsulenv static and relocation' {
                 -Condition (-not $installCmdSource.Contains('pwsh.exe')) `
                 -Message 'Installer control plane must never bootstrap through pwsh.exe.'
 
-            $invokeSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Invoke-Capsulenv.ps1'))
+            $invokeSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'Invoke-Capsulenv.ps1'))
             Assert-CapsulenvTest `
                 -Condition $invokeSource.Contains('Import-Module $modulePath -Force -DisableNameChecking') `
                 -Message 'Runtime launcher must suppress unapproved-verb warnings from its internal Capsulenv import.'

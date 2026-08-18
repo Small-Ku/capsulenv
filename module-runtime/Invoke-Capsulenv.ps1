@@ -9,7 +9,24 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$root = $null
+$runtimeLeaf = Split-Path -Leaf $PSScriptRoot
+if ([System.StringComparer]::OrdinalIgnoreCase.Equals($runtimeLeaf, 'module-runtime')) {
+    $root = Split-Path -Parent $PSScriptRoot
+} elseif ([System.StringComparer]::OrdinalIgnoreCase.Equals($runtimeLeaf, 'runtime')) {
+    $moduleRoot = Split-Path -Parent $PSScriptRoot
+    $modulesRoot = Split-Path -Parent $moduleRoot
+    if ([System.StringComparer]::OrdinalIgnoreCase.Equals((Split-Path -Leaf $modulesRoot), 'modules')) {
+        $root = Split-Path -Parent $modulesRoot
+    }
+}
+if ([string]::IsNullOrWhiteSpace($root)) {
+    $root = $env:CAPSULENV_ROOT
+}
+if ([string]::IsNullOrWhiteSpace($root)) {
+    throw 'Capsulenv runtime entrypoint could not resolve the capsule root.'
+}
+$root = [System.IO.Path]::GetFullPath($root)
 $env:CAPSULENV_ROOT = $root
 
 $prebuiltModule = Join-Path (Join-Path (Join-Path $root 'modules') 'Capsulenv') 'Capsulenv.psd1'

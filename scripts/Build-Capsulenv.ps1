@@ -55,13 +55,11 @@ try {
         @{ Source = 'install.cmd'; Destination = 'install.cmd' }
         @{ Source = 'README.md'; Destination = 'README.md' }
         @{ Source = 'scripts/Install-Capsulenv.ps1'; Destination = 'scripts/Install-Capsulenv.ps1' }
-        @{ Source = 'scripts/Initialize-CapsulenvControlHost.ps1'; Destination = 'scripts/Initialize-CapsulenvControlHost.ps1' }
         @{ Source = 'bin/firefox-capsulenv.cmd'; Destination = 'bin/firefox-capsulenv.cmd' }
         @{ Source = 'bin/zen-capsulenv.cmd'; Destination = 'bin/zen-capsulenv.cmd' }
         @{ Source = 'bin/librewolf-capsulenv.cmd'; Destination = 'bin/librewolf-capsulenv.cmd' }
         @{ Source = 'config/capsulenv.psd1'; Destination = 'config/capsulenv.psd1' }
         @{ Source = 'config/capsulenv.local.psd1.example'; Destination = 'config/capsulenv.local.psd1.example' }
-        @{ Source = 'scripts/Invoke-Capsulenv.ps1'; Destination = 'scripts/Invoke-Capsulenv.ps1' }
         @{ Source = 'docs/ARCHITECTURE.md'; Destination = 'docs/ARCHITECTURE.md' }
         @{ Source = 'docs/DEVELOPMENT.md'; Destination = 'docs/DEVELOPMENT.md' }
         @{ Source = 'docs/DEPLOYMENT.md'; Destination = 'docs/DEPLOYMENT.md' }

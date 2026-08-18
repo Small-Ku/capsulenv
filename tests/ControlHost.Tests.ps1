@@ -1,7 +1,7 @@
 Describe 'Capsulenv control-host bootstrap' {
     It 'prefers the PowerShell built-in Utility module over inherited PSModulePath entries' {
         $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        $bootstrap = Join-Path (Join-Path $root 'scripts') 'Initialize-CapsulenvControlHost.ps1'
+        $bootstrap = Join-Path (Join-Path $root 'module-runtime') 'Initialize-CapsulenvControlHost.ps1'
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-control-host-' + [Guid]::NewGuid().ToString('N'))
         $fakeModuleRoot = Join-Path (Join-Path (Join-Path $temporaryRoot 'Microsoft.PowerShell.Utility') '99.0.0') 'Microsoft.PowerShell.Utility.psd1'
         $previousModulePath = $env:PSModulePath
@@ -46,7 +46,7 @@ Describe 'Capsulenv control-host bootstrap' {
 
     It 'is idempotent when the built-in module root is already first' {
         $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        $bootstrap = Join-Path (Join-Path $root 'scripts') 'Initialize-CapsulenvControlHost.ps1'
+        $bootstrap = Join-Path (Join-Path $root 'module-runtime') 'Initialize-CapsulenvControlHost.ps1'
         $previousModulePath = $env:PSModulePath
         $builtInModuleRoot = [System.IO.Path]::Combine($PSHOME, 'Modules')
         try {
