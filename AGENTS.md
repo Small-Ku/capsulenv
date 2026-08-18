@@ -22,6 +22,7 @@
 - Installer/build code owns deployment only: merge/build and transactional replacement of managed program files. It must not bootstrap Scoop, create mutable runtime state, or choose/apply User integration mode.
 - Generated `.build/`, `modules/`, Scoop roots, caches/tool state, local config, SSH keys, Bitwarden data, browser profiles and workspace data are not source files and must not be committed.
 - PSScriptAnalyzer 1.25.0+ compatibility analysis followed by Pester 6.1.0+, both via `scripts/Test-Capsulenv.ps1`, is the single test path. Keep the checked-in Windows PowerShell 5.1 syntax/command policy enabled and add regression coverage for ownership boundaries and real CLI dispatch semantics, not only helper internals.
+- Ownership boundaries that can be expressed statically belong in `scripts/Capsulenv.StaticAnalysis.ps1`, with both rejecting and accepting synthetic fixtures in `tests/ArchitectureAnalysis.Tests.ps1`. Do not weaken a fail-closed gate into a string-presence test merely to make a refactor pass.
 
 ## Documentation ownership
 
