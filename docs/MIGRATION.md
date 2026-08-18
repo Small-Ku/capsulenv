@@ -214,6 +214,22 @@ Programs\Capsulenv Apps\<capsule-id-prefix>
 
 同版也讓 uv managed-Python relocation 對外部 JSON schema fail-safe：缺少 `key`/`path` 的 record 只警告並跳過，不再因 PowerShell StrictMode property access 中止整批 rehydrate。
 
+
+## v0.16.4 Scoop gateway bootstrap context
+
+v0.16.3 及更早的 module-owned Scoop gateway 在 intercept `install` / `update` / `uninstall` / `reset` / `shim` 等 mutation command 時，會直接執行 transformed `libexec/scoop-*.ps1`。Scoop 的 libexec 並不是獨立 entrypoint；正常 `bin/scoop.ps1` 會先建立 core/config/bucket/command helper context。因此某些 command（例如在 option parser 前已呼叫 `get_config` 的 install path）會在 Capsulenv gateway 下以 `CommandNotFoundException` 失敗。
+
+v0.16.4 起 gateway 先從**目前安裝的 Scoop 版本**擷取並驗證 `bin/scoop.ps1` 的 pre-dispatch bootstrap，再把它 prepend 到 transformed libexec，之後才注入 ShellOnly/User policy。若 Scoop upstream dispatcher/bootstrap layout 已變得無法安全辨識，Capsulenv 會明確 fail closed，而不是在缺少 helper 的半初始化 context 中繼續執行。
+
+遇到 `get_config`（或其他 Scoop core helper）找不到時，只需要由 v0.16.4 或更新的 development checkout/release bundle 重新部署 Capsulenv runtime：
+
+```bat
+X:\capsulenv-0.16.4\install.cmd E:\capenv
+```
+
+這不會重裝 `scoop/apps`、persist、workspace 或其他 portable state；更新完成後原有 `scoop install ...` 等命令直接經新版 gateway 執行。
+
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：
