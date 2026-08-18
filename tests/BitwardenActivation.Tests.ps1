@@ -12,7 +12,8 @@ Describe 'Capsulenv Bitwarden activation contracts' {
     }
 
     It 'keeps automatic Bitwarden startup disabled by default' {
-        $config = Import-PowerShellDataFile (Join-Path $script:Root 'config/capsulenv.psd1')
+        $configPath = Join-Path $script:Root 'config/capsulenv.psd1'
+        $config = & $script:Module { param($dataPath) Import-CapsulenvPowerShellDataFile -LiteralPath $dataPath } $configPath
         $config.Bitwarden.StartOnEnter | Should -BeFalse
     }
 

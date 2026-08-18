@@ -12,7 +12,8 @@ Describe 'Capsulenv Gecko browser configuration selection' {
     }
 
     It 'resolves a scoped installed app through one unscoped built-in definition' {
-        $configuration = Import-PowerShellDataFile (Join-Path $script:Root 'config/capsulenv.psd1')
+        $configPath = Join-Path $script:Root 'config/capsulenv.psd1'
+        $configuration = & $script:Module { param($dataPath) Import-CapsulenvPowerShellDataFile -LiteralPath $dataPath } $configPath
 
         $definition = & $script:Module {
             param($Configuration)
