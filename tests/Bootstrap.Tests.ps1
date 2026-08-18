@@ -178,7 +178,7 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                     -Message 'Portable Scoop config was not created before first use.'
                 $shim = Get-Content -LiteralPath (Join-Path $capsule 'scoop/shims/scoop.ps1') -Raw
                 $capsuleFullPath = [System.IO.Path]::GetFullPath($capsule)
-                $gatewayPath = Join-Path $capsuleFullPath 'scripts/scoop-capsulenv-gateway.ps1'
+                $gatewayPath = & $module { Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-gateway.ps1' }
                 $shimLines = @($shim -split "`r?`n")
                 Assert-CapsulenvBootstrapTest `
                     -Condition ($shimLines[0] -eq ("# {0}" -f $gatewayPath)) `
@@ -187,7 +187,7 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                     -Condition (($shimLines[0] -replace '^#\s*', '') -eq $gatewayPath) `
                     -Message 'Scoop PowerShell shim target metadata is not parseable by Scoop Get-ShimTarget semantics.'
                 Assert-CapsulenvBootstrapTest `
-                    -Condition ($shim.Contains("Join-Path `$env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-gateway.ps1'")) `
+                    -Condition ($shim.Contains("Join-Path `$env:CAPSULENV_ROOT 'modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1'")) `
                     -Message 'Scoop PowerShell shim is not relocation-safe.'
                 $shimBody = (@($shimLines | Select-Object -Skip 1) -join [Environment]::NewLine)
                 Assert-CapsulenvBootstrapTest `
@@ -206,7 +206,7 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                 [void](Initialize-CapsulenvScoopBootstrap)
                 $cmdShim = Get-Content -LiteralPath $cmdShimPath -Raw
                 Assert-CapsulenvBootstrapTest `
-                    -Condition ($cmdShim.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"')) `
+                    -Condition ($cmdShim.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1"')) `
                     -Message 'Bootstrap did not normalize a stale absolute scoop.cmd to a relative launcher.'
                 Assert-CapsulenvBootstrapTest `
                     -Condition ($cmdShim.Contains('set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"')) `

@@ -226,14 +226,14 @@ function Install-CapsulenvScoopShim {
     $shimsRoot = Join-Path $scoopRoot 'shims'
     [void](New-Item -ItemType Directory -Path $shimsRoot -Force)
 
-    $gatewayPath = Join-Path (Get-CapsulenvContext).Root 'scripts\scoop-capsulenv-gateway.ps1'
+    $gatewayPath = Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-gateway.ps1'
     $ps1Path = Join-Path $shimsRoot 'scoop.ps1'
     $ps1Text = ('# {0}{1}' -f $gatewayPath, [Environment]::NewLine) + @'
 if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
     Write-Error 'Capsulenv Scoop shim requires an active capsulenv shell.'
     exit 2
 }
-$path = Join-Path $env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-gateway.ps1'
+$path = Join-Path $env:CAPSULENV_ROOT 'modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1'
 $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
     $fallback = Get-Command powershell.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -263,7 +263,7 @@ if "%CAPSULENV_ROOT%"=="" (
   >&2 echo Capsulenv Scoop shim requires an active capsulenv shell.
   exit /b 2
 )
-set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"
+set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1"
 set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%CAPSULENV_CONTROL_POWERSHELL%" set "CAPSULENV_CONTROL_POWERSHELL=powershell.exe"
 "%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*

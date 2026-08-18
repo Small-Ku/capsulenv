@@ -61,7 +61,7 @@ $global:LASTEXITCODE = 0
         $fakeScoop = Join-Path $fakeRoot 'scoop'
         $fakeShims = Join-Path $fakeScoop 'shims'
         $fakeLib = Join-Path $fakeScoop 'apps/scoop/current/lib'
-        $fakeScripts = Join-Path $fakeRoot 'scripts'
+        $fakeScripts = Join-Path $fakeRoot 'modules/Capsulenv/runtime'
         New-Item -ItemType Directory -Path $fakeShims, $fakeLib, $fakeScripts -Force | Out-Null
 
         @'
@@ -84,7 +84,7 @@ function Test-CapsulenvResetHasBlockingProcesses {
 '@ | Set-Content -LiteralPath (Join-Path $fakeScripts 'scoop-capsulenv-process-guard.ps1') -Encoding UTF8
 
         $helper = Join-Path $fakeShims 'scoop-capsulenv-user-reset-test.ps1'
-        Copy-Item -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-user-reset.ps1') -Destination $helper
+        Copy-Item -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-reset.ps1') -Destination $helper
         $oldRoot = $env:CAPSULENV_ROOT
         try {
             $env:CAPSULENV_ROOT = $fakeRoot

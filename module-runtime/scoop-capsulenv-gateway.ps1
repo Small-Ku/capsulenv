@@ -30,7 +30,7 @@ if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
     Write-Error 'Capsulenv Scoop shim requires an active capsulenv shell.'
     exit 2
 }
-$path = Join-Path $env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-gateway.ps1'
+$path = Join-Path $env:CAPSULENV_ROOT 'modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1'
 $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
     $fallback = Get-Command powershell.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -58,7 +58,7 @@ if "%CAPSULENV_ROOT%"=="" (
   >&2 echo Capsulenv Scoop shim requires an active capsulenv shell.
   exit /b 2
 )
-set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"
+set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1"
 set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%CAPSULENV_CONTROL_POWERSHELL%" set "CAPSULENV_CONTROL_POWERSHELL=powershell.exe"
 "%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*
@@ -116,7 +116,7 @@ if ($env:CAPSULENV_MODE -ne 'ShellOnly' -or -not $intercept) {
 if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
     throw 'CAPSULENV_ROOT is not set. ShellOnly Scoop policy cannot be located.'
 }
-$policyPath = Join-Path $env:CAPSULENV_ROOT 'scripts\scoop-capsulenv-shellonly-policy.ps1'
+$policyPath = Join-Path (Split-Path -Parent $script:CapsulenvGatewayPath) 'scoop-capsulenv-shellonly-policy.ps1'
 if ($command -in $policyCommands -and -not (Test-Path -LiteralPath $policyPath -PathType Leaf)) {
     throw "Capsulenv ShellOnly Scoop policy is missing: $policyPath"
 }

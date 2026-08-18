@@ -4,6 +4,7 @@ param(
     [string]$SourcePath = (Join-Path $PSScriptRoot 'src'),
     [string]$ManifestPath = (Join-Path $PSScriptRoot 'Capsulenv.psd1'),
     [string]$OutputRoot = (Join-Path $PSScriptRoot '.build'),
+    [string]$RuntimePath = (Join-Path $PSScriptRoot 'module-runtime'),
     [switch]$Clean
 )
 
@@ -164,6 +165,21 @@ Get-ChildItem -LiteralPath $SourcePath -File -Recurse |
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force)
         Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
     }
+
+if (-not [string]::IsNullOrWhiteSpace($RuntimePath)) {
+    if (-not (Test-Path -LiteralPath $RuntimePath -PathType Container)) {
+        throw "Module runtime resource directory does not exist: $RuntimePath"
+    }
+    $runtimeDestination = Join-Path $outputPath 'runtime'
+    [void](New-Item -ItemType Directory -Path $runtimeDestination -Force)
+    Get-ChildItem -LiteralPath $RuntimePath -File -Recurse | ForEach-Object {
+        Test-PowerShellSyntax -Path $_.FullName
+        $relativePath = $_.FullName.Substring($RuntimePath.TrimEnd('\', '/').Length).TrimStart('\', '/')
+        $destination = Join-Path $runtimeDestination $relativePath
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force)
+        Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+    }
+}
 
 $manifest = Test-ModuleManifest -Path $generatedManifestPath -ErrorAction Stop
 [pscustomobject]@{

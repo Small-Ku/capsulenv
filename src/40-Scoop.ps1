@@ -91,7 +91,7 @@ function Get-CapsulenvScoopReplayScriptPath {
     param()
 
     $context = Get-CapsulenvContext
-    return Join-Path (Join-Path $context.Root 'scripts') 'scoop-capsulenv-replay.ps1'
+    return Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-replay.ps1'
 }
 
 function Get-CapsulenvScoopPortableResetScriptPath {
@@ -99,7 +99,7 @@ function Get-CapsulenvScoopPortableResetScriptPath {
     param()
 
     $context = Get-CapsulenvContext
-    return Join-Path (Join-Path $context.Root 'scripts') 'scoop-capsulenv-portable-reset.ps1'
+    return Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-portable-reset.ps1'
 }
 
 function Get-CapsulenvScoopUserResetScriptPath {
@@ -107,7 +107,7 @@ function Get-CapsulenvScoopUserResetScriptPath {
     param()
 
     $context = Get-CapsulenvContext
-    return Join-Path (Join-Path $context.Root 'scripts') 'scoop-capsulenv-user-reset.ps1'
+    return Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-user-reset.ps1'
 }
 
 function Install-CapsulenvTemporaryScoopCommand {
