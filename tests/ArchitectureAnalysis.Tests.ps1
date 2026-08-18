@@ -13,6 +13,15 @@ Describe 'Capsulenv architecture static analysis' {
             [System.IO.File]::WriteAllText($path, $Source)
             return $path
         }
+
+        function New-CapsulenvOwnedShortcutPolicy {
+            $source = @'
+function shortcut_folder($global) {
+    return [System.IO.Path]::Combine('C:\Users\test', 'Programs', 'Capsulenv Apps', '0123456789ab')
+}
+'@
+            return New-CapsulenvStaticFixture -Name 'owned-user-policy.ps1' -Source $source
+        }
     }
 
     It 'rejects foreign Scoop Start Menu namespace literals in runtime code' {
@@ -21,10 +30,10 @@ function Invoke-BadShortcutTarget {
     return [System.IO.Path]::Combine('C:\Users\test', 'Programs', 'Scoop Apps')
 }
 '@
-        $allowed = Join-Path $TestDrive 'allowed-user-policy.ps1'
+        $allowed = New-CapsulenvOwnedShortcutPolicy
         $violations = @(
             Get-CapsulenvHostIntegrationOwnershipViolations `
-                -Paths @($fixture) `
+                -Paths @($fixture, $allowed) `
                 -AllowedShortcutOverridePath $allowed
         )
         $violations.Count | Should -Be 1
@@ -34,13 +43,14 @@ function Invoke-BadShortcutTarget {
     It 'allows shortcut_folder only in the capsule-owned User Scoop policy' {
         $fixture = New-CapsulenvStaticFixture -Name 'shortcut-override.ps1' -Source @'
 function shortcut_folder($global) {
-    return 'owned'
+    return [System.IO.Path]::Combine('Programs', 'Capsulenv Apps')
 }
 '@
+        $allowed = New-CapsulenvOwnedShortcutPolicy
         $foreignViolations = @(
             Get-CapsulenvHostIntegrationOwnershipViolations `
-                -Paths @($fixture) `
-                -AllowedShortcutOverridePath (Join-Path $TestDrive 'somewhere-else.ps1')
+                -Paths @($fixture, $allowed) `
+                -AllowedShortcutOverridePath $allowed
         )
         $foreignViolations.Count | Should -Be 1
         $foreignViolations[0].Rule | Should -Be 'ScoopShortcutOverrideOwnership'
@@ -56,6 +66,9 @@ function shortcut_folder($global) {
     It 'rejects persistent ownership reads from the session mode resolver' {
         $fixture = New-CapsulenvStaticFixture -Name 'mode-persistent.ps1' -Source @'
 function Get-CapsulenvInstallMode {
+    if ([string]$env:CAPSULENV_MODE -eq 'User') {
+        return 'User'
+    }
     if (Test-CapsulenvCurrentUserIntegrationOwnership) {
         return 'User'
     }
@@ -64,7 +77,7 @@ function Get-CapsulenvInstallMode {
 '@
         $violations = @(Get-CapsulenvSessionModeBoundaryViolations -Path $fixture)
         $violations.Count | Should -Be 1
-        $violations[0].Rule | Should -Be 'SessionModeOwnershipSeparation'
+        $violations[0].Rule | Should -Be 'SessionModeCommandDependency'
     }
 
     It 'accepts invocation-scoped CAPSULENV_MODE as the session selector' {
