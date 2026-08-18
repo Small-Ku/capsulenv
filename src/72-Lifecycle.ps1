@@ -356,7 +356,7 @@ function Get-CapsulenvRuntimeVersion {
     $manifestPath = Join-Path $root 'Capsulenv.psd1'
     if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
         try {
-            $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
+            $manifest = Import-CapsulenvPowerShellDataFile -LiteralPath $manifestPath
             if ($manifest.ContainsKey('ModuleVersion')) {
                 return [string]$manifest.ModuleVersion
             }

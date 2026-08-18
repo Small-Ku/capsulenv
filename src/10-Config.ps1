@@ -568,9 +568,9 @@ function Import-CapsulenvConfiguration {
         throw "Missing capsulenv configuration: $($context.ConfigPath)"
     }
 
-    $configuration = Import-PowerShellDataFile -Path $context.ConfigPath
+    $configuration = Import-CapsulenvPowerShellDataFile -LiteralPath $context.ConfigPath
     if (Test-Path -LiteralPath $context.LocalConfigPath -PathType Leaf) {
-        $local = Import-PowerShellDataFile -Path $context.LocalConfigPath
+        $local = Import-CapsulenvPowerShellDataFile -LiteralPath $context.LocalConfigPath
         $configuration = Merge-CapsulenvHashtable -Base $configuration -Override $local
 
         # Scoop repair maps are allow-lists and must be replaceable as one unit.

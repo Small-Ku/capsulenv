@@ -1,5 +1,5 @@
 Describe 'Capsulenv control-host bootstrap' {
-    It 'prefers the PowerShell built-in Utility module over inherited PSModulePath entries' {
+    It 'restores the PowerShell built-in module root without importing Utility' {
         $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $bootstrap = Join-Path (Join-Path $root 'module-runtime') 'Initialize-CapsulenvControlHost.ps1'
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-control-host-' + [Guid]::NewGuid().ToString('N'))
@@ -23,19 +23,6 @@ Describe 'Capsulenv control-host bootstrap' {
             $builtInModuleRoot = [System.IO.Path]::Combine($PSHOME, 'Modules')
             $firstModulePath = @($env:PSModulePath -split [regex]::Escape([string][System.IO.Path]::PathSeparator))[0]
             $firstModulePath | Should -Be $builtInModuleRoot
-
-            $utilityManifest = [System.IO.Path]::Combine(
-                $builtInModuleRoot,
-                'Microsoft.PowerShell.Utility',
-                'Microsoft.PowerShell.Utility.psd1'
-            )
-            $loadedUtility = Get-Module Microsoft.PowerShell.Utility |
-                Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Path, [string]$utilityManifest) } |
-                Select-Object -First 1
-            $loadedUtility | Should -Not -BeNullOrEmpty
-
-            $dataFileCommand = Get-Command Import-PowerShellDataFile -CommandType Cmdlet -ErrorAction Stop
-            $dataFileCommand.Source | Should -Be 'Microsoft.PowerShell.Utility'
         } finally {
             $env:PSModulePath = $previousModulePath
             if (Test-Path -LiteralPath $temporaryRoot) {

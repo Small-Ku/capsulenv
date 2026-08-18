@@ -15,6 +15,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ResetGuardSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-process-guard.ps1') -Raw
         $script:ScoopGatewaySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-gateway.ps1') -Raw
         $script:ScoopShellOnlyPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-shellonly-policy.ps1') -Raw
+        . (Join-Path $script:Root 'src/05-DataFile.ps1')
     }
 
     It 'has one Pester-only test path with no duplicated smoke suite' {
@@ -121,7 +122,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
     }
 
     It 'binds Capsulenv browser commands to Scoop-persisted profiles' {
-        $config = Import-PowerShellDataFile (Join-Path $script:Root 'config/capsulenv.psd1')
+        $config = Import-CapsulenvPowerShellDataFile -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1')
         $config.UserIntegration.DefaultBrowser | Should -Be ''
         $config.Browsers.Firefox.App | Should -Be 'firefox'
         $config.Browsers.Zen.App | Should -Be 'zen-browser'
