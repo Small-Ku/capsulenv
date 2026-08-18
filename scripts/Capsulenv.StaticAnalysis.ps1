@@ -66,54 +66,85 @@ function Get-CapsulenvHostIntegrationOwnershipViolations {
     )
 
     $allowedPath = [System.IO.Path]::GetFullPath($AllowedShortcutOverridePath)
-    return @(
-        foreach ($path in $Paths) {
-            $fullPath = [System.IO.Path]::GetFullPath($path)
-            $ast = Get-CapsulenvStaticAst -Path $fullPath
+    $allowedOverrideFound = $false
+    $allowedNamespaceFound = $false
+    $violations = New-Object System.Collections.Generic.List[object]
 
-            foreach ($literal in @(
-                $ast.FindAll(
-                    {
-                        param($node)
-                        $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -or
-                        $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst]
-                    },
-                    $true
-                )
-            )) {
-                if ([string]$literal.Value -match '(?i)(^|[\\/])Scoop Apps($|[\\/])') {
-                    [pscustomobject]@{
-                        Rule = 'HostStartMenuNamespace'
-                        Path = $fullPath
-                        Line = $literal.Extent.StartLineNumber
-                        Column = $literal.Extent.StartColumnNumber
-                        Detail = 'runtime code must not target the foreign Scoop Apps Start Menu namespace'
-                    }
-                }
+    foreach ($path in $Paths) {
+        $fullPath = [System.IO.Path]::GetFullPath($path)
+        $ast = Get-CapsulenvStaticAst -Path $fullPath
+
+        foreach ($literal in @(
+            $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -or
+                    $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst]
+                },
+                $true
+            )
+        )) {
+            $value = [string]$literal.Value
+            if ($value -match '(?i)(^|[\\/])Scoop Apps($|[\\/])') {
+                $violations.Add([pscustomobject]@{
+                    Rule = 'HostStartMenuNamespace'
+                    Path = $fullPath
+                    Line = $literal.Extent.StartLineNumber
+                    Column = $literal.Extent.StartColumnNumber
+                    Detail = 'runtime code must not target the foreign Scoop Apps Start Menu namespace'
+                })
             }
-
-            foreach ($functionAst in @(
-                $ast.FindAll(
-                    {
-                        param($node)
-                        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                        [string]$node.Name -eq 'shortcut_folder'
-                    },
-                    $true
-                )
-            )) {
-                if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath, $allowedPath)) {
-                    [pscustomobject]@{
-                        Rule = 'ScoopShortcutOverrideOwnership'
-                        Path = $fullPath
-                        Line = $functionAst.Extent.StartLineNumber
-                        Column = $functionAst.Extent.StartColumnNumber
-                        Detail = 'shortcut_folder may only be overridden by the capsule-owned User Scoop policy'
-                    }
-                }
+            if (
+                [System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath, $allowedPath) -and
+                $value -eq 'Capsulenv Apps'
+            ) {
+                $allowedNamespaceFound = $true
             }
         }
-    )
+
+        foreach ($functionAst in @(
+            $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    [string]$node.Name -eq 'shortcut_folder'
+                },
+                $true
+            )
+        )) {
+            if ([System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath, $allowedPath)) {
+                $allowedOverrideFound = $true
+                continue
+            }
+            $violations.Add([pscustomobject]@{
+                Rule = 'ScoopShortcutOverrideOwnership'
+                Path = $fullPath
+                Line = $functionAst.Extent.StartLineNumber
+                Column = $functionAst.Extent.StartColumnNumber
+                Detail = 'shortcut_folder may only be overridden by the capsule-owned User Scoop policy'
+            })
+        }
+    }
+
+    if (-not $allowedOverrideFound) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'UserShortcutIsolationRequired'
+            Path = $allowedPath
+            Line = 1
+            Column = 1
+            Detail = 'capsule-owned User Scoop policy must override shortcut_folder'
+        })
+    }
+    if (-not $allowedNamespaceFound) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'UserShortcutNamespaceRequired'
+            Path = $allowedPath
+            Line = 1
+            Column = 1
+            Detail = 'capsule-owned User Scoop policy must target the Capsulenv Apps namespace'
+        })
+    }
+    return $violations.ToArray()
 }
 
 function Get-CapsulenvSessionModeBoundaryViolations {
@@ -124,31 +155,50 @@ function Get-CapsulenvSessionModeBoundaryViolations {
     )
 
     $functionAst = Get-CapsulenvFunctionAst -Path $Path -Name $FunctionName
-    $persistentOwnershipCommands = @(
-        'Get-CapsulenvUserIntegrationMode',
-        'Test-CapsulenvCurrentUserIntegrationOwnership',
-        'Get-CapsulenvInstallModeState',
-        'Get-CapsulenvInstallModeStatePath'
-    )
-    return @(
-        foreach ($commandAst in @(
-            $functionAst.Body.FindAll(
-                { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
-                $true
-            )
-        )) {
-            $commandName = $commandAst.GetCommandName()
-            if ($commandName -and $commandName -in $persistentOwnershipCommands) {
-                [pscustomobject]@{
-                    Rule = 'SessionModeOwnershipSeparation'
-                    Path = [System.IO.Path]::GetFullPath($Path)
-                    Line = $commandAst.Extent.StartLineNumber
-                    Column = $commandAst.Extent.StartColumnNumber
-                    Detail = "session mode resolver must not read persistent ownership through $commandName"
-                }
-            }
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $violations = New-Object System.Collections.Generic.List[object]
+
+    foreach ($commandAst in @(
+        $functionAst.Body.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
+            $true
+        )
+    )) {
+        $commandName = $commandAst.GetCommandName()
+        if ([string]::IsNullOrWhiteSpace($commandName)) {
+            $commandName = $commandAst.Extent.Text
         }
-    )
+        $violations.Add([pscustomobject]@{
+            Rule = 'SessionModeCommandDependency'
+            Path = $fullPath
+            Line = $commandAst.Extent.StartLineNumber
+            Column = $commandAst.Extent.StartColumnNumber
+            Detail = "session mode resolver must remain process-state-only; command dependency is forbidden: $commandName"
+        })
+    }
+
+    $processModeSelectorFound = $false
+    foreach ($variableAst in @(
+        $functionAst.Body.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.VariableExpressionAst] },
+            $true
+        )
+    )) {
+        if ([string]$variableAst.VariablePath.UserPath -eq 'env:CAPSULENV_MODE') {
+            $processModeSelectorFound = $true
+            break
+        }
+    }
+    if (-not $processModeSelectorFound) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'SessionModeProcessSelectorRequired'
+            Path = $fullPath
+            Line = $functionAst.Extent.StartLineNumber
+            Column = $functionAst.Extent.StartColumnNumber
+            Detail = 'session mode resolver must select User only from process-scoped CAPSULENV_MODE'
+        })
+    }
+    return $violations.ToArray()
 }
 
 function Get-CapsulenvExternalJsonMemberViolations {
