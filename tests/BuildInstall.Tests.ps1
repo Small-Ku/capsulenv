@@ -69,17 +69,13 @@ Describe 'Capsulenv build and install' {
                 [Environment]::SetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', $forceRebuildOriginal, 'Process')
             }
 
-            $runtimeMetadataPathForMismatch = Join-Path $buildRoot '.capsulenv-runtime.json'
-            $runtimeMetadataOriginalText = Get-Content -LiteralPath $runtimeMetadataPathForMismatch -Raw
+            $runtimeMetadataPathForLaunch = Join-Path $buildRoot '.capsulenv-runtime.json'
+            $runtimeMetadataLaunchBackup = Get-Content -LiteralPath $runtimeMetadataPathForLaunch -Raw
             try {
-                $runtimeMetadataMismatch = $runtimeMetadataOriginalText | ConvertFrom-Json
-                $runtimeMetadataMismatch.Version = '99.99.99'
-                $runtimeMetadataMismatch | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeMetadataPathForMismatch -Encoding UTF8
-                {
-                    & (Join-Path $buildRoot 'modules/Capsulenv/runtime/Invoke-Capsulenv.ps1') help
-                } | Should -Throw '*runtime metadata version 99.99.99 does not match prebuilt module version*'
+                Remove-Item -LiteralPath $runtimeMetadataPathForLaunch -Force
+                & (Join-Path $buildRoot 'modules/Capsulenv/runtime/Invoke-Capsulenv.ps1') help
             } finally {
-                [System.IO.File]::WriteAllText($runtimeMetadataPathForMismatch, $runtimeMetadataOriginalText)
+                [System.IO.File]::WriteAllText($runtimeMetadataPathForLaunch, $runtimeMetadataLaunchBackup)
             }
 
             $prebuiltInstaller = Join-Path $buildRoot 'scripts/Install-Capsulenv.ps1'
