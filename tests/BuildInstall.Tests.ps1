@@ -95,7 +95,8 @@ Describe 'Capsulenv build and install' {
             }
             foreach ($runtimeScript in @(
                 'modules/Capsulenv/runtime/scoop-capsulenv-gateway.ps1',
-                'modules/Capsulenv/runtime/scoop-capsulenv-shellonly-policy.ps1'
+                'modules/Capsulenv/runtime/scoop-capsulenv-shellonly-policy.ps1',
+                'modules/Capsulenv/runtime/scoop-capsulenv-user-policy.ps1'
             )) {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition (Test-Path -LiteralPath (Join-Path $buildRoot $runtimeScript) -PathType Leaf) `

@@ -33,6 +33,11 @@ foreach ($library in @('manifest.ps1', 'system.ps1', 'install.ps1', 'versions.ps
     }
     . $libraryPath
 }
+$userPolicyPath = Join-Path $env:CAPSULENV_ROOT 'modules\Capsulenv\runtime\scoop-capsulenv-user-policy.ps1'
+if (-not (Test-Path -LiteralPath $userPolicyPath -PathType Leaf)) {
+    throw "Required Capsulenv User Scoop policy was not found: $userPolicyPath"
+}
+. $userPolicyPath
 $guardPath = Join-Path $env:CAPSULENV_ROOT 'modules\Capsulenv\runtime\scoop-capsulenv-process-guard.ps1'
 if (-not (Test-Path -LiteralPath $guardPath -PathType Leaf)) {
     throw "Required Capsulenv reset guard was not found: $guardPath"

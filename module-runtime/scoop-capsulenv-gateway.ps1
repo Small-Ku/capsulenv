@@ -102,7 +102,8 @@ $command = if ($Arguments.Count -gt 0) { [string]$Arguments[0].ToLowerInvariant(
 $policyCommands = @('install', 'update', 'uninstall', 'reset', 'shim')
 $nestedGatewayCommands = @('install', 'download', 'virustotal', 'import')
 $intercept = $command -in @($policyCommands + $nestedGatewayCommands | Select-Object -Unique)
-if ($env:CAPSULENV_MODE -ne 'ShellOnly' -or -not $intercept) {
+$integrationMode = if ([string]$env:CAPSULENV_MODE -eq 'User') { 'User' } else { 'ShellOnly' }
+if (-not $intercept) {
     Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
     if ($MyInvocation.ExpectingInput) {
         $input | & $upstream @Arguments
@@ -114,11 +115,12 @@ if ($env:CAPSULENV_MODE -ne 'ShellOnly' -or -not $intercept) {
 }
 
 if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
-    throw 'CAPSULENV_ROOT is not set. ShellOnly Scoop policy cannot be located.'
+    throw 'CAPSULENV_ROOT is not set. Capsulenv Scoop policy cannot be located.'
 }
-$policyPath = Join-Path (Split-Path -Parent $script:CapsulenvGatewayPath) 'scoop-capsulenv-shellonly-policy.ps1'
+$policyFile = if ($integrationMode -eq 'User') { 'scoop-capsulenv-user-policy.ps1' } else { 'scoop-capsulenv-shellonly-policy.ps1' }
+$policyPath = Join-Path (Split-Path -Parent $script:CapsulenvGatewayPath) $policyFile
 if ($command -in $policyCommands -and -not (Test-Path -LiteralPath $policyPath -PathType Leaf)) {
-    throw "Capsulenv ShellOnly Scoop policy is missing: $policyPath"
+    throw "Capsulenv $integrationMode Scoop policy is missing: $policyPath"
 }
 
 $libexec = Join-Path $scoopRoot ("apps\scoop\current\libexec\scoop-{0}.ps1" -f $command)
@@ -160,7 +162,7 @@ if ($command -eq 'import') {
     $changed = $true
 }
 if (-not $changed) {
-    throw "Capsulenv intercepted Scoop $command but did not apply a ShellOnly policy transformation."
+    throw "Capsulenv intercepted Scoop $command but did not apply its $integrationMode policy transformation."
 }
 
 $tempName = '.capsulenv-{0}-{1}-{2}.ps1' -f $command, $PID, [Guid]::NewGuid().ToString('N').Substring(0, 8)

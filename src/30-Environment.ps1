@@ -295,6 +295,57 @@ function Get-CapsulenvInstallMode {
     return 'ShellOnly'
 }
 
+function Get-CapsulenvUserStartMenuShortcutRoot {
+    [CmdletBinding()]
+    param([switch]$Global)
+
+    if (-not (Test-CapsulenvWindows)) {
+        return $null
+    }
+    $identity = (Get-CapsulenvIdentity) -replace '[^0-9A-Fa-f]', ''
+    if ($identity.Length -lt 12) {
+        throw 'Capsule identity is invalid. User Start Menu ownership cannot be resolved.'
+    }
+    $folderName = if ($Global) { 'CommonStartMenu' } else { 'StartMenu' }
+    $startMenu = [Environment]::GetFolderPath($folderName)
+    if ([string]::IsNullOrWhiteSpace($startMenu)) {
+        throw "Windows $folderName folder could not be resolved."
+    }
+    return [System.IO.Path]::Combine(
+        $startMenu,
+        'Programs',
+        'Capsulenv Apps',
+        $identity.Substring(0, 12).ToLowerInvariant()
+    )
+}
+
+function Remove-CapsulenvUserStartMenuShortcuts {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-CapsulenvWindows)) {
+        return
+    }
+    $userRoot = Get-CapsulenvUserStartMenuShortcutRoot
+    $globalRoot = Get-CapsulenvUserStartMenuShortcutRoot -Global
+    if ((Test-Path -LiteralPath $globalRoot -PathType Container) -and -not (Test-CapsulenvAdministrator)) {
+        throw 'Capsulenv owns global Start Menu shortcuts on this host. Run restore-user from an elevated terminal so they can be removed safely.'
+    }
+    foreach ($root in @($userRoot, $globalRoot)) {
+        if ([string]::IsNullOrWhiteSpace([string]$root) -or -not (Test-Path -LiteralPath $root -PathType Container)) {
+            continue
+        }
+        Remove-Item -LiteralPath $root -Recurse -Force
+        $parent = Split-Path -Parent $root
+        if (
+            (Test-Path -LiteralPath $parent -PathType Container) -and
+            $null -eq (Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue | Select-Object -First 1)
+        ) {
+            Remove-Item -LiteralPath $parent -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Set-CapsulenvInstallMode {
     [CmdletBinding()]
     param(
@@ -742,6 +793,7 @@ function Restore-CapsulenvUserEnvironment {
     }
     [void](Restore-CapsulenvGitOpenSshGlobal -IfPresent)
     Restore-CapsulenvDefaultBrowserRegistration
+    Remove-CapsulenvUserStartMenuShortcuts
 
     $backup = Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
     foreach ($property in $backup.PSObject.Properties) {
