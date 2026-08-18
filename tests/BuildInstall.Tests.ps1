@@ -41,14 +41,25 @@ Describe 'Capsulenv build and install' {
                 -Message 'Runtime build did not include the isolated control-host bootstrap.'
             $runtimeMetadata = Get-Content -LiteralPath (Join-Path $buildRoot '.capsulenv-runtime.json') -Raw | ConvertFrom-Json
             Assert-CapsulenvBuildInstallTest `
-                -Condition ([int]$runtimeMetadata.SchemaVersion -eq 2) `
-                -Message 'Runtime build did not write the installable runtime metadata schema.'
+                -Condition ([int]$runtimeMetadata.SchemaVersion -eq 3) `
+                -Message 'Runtime build did not write the separated bundle/install metadata schema.'
             Assert-CapsulenvBuildInstallTest `
                 -Condition (@($runtimeMetadata.ManagedFiles) -contains 'install.cmd') `
                 -Message 'Runtime manifest does not own its installer entry point.'
             Assert-CapsulenvBuildInstallTest `
                 -Condition (@($runtimeMetadata.ManagedFiles) -contains '.capsulenv-runtime.json') `
-                -Message 'Runtime manifest does not own its own metadata file.'
+                -Message 'Runtime bundle manifest does not own its own metadata file.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (@($runtimeMetadata.InstallFiles) -contains 'capsulenv.cmd') `
+                -Message 'Runtime install payload does not include the portable launcher.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (@($runtimeMetadata.InstallFiles) -contains 'modules/Capsulenv/Capsulenv.psm1') `
+                -Message 'Runtime install payload does not include the generated module.'
+            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition (@($runtimeMetadata.InstallFiles) -notcontains $bundleOnlyFile) `
+                    -Message "Runtime install payload unexpectedly includes bundle-only file: $bundleOnlyFile"
+            }
 
             $forceRebuildOriginal = [Environment]::GetEnvironmentVariable('CAPSULENV_FORCE_REBUILD', 'Process')
             try {
@@ -80,6 +91,11 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition ([string]$prebuiltMarker.Version -eq [string]$runtimeMetadata.Version) `
                 -Message 'Prebuilt runtime installation did not preserve bundle version metadata.'
+            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition (-not (Test-Path -LiteralPath (Join-Path $prebuiltInstallRoot $bundleOnlyFile))) `
+                    -Message "Prebuilt deployment copied bundle-only file into capsule: $bundleOnlyFile"
+            }
             foreach ($runtimeScript in @(
                 'modules/Capsulenv/runtime/scoop-capsulenv-gateway.ps1',
                 'modules/Capsulenv/runtime/scoop-capsulenv-shellonly-policy.ps1'
@@ -134,12 +150,17 @@ Describe 'Capsulenv build and install' {
             $installMarkerPath = Join-Path $installRoot '.capsulenv-install.json'
             $runtimeMetadataPath = Join-Path $installRoot '.capsulenv-runtime.json'
             Assert-CapsulenvBuildInstallTest `
-                -Condition (Test-Path -LiteralPath $runtimeMetadataPath -PathType Leaf) `
-                -Message 'Installer did not copy runtime metadata.'
+                -Condition (-not (Test-Path -LiteralPath $runtimeMetadataPath)) `
+                -Message 'Deployment copied bundle metadata into the portable capsule.'
             $installMarker = Get-Content -LiteralPath $installMarkerPath -Raw | ConvertFrom-Json
             Assert-CapsulenvBuildInstallTest `
-                -Condition (@($installMarker.ManagedFiles) -contains '.capsulenv-runtime.json') `
-                -Message 'Installer does not own the runtime metadata file.'
+                -Condition (@($installMarker.ManagedFiles) -notcontains '.capsulenv-runtime.json') `
+                -Message 'Install marker must own only destination runtime files.'
+            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1')) {
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot $bundleOnlyFile))) `
+                    -Message "Deployment copied bundle-only file into capsule: $bundleOnlyFile"
+            }
             Assert-CapsulenvBuildInstallTest `
                 -Condition ([int]$installMarker.SchemaVersion -eq 3) `
                 -Message 'Installer did not write the deployment-only marker schema.'
@@ -164,6 +185,13 @@ Describe 'Capsulenv build and install' {
             [void](New-Item -ItemType Directory -Path (Split-Path -Parent $privateModuleStatePath) -Force)
             'module-state' | Set-Content -LiteralPath $privateModuleStatePath -Encoding UTF8
 
+            $legacyManagedPath = Join-Path $installRoot 'scripts/legacy-runtime.ps1'
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $legacyManagedPath) -Force)
+            '# legacy managed runtime' | Set-Content -LiteralPath $legacyManagedPath -Encoding UTF8
+            $installMarkerForMigration = Get-Content -LiteralPath $installMarkerPath -Raw | ConvertFrom-Json
+            $installMarkerForMigration.ManagedFiles = @($installMarkerForMigration.ManagedFiles) + 'scripts/legacy-runtime.ps1'
+            $installMarkerForMigration | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $installMarkerPath -Encoding UTF8
+
             [void](& $installerPath $installRoot)
             Assert-CapsulenvBuildInstallTest `
                 -Condition ((Get-Content -LiteralPath $unmanagedPath -Raw).Trim() -eq 'keep-me') `
@@ -177,6 +205,9 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition ((Get-Content -LiteralPath $privateModuleStatePath -Raw).Trim() -eq 'module-state') `
                 -Message 'Installer update changed the portable private-module store.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (-not (Test-Path -LiteralPath $legacyManagedPath)) `
+                -Message 'Installer update did not remove a legacy managed root script.'
 
             Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
             $installedModulePath = Join-Path (Join-Path (Join-Path $installRoot 'modules') 'Capsulenv') 'Capsulenv.psd1'
