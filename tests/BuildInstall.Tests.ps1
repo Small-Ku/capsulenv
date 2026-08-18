@@ -81,8 +81,8 @@ Describe 'Capsulenv build and install' {
                 -Condition ([string]$prebuiltMarker.Version -eq [string]$runtimeMetadata.Version) `
                 -Message 'Prebuilt runtime installation did not preserve bundle version metadata.'
             foreach ($runtimeScript in @(
-                'scripts/scoop-capsulenv-gateway.ps1',
-                'scripts/scoop-capsulenv-shellonly-policy.ps1'
+                'modules/Capsulenv/runtime/scoop-capsulenv-gateway.ps1',
+                'modules/Capsulenv/runtime/scoop-capsulenv-shellonly-policy.ps1'
             )) {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition (Test-Path -LiteralPath (Join-Path $buildRoot $runtimeScript) -PathType Leaf) `

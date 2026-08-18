@@ -1,7 +1,7 @@
 Describe 'Capsulenv ShellOnly Scoop lifecycle policy' {
     BeforeEach {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        $script:PolicyPath = Join-Path $script:Root 'scripts/scoop-capsulenv-shellonly-policy.ps1'
+        $script:PolicyPath = Join-Path $script:Root 'module-runtime/scoop-capsulenv-shellonly-policy.ps1'
         $script:OriginalPolicyEnvironment = $env:CAPSULENV_SCOOP_LIFECYCLE_POLICY
         $env:CAPSULENV_SCOOP_LIFECYCLE_POLICY = $null
         $script:OriginalHookCalled = $false

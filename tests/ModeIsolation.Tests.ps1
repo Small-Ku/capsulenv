@@ -10,11 +10,11 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:DoctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
         $script:ProjectCacheSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/36-ProjectCacheRegistry.ps1') -Raw
         $script:BootstrapSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/41-ScoopBootstrap.ps1') -Raw
-        $script:PortableResetSource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-portable-reset.ps1') -Raw
-        $script:UserResetSource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-user-reset.ps1') -Raw
-        $script:ResetGuardSource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-process-guard.ps1') -Raw
-        $script:ScoopGatewaySource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-gateway.ps1') -Raw
-        $script:ScoopShellOnlyPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/scoop-capsulenv-shellonly-policy.ps1') -Raw
+        $script:PortableResetSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-portable-reset.ps1') -Raw
+        $script:UserResetSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-reset.ps1') -Raw
+        $script:ResetGuardSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-process-guard.ps1') -Raw
+        $script:ScoopGatewaySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-gateway.ps1') -Raw
+        $script:ScoopShellOnlyPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-shellonly-policy.ps1') -Raw
     }
 
     It 'has one Pester-only test path with no duplicated smoke suite' {
@@ -81,7 +81,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'SCOOP_CACHE'
         $script:EnvironmentSource | Should -Match 'ShellOnlyLifecyclePolicy \| ConvertTo-Json -Compress'
         $script:EnvironmentSource | Should -Match "CAPSULENV_SCOOP_LIFECYCLE_POLICY.*'Process'"
-        $script:BootstrapSource.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\scripts\scoop-capsulenv-gateway.ps1"') | Should -BeTrue
+        $script:BootstrapSource.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1"') | Should -BeTrue
         $script:BootstrapSource.Contains('set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"') | Should -BeTrue
         $script:BootstrapSource.Contains("Join-Path `$env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'") | Should -BeTrue
         $script:BootstrapSource | Should -Not -Match 'where pwsh\.exe'

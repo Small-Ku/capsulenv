@@ -1,7 +1,7 @@
 Describe 'Capsulenv portable Scoop reset process guard' {
     BeforeAll {
         $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        $path = Join-Path $root 'scripts/scoop-capsulenv-process-guard.ps1'
+        $path = Join-Path $root 'module-runtime/scoop-capsulenv-process-guard.ps1'
         $tokens = $null
         $errors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseFile(

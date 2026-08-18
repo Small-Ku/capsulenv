@@ -23,6 +23,7 @@ Import-Module $analyzer.Path -Force
 $paths = @(
     (Join-Path $root 'Merge-ModuleScripts.ps1')
     (Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
+    (Get-ChildItem -LiteralPath (Join-Path $root 'module-runtime') -Filter '*.ps1' -File -Recurse | Select-Object -ExpandProperty FullName)
     (Get-ChildItem -LiteralPath (Join-Path $root 'scripts') -Filter '*.ps1' -File |
         Where-Object { $_.Name -notin @('Analyze-Capsulenv.ps1', 'Test-Capsulenv.ps1') } |
         Select-Object -ExpandProperty FullName)

@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 
 $script:CapsulenvContext = $null
 $script:CapsulenvConfiguration = $null
+$script:CapsulenvModuleRoot = $PSScriptRoot
 
 function Initialize-CapsulenvContext {
     [CmdletBinding()]
@@ -36,6 +37,14 @@ function Get-CapsulenvContext {
         [void](Initialize-CapsulenvContext)
     }
     return $script:CapsulenvContext
+}
+
+function Get-CapsulenvModuleRuntimePath {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    $runtimeRoot = Join-Path $script:CapsulenvModuleRoot 'runtime'
+    return Join-Path $runtimeRoot $Name
 }
 
 function Resolve-CapsulenvPath {

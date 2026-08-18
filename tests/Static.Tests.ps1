@@ -736,7 +736,7 @@ Describe 'Capsulenv static and relocation' {
             -Condition ($quotedArgument -eq '"C:\Path With Space\\"') `
             -Message "Native process argument quoting was incorrect: $quotedArgument"
 
-        $replayPath = Join-Path (Join-Path $root 'scripts') 'scoop-capsulenv-replay.ps1'
+        $replayPath = Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-replay.ps1'
         $replayText = [System.IO.File]::ReadAllText($replayPath)
         foreach ($requiredText in @('installed_manifest', 'install_info', 'Invoke-HookScript', 'pre_install', 'post_install')) {
             Assert-CapsulenvTest `
@@ -809,9 +809,9 @@ Describe 'Capsulenv static and relocation' {
                 -Message "Tool relocation still hard-codes a Scoop app current path: $legacyToolPath"
         }
 
-        $portableResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'scoop-capsulenv-portable-reset.ps1'))
-        $userResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'scoop-capsulenv-user-reset.ps1'))
-        $replaySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'scoop-capsulenv-replay.ps1'))
+        $portableResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-portable-reset.ps1'))
+        $userResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-user-reset.ps1'))
+        $replaySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-replay.ps1'))
         foreach ($scopedSource in @($portableResetSource, $userResetSource, $replaySource)) {
             Assert-CapsulenvTest `
                 -Condition $scopedSource.Contains("'^(?i:(user|global))/(.+)$'") `
