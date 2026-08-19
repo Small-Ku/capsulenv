@@ -466,6 +466,7 @@ function Initialize-CapsulenvIntegrations {
     )
 
     [void](Initialize-CapsulenvScoopBootstrap)
+    Repair-CapsulenvPackageProjections
     $configuration = Get-CapsulenvConfiguration
     if (
         $configuration.Scoop.RehydrateOnRelocation -and

@@ -506,12 +506,49 @@ function Invoke-CapsulenvAppCommand {
     param([string[]]$Arguments)
 
     if ($Arguments.Count -lt 1) {
-        throw 'Usage: app <list|run> [...]'
+        throw 'Usage: app <plan|install|list|run|exec> [...]'
     }
 
     $action = $Arguments[0].ToLowerInvariant()
     $remaining = @($Arguments | Select-Object -Skip 1)
     switch ($action) {
+        'plan' {
+            if ($remaining.Count -ne 1) {
+                throw 'Usage: app plan <app|bucket/app>'
+            }
+            $plan = Get-CapsulenvPackageInstallPlan -Reference ([string]$remaining[0])
+            $plan.Packages |
+                Select-Object Reference, Version, Architecture, Classification,
+                    @{ Name = 'Capabilities'; Expression = { @($_.Capabilities) -join ',' } },
+                    @{ Name = 'Reasons'; Expression = { @($_.Reasons) -join '; ' } } |
+                Format-Table -AutoSize
+        }
+        'install' {
+            $allowTrusted = $remaining -contains '--allow-trusted'
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -ne '--allow-trusted' })
+            $references = @($remaining | Where-Object { $_ -notlike '--*' })
+            if ($unknownFlags.Count -gt 0 -or $references.Count -ne 1) {
+                throw 'Usage: app install <app|bucket/app> [--allow-trusted]'
+            }
+            $reference = [string]$references[0]
+            $plan = Get-CapsulenvPackageInstallPlan -Reference $reference
+            if ([string]$plan.Classification -eq 'PortableSafe') {
+                Install-CapsulenvPortablePackage -Reference $reference |
+                    Select-Object Name, Version, Architecture, Reference, InstallRoot |
+                    Format-Table -AutoSize
+                break
+            }
+            if (-not $allowTrusted) {
+                $blocked = @($plan.BlockedPackages | ForEach-Object {
+                    '{0} [{1}] {2}' -f $_.Reference, $_.Classification, (@($_.Reasons) -join '; ')
+                }) -join [Environment]::NewLine
+                throw "Package requires semantics outside PortableSafe. Review the plan, then use --allow-trusted to delegate the requested package to unmodified upstream Scoop:`n$blocked"
+            }
+
+            [void](Set-CapsulenvSessionEnvironment)
+            Write-CapsulenvMessage -Level Warning -Message "Delegating '$reference' to unmodified upstream Scoop. Third-party lifecycle code may execute and is outside Capsulenv's PortableSafe guarantees."
+            [void](Invoke-CapsulenvScoopCommand -Arguments @('install', $reference))
+        }
         'list' {
             if ($remaining.Count -gt 1) {
                 throw 'Usage: app list [app]'
@@ -529,20 +566,11 @@ function Invoke-CapsulenvAppCommand {
             }
             $selector = [string]$remaining[0]
             $tail = @($remaining | Select-Object -Skip 1)
-            $separatorIndex = -1
-            for ($index = 0; $index -lt $tail.Count; $index++) {
-                if ([string]$tail[$index] -eq '--') {
-                    $separatorIndex = $index
-                    break
-                }
-            }
-
+            $separatorIndex = [Array]::IndexOf([object[]]$tail, '--')
             $before = @(
                 if ($separatorIndex -ge 0) {
                     if ($separatorIndex -gt 0) { $tail[0..($separatorIndex - 1)] }
-                } else {
-                    $tail
-                }
+                } else { $tail }
             )
             if ($before.Count -gt 1) {
                 throw 'Usage: app run <app> ["shortcut name"] [-- runtime arguments...]'
@@ -555,7 +583,19 @@ function Invoke-CapsulenvAppCommand {
             $shortcutName = if ($before.Count -eq 1) { [string]$before[0] } else { $null }
             [void](Start-CapsulenvScoopShortcut -App $selector -ShortcutName $shortcutName -Arguments $runtime)
         }
-        default { throw "Unknown app action: $action. Use list or run." }
+        'exec' {
+            if ($remaining.Count -lt 2) {
+                throw 'Usage: app exec capsule/<app> <bin> [-- arguments...]'
+            }
+            $selector = [string]$remaining[0]
+            $binName = [string]$remaining[1]
+            $tail = @($remaining | Select-Object -Skip 2)
+            if ($tail.Count -gt 0 -and [string]$tail[0] -eq '--') {
+                $tail = @($tail | Select-Object -Skip 1)
+            }
+            return Invoke-CapsulenvPackageExecutable -App $selector -BinName $binName -Arguments $tail
+        }
+        default { throw "Unknown app action: $action. Use plan, install, list, run, or exec." }
     }
 }
 

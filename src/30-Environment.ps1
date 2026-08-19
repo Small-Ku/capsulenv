@@ -51,6 +51,10 @@ function Get-CapsulenvEnvironmentPlan {
     }
 
     $pathEntries = New-Object System.Collections.Generic.List[string]
+    $packageShims = Get-CapsulenvPackageShimRoot
+    if (-not ($pathEntries -contains $packageShims)) {
+        $pathEntries.Add($packageShims)
+    }
     foreach ($scoopShims in @(
         (Join-Path $variables.SCOOP 'shims'),
         (Join-Path $variables.SCOOP_GLOBAL 'shims')

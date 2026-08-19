@@ -64,4 +64,13 @@ if ($canCompileModule) {
 }
 
 Import-Module $modulePath -Force -DisableNameChecking
-Invoke-Capsulenv @CapsulenvArguments
+$result = Invoke-Capsulenv @CapsulenvArguments
+if (
+    $CapsulenvArguments.Count -ge 2 -and
+    [string]$CapsulenvArguments[0] -eq 'app' -and
+    [string]$CapsulenvArguments[1] -eq 'exec' -and
+    $result -is [int]
+) {
+    exit [int]$result
+}
+$result

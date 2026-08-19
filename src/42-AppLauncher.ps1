@@ -26,15 +26,21 @@ function Get-CapsulenvScoopAppRootRecord {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('User', 'Global')]
+        [ValidateSet('Capsule', 'User', 'Global')]
         [string]$Scope
     )
 
-    $root = if ($Scope -eq 'Global') {
-        Get-CapsulenvScoopGlobalRoot
-    } else {
-        Get-CapsulenvScoopRoot
+    if ($Scope -eq 'Capsule') {
+        $root = Get-CapsulenvPackageRoot
+        return [pscustomobject]@{
+            Scope = $Scope
+            Root = $root
+            AppsRoot = $root
+            PersistRoot = Get-CapsulenvPackagePersistRoot
+        }
     }
+
+    $root = if ($Scope -eq 'Global') { Get-CapsulenvScoopGlobalRoot } else { Get-CapsulenvScoopRoot }
     return [pscustomobject]@{
         Scope = $Scope
         Root = $root
@@ -48,7 +54,7 @@ function Split-CapsulenvScoopAppSelector {
     param([Parameter(Mandatory = $true)][string]$Selector)
 
     if ([string]::IsNullOrWhiteSpace($Selector)) {
-        throw 'Scoop app selector must not be empty.'
+        throw 'Installed app selector must not be empty.'
     }
 
     $scope = $null
@@ -56,19 +62,20 @@ function Split-CapsulenvScoopAppSelector {
     $separator = $Selector.IndexOf('/')
     if ($separator -ge 0) {
         if ($separator -eq 0 -or $separator -eq ($Selector.Length - 1) -or $Selector.IndexOf('/', $separator + 1) -ge 0) {
-            throw "Invalid Scoop app selector '$Selector'. Use <app>, user/<app>, or global/<app>."
+            throw "Invalid Scoop app selector '$Selector'. Use <app>, capsule/<app>, user/<app>, or global/<app>."
         }
         $scopeToken = $Selector.Substring(0, $separator).ToLowerInvariant()
         switch ($scopeToken) {
+            'capsule' { $scope = 'Capsule' }
             'user' { $scope = 'User' }
             'global' { $scope = 'Global' }
-            default { throw "Invalid Scoop app scope '$scopeToken'. Use user/<app> or global/<app>." }
+            default { throw "Invalid installed app scope '$scopeToken'. Use capsule/<app>, user/<app>, or global/<app>." }
         }
         $name = $Selector.Substring($separator + 1)
     }
 
     if ($name -match '[\\/:*?"<>|]') {
-        throw "Invalid Scoop app name '$name'."
+        throw "Invalid installed app name '$name'."
     }
 
     return [pscustomobject]@{
@@ -85,7 +92,7 @@ function Get-CapsulenvInstalledScoopApp {
     )
 
     $parsed = Split-CapsulenvScoopAppSelector -Selector $Selector
-    $scopes = if ($null -ne $parsed.Scope) { @([string]$parsed.Scope) } else { @('User', 'Global') }
+    $scopes = if ($null -ne $parsed.Scope) { @([string]$parsed.Scope) } else { @('Capsule', 'User', 'Global') }
     $matches = New-Object System.Collections.Generic.List[object]
 
     foreach ($scope in $scopes) {
@@ -123,16 +130,19 @@ function Get-CapsulenvInstalledScoopApp {
             Manifest = $manifest
             Install = $install
         })
+        if ($null -eq $parsed.Scope -and $scope -eq 'Capsule') {
+            return $matches[0]
+        }
     }
 
     if ($matches.Count -eq 0) {
         if ($AllowMissing) {
             return $null
         }
-        throw "Scoop app is not installed in the capsule: $Selector"
+        throw "App is not installed in the capsule: $Selector"
     }
     if ($matches.Count -gt 1) {
-        throw "Scoop app '$($parsed.Name)' is installed in both user and global roots. Use user/$($parsed.Name) or global/$($parsed.Name)."
+        throw "App '$($parsed.Name)' is installed in both user and global Scoop roots. Use user/$($parsed.Name) or global/$($parsed.Name)."
     }
     return $matches[0]
 }
@@ -613,7 +623,7 @@ function Get-CapsulenvScoopShortcutCatalog {
     param()
 
     $results = New-Object System.Collections.Generic.List[object]
-    foreach ($scope in @('User', 'Global')) {
+    foreach ($scope in @('Capsule', 'User', 'Global')) {
         $rootRecord = Get-CapsulenvScoopAppRootRecord -Scope $scope
         if (-not (Test-Path -LiteralPath $rootRecord.AppsRoot -PathType Container)) {
             continue
@@ -645,9 +655,13 @@ function Start-CapsulenvScoopShortcut {
     )
 
     [void](Set-CapsulenvSessionEnvironment)
-    $shortcuts = @(Get-CapsulenvScoopAppShortcuts -App $App)
+    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    if ([string]$installed.Scope -eq 'Capsule') {
+        [void](Set-CapsulenvPackageProcessEnvironment -Installed $installed)
+    }
+    $shortcuts = @(Get-CapsulenvScoopAppShortcuts -App $installed.Selector)
     if ($shortcuts.Count -eq 0) {
-        throw "Installed Scoop app '$App' does not define a shortcut. Use its Scoop shim/bin command when available."
+        throw "Installed app '$App' does not define a shortcut. Use its shim/bin command when available."
     }
 
     $selected = $null
@@ -665,7 +679,7 @@ function Start-CapsulenvScoopShortcut {
         $selected = $shortcuts[0]
     } else {
         $available = @($shortcuts | ForEach-Object { [string]$_.Name }) -join ', '
-        throw "Installed Scoop app '$App' defines multiple shortcuts. Specify one of: $available"
+        throw "Installed app '$App' defines multiple shortcuts. Specify one of: $available"
     }
 
     if (-not (Test-Path -LiteralPath $selected.Target -PathType Leaf)) {
