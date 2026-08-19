@@ -70,17 +70,25 @@ if ($forbiddenRuntimeUses.Count -gt 0) {
     throw "Capsulenv runtime command-boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
-$allowedShortcutOverridePath = Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-user-policy.ps1'
 $hostIntegrationViolations = @(
-    Get-CapsulenvHostIntegrationOwnershipViolations `
-        -Paths $runtimePaths `
-        -AllowedShortcutOverridePath $allowedShortcutOverridePath
+    Get-CapsulenvHostIntegrationOwnershipViolations -Paths $runtimePaths
 )
 if ($hostIntegrationViolations.Count -gt 0) {
     $detail = $hostIntegrationViolations | ForEach-Object {
         '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
     }
     throw "Capsulenv host-integration ownership analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+
+$scoopRuntimeAdapterViolations = @(
+    Get-CapsulenvScoopRuntimeAdapterViolations -RuntimeRoot (Join-Path $root 'module-runtime')
+)
+if ($scoopRuntimeAdapterViolations.Count -gt 0) {
+    $detail = $scoopRuntimeAdapterViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv Scoop runtime-adapter analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
 $environmentPath = Join-Path (Join-Path $root 'src') '30-Environment.ps1'
@@ -94,15 +102,15 @@ if ($sessionModeViolations.Count -gt 0) {
     throw "Capsulenv session-mode ownership analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
-$scoopGatewayPath = Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-gateway.ps1'
-$scoopGatewayBootstrapViolations = @(
-    Get-CapsulenvScoopGatewayBootstrapViolations -Path $scoopGatewayPath
+$scoopBootstrapPath = Join-Path (Join-Path $root 'src') '41-ScoopBootstrap.ps1'
+$stockScoopBoundaryViolations = @(
+    Get-CapsulenvStockScoopBoundaryViolations -Path $scoopBootstrapPath
 )
-if ($scoopGatewayBootstrapViolations.Count -gt 0) {
-    $detail = $scoopGatewayBootstrapViolations | ForEach-Object {
+if ($stockScoopBoundaryViolations.Count -gt 0) {
+    $detail = $stockScoopBoundaryViolations | ForEach-Object {
         '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
     }
-    throw "Capsulenv Scoop gateway bootstrap analysis failed:`n$($detail -join [Environment]::NewLine)"
+    throw "Capsulenv stock Scoop boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
 $toolRelocationPath = Join-Path (Join-Path $root 'src') '37-ToolRelocation.ps1'
@@ -133,7 +141,8 @@ if ($diagnostics.Count -gt 0) {
     ControlBootstrapCommands = $controlBootstrapCommands.Count
     ForbiddenRuntimeCommands = $forbiddenRuntimeUses.Count
     HostIntegrationOwnershipViolations = $hostIntegrationViolations.Count
+    ScoopRuntimeAdapterViolations = $scoopRuntimeAdapterViolations.Count
     SessionModeBoundaryViolations = $sessionModeViolations.Count
-    ScoopGatewayBootstrapViolations = $scoopGatewayBootstrapViolations.Count
+    StockScoopBoundaryViolations = $stockScoopBoundaryViolations.Count
     ExternalJsonUnsafeMemberAccess = $externalJsonViolations.Count
 }

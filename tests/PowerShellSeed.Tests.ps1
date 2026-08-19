@@ -244,7 +244,6 @@ Describe 'Capsulenv PowerShell and seed ownership' {
             }
             $hostScoop = [pscustomobject]@{ Root = $hostRoot; GlobalRoot = $hostGlobalRoot; Command = 'unused' }
 
-            Mock Assert-CapsulenvGlobalScoopResetAccess {} -ModuleName Capsulenv
             Mock Test-CapsulenvAdministrator { $false } -ModuleName Capsulenv
             Mock Initialize-CapsulenvScoopBootstrap { throw 'Mutation must not start before elevation preflight.' } -ModuleName Capsulenv
 

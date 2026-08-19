@@ -94,6 +94,7 @@ Describe 'Capsulenv portable workflow contracts' {
                 $status.Root | Should -Be ([System.IO.Path]::GetFullPath($CapsuleRoot))
                 $status.Mode | Should -Be 'ShellOnly'
                 $status.PersistentUserIntegration | Should -BeTrue
+                $status.PortableSafePackages | Should -Be 0
                 $status.ScoopApps | Should -Be 1
                 $status.Relocation | Should -Be 'Pending'
                 $status.ProjectLinks | Should -Be 0

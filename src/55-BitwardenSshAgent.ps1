@@ -514,7 +514,7 @@ function Set-CapsulenvBitwardenDesktopSshAgent {
     try {
         [void](Set-CapsulenvSessionEnvironment)
         $appSelector = Get-CapsulenvBitwardenScoopAppSelector
-        [void](Reset-CapsulenvScoop -Apps @($appSelector) -Quiet)
+        [void](Repair-CapsulenvInstalledAppProjections -Apps @($appSelector))
 
         $statePath = Get-CapsulenvBitwardenStatePath -AllowMissing
         $state = Read-CapsulenvUtf8TextFile -Path $statePath -AllowMissing

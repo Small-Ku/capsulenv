@@ -93,15 +93,10 @@ Describe 'Capsulenv build and install' {
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $prebuiltInstallRoot $bundleOnlyFile))) `
                     -Message "Prebuilt deployment copied bundle-only file into capsule: $bundleOnlyFile"
             }
-            foreach ($runtimeScript in @(
-                'modules/Capsulenv/runtime/scoop-capsulenv-gateway.ps1',
-                'modules/Capsulenv/runtime/scoop-capsulenv-shellonly-policy.ps1',
-                'modules/Capsulenv/runtime/scoop-capsulenv-user-policy.ps1'
-            )) {
-                Assert-CapsulenvBuildInstallTest `
-                    -Condition (Test-Path -LiteralPath (Join-Path $buildRoot $runtimeScript) -PathType Leaf) `
-                    -Message "Runtime build did not include Scoop ShellOnly policy component: $runtimeScript"
-            }
+            $runtimeScoopAdapters = @(Get-ChildItem -LiteralPath (Join-Path $buildRoot 'modules/Capsulenv/runtime') -Filter 'scoop-capsulenv-*' -File -ErrorAction SilentlyContinue)
+            Assert-CapsulenvBuildInstallTest `
+                -Condition ($runtimeScoopAdapters.Count -eq 0) `
+                -Message 'Runtime build must not contain Scoop source-rewriting adapters.'
 
             foreach ($runtimeDoc in @(
                 'README.md',

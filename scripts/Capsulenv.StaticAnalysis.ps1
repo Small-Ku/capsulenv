@@ -60,16 +60,9 @@ function Get-CapsulenvFunctionAst {
 
 function Get-CapsulenvHostIntegrationOwnershipViolations {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string[]]$Paths,
-        [Parameter(Mandatory = $true)][string]$AllowedShortcutOverridePath
-    )
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
 
-    $allowedPath = [System.IO.Path]::GetFullPath($AllowedShortcutOverridePath)
-    $allowedOverrideFound = $false
-    $allowedNamespaceFound = $false
     $violations = New-Object System.Collections.Generic.List[object]
-
     foreach ($path in $Paths) {
         $fullPath = [System.IO.Path]::GetFullPath($path)
         $ast = Get-CapsulenvStaticAst -Path $fullPath
@@ -91,14 +84,8 @@ function Get-CapsulenvHostIntegrationOwnershipViolations {
                     Path = $fullPath
                     Line = $literal.Extent.StartLineNumber
                     Column = $literal.Extent.StartColumnNumber
-                    Detail = 'runtime code must not target the foreign Scoop Apps Start Menu namespace'
+                    Detail = 'Capsulenv-owned host integration must not target upstream Scoop''s Start Menu namespace'
                 })
-            }
-            if (
-                [System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath, $allowedPath) -and
-                $value -eq 'Capsulenv Apps'
-            ) {
-                $allowedNamespaceFound = $true
             }
         }
 
@@ -112,36 +99,30 @@ function Get-CapsulenvHostIntegrationOwnershipViolations {
                 $true
             )
         )) {
-            if ([System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath, $allowedPath)) {
-                $allowedOverrideFound = $true
-                continue
-            }
             $violations.Add([pscustomobject]@{
-                Rule = 'ScoopShortcutOverrideOwnership'
+                Rule = 'ScoopShortcutOverrideForbidden'
                 Path = $fullPath
                 Line = $functionAst.Extent.StartLineNumber
                 Column = $functionAst.Extent.StartColumnNumber
-                Detail = 'shortcut_folder may only be overridden by the capsule-owned User Scoop policy'
+                Detail = 'Capsulenv must not override Scoop shortcut_folder; host shortcuts are a Capsulenv launcher projection'
             })
         }
     }
+    return $violations.ToArray()
+}
 
-    if (-not $allowedOverrideFound) {
+function Get-CapsulenvScoopRuntimeAdapterViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$RuntimeRoot)
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    foreach ($file in @(Get-ChildItem -LiteralPath $RuntimeRoot -Filter 'scoop-capsulenv-*' -File -Recurse -ErrorAction SilentlyContinue)) {
         $violations.Add([pscustomobject]@{
-            Rule = 'UserShortcutIsolationRequired'
-            Path = $allowedPath
+            Rule = 'NoScoopRuntimeAdapters'
+            Path = [string]$file.FullName
             Line = 1
             Column = 1
-            Detail = 'capsule-owned User Scoop policy must override shortcut_folder'
-        })
-    }
-    if (-not $allowedNamespaceFound) {
-        $violations.Add([pscustomobject]@{
-            Rule = 'UserShortcutNamespaceRequired'
-            Path = $allowedPath
-            Line = 1
-            Column = 1
-            Detail = 'capsule-owned User Scoop policy must target the Capsulenv Apps namespace'
+            Detail = 'runtime Scoop source adapters are forbidden; direct Scoop must remain upstream and package safety belongs to the Capsulenv planner/executor'
         })
     }
     return $violations.ToArray()
@@ -240,81 +221,70 @@ function Get-CapsulenvExternalJsonMemberViolations {
     )
 }
 
-function Get-CapsulenvScoopGatewayBootstrapViolations {
+function Get-CapsulenvStockScoopBoundaryViolations {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $fullPath = [System.IO.Path]::GetFullPath($Path)
-    [void](Get-CapsulenvStaticAst -Path $fullPath)
-    $source = [System.IO.File]::ReadAllText($fullPath)
+    $ast = Get-CapsulenvStaticAst -Path $fullPath
     $violations = New-Object System.Collections.Generic.List[object]
+    $functionAst = @($ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$node.Name, 'Install-CapsulenvScoopShim')
+    }, $true)) | Select-Object -First 1
+    if ($null -eq $functionAst) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'StockScoopShimDefinition'
+            Path = $fullPath
+            Line = 1
+            Column = 1
+            Detail = 'Install-CapsulenvScoopShim must exist and own only the cmd.exe compatibility trampoline'
+        })
+        return $violations.ToArray()
+    }
 
-    $requirements = @(
-        [pscustomobject]@{
-            Rule = 'ScoopGatewayBootstrapCapture'
-            Pattern = '(?m)\$upstreamSource\s*=\s*\[System\.IO\.File\]::ReadAllText\(\$upstream\)'
-            Detail = 'intercepted Scoop commands must capture the installed upstream dispatcher bootstrap'
-        },
-        [pscustomobject]@{
-            Rule = 'ScoopGatewayDispatchBoundary'
-            Pattern = 'switch\\s\*\\\(\\s\*\\\$subCommand'
-            Detail = 'gateway must locate the installed Scoop command-dispatch boundary'
-        },
-        [pscustomobject]@{
-            Rule = 'ScoopGatewayDispatchGuard'
-            Pattern = '(?m)if\s*\(\s*-not\s+\$dispatcherBoundary\.Success\s*\)'
-            Detail = 'gateway must fail closed when the installed Scoop dispatch boundary is unknown'
-        },
-        [pscustomobject]@{
-            Rule = 'ScoopGatewayBootstrapSlice'
-            Pattern = '(?m)\$bootstrapSource\s*=\s*\$upstreamSource\.Substring\(\s*0\s*,\s*\$dispatcherBoundary\.Index\s*\)'
-            Detail = 'gateway must slice the installed upstream dispatcher at the validated dispatch boundary'
-        },
-        [pscustomobject]@{
-            Rule = 'ScoopGatewayCoreBootstrapGuard'
-            Pattern = 'lib\[\\\\/\]core\\\.ps1'
-            Detail = 'captured upstream bootstrap must be checked for Scoop lib/core.ps1'
-        },
-        [pscustomobject]@{
-            Rule = 'ScoopGatewayBootstrapPrepend'
-            Pattern = '(?m)\$source\s*=\s*\$bootstrapSource\s*\+[^\r\n]*\+\s*\$source'
-            Detail = 'captured upstream bootstrap must execute before the transformed libexec source'
-        }
-    )
-
-    foreach ($requirement in $requirements) {
-        if ($source -notmatch $requirement.Pattern) {
+    $source = [string]$functionAst.Extent.Text
+    foreach ($forbidden in @(
+        [pscustomobject]@{ Pattern = 'scoop-capsulenv-gateway'; Rule = 'StockScoopNoGateway'; Detail = 'direct Scoop must not route through the Capsulenv gateway' },
+        [pscustomobject]@{ Pattern = 'scoop-capsulenv-shellonly-policy'; Rule = 'StockScoopNoPolicyInjection'; Detail = 'direct Scoop must not inject Capsulenv lifecycle policy' },
+        [pscustomobject]@{ Pattern = '\bUseGateway\b'; Rule = 'StockScoopNoGatewaySwitch'; Detail = 'direct Scoop must not expose a gateway execution switch' },
+        [pscustomobject]@{ Pattern = 'Get-CapsulenvModuleRuntimePath'; Rule = 'StockScoopNoRuntimeTransform'; Detail = 'the Scoop shim must not dispatch through a Capsulenv runtime transformer' }
+    )) {
+        if ($source -match $forbidden.Pattern) {
             $violations.Add([pscustomobject]@{
-                Rule = $requirement.Rule
+                Rule = $forbidden.Rule
                 Path = $fullPath
-                Line = 1
-                Column = 1
-                Detail = $requirement.Detail
+                Line = [int]$functionAst.Extent.StartLineNumber
+                Column = [int]$functionAst.Extent.StartColumnNumber
+                Detail = $forbidden.Detail
             })
         }
     }
 
-    $prependMatch = [regex]::Match(
-        $source,
-        '(?m)^\$source\s*=\s*\$bootstrapSource\s*\+[^\r\n]*\+\s*\$source\s*$'
-    )
-    $policyInsertMatch = [regex]::Match(
-        $source,
-        '(?m)^\s*\$source\s*=\s*\$source\.Insert\(\$insertionPoint\.Index,'
-    )
-    if (
-        $prependMatch.Success -and
-        $policyInsertMatch.Success -and
-        $prependMatch.Index -gt $policyInsertMatch.Index
-    ) {
+    if ($source -match '\$ps1Text\b|\$PSScriptRoot') {
         $violations.Add([pscustomobject]@{
-            Rule = 'ScoopGatewayBootstrapOrder'
+            Rule = 'StockScoopNoPowerShellWrapper'
             Path = $fullPath
-            Line = 1
-            Column = 1
-            Detail = 'upstream Scoop bootstrap must be prepended before Capsulenv policy injection'
+            Line = [int]$functionAst.Extent.StartLineNumber
+            Column = [int]$functionAst.Extent.StartColumnNumber
+            Detail = 'PowerShell must resolve the genuine upstream dispatcher from PATH instead of a Capsulenv scoop.ps1 wrapper'
         })
     }
 
+    foreach ($required in @(
+        [pscustomobject]@{ Pattern = '\.\.\\apps\\scoop\\current\\bin\\scoop\.ps1'; Rule = 'StockScoopUpstreamDispatcher'; Detail = 'cmd trampoline must target the installed upstream Scoop dispatcher' },
+        [pscustomobject]@{ Pattern = '%~dp0'; Rule = 'StockScoopCmdRelativeRoot'; Detail = 'cmd trampoline must resolve upstream Scoop relative to its own shim directory' }
+    )) {
+        if ($source -notmatch $required.Pattern) {
+            $violations.Add([pscustomobject]@{
+                Rule = $required.Rule
+                Path = $fullPath
+                Line = [int]$functionAst.Extent.StartLineNumber
+                Column = [int]$functionAst.Extent.StartColumnNumber
+                Detail = $required.Detail
+            })
+        }
+    }
     return $violations.ToArray()
 }

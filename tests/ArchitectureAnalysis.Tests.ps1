@@ -13,15 +13,6 @@ Describe 'Capsulenv architecture static analysis' {
             [System.IO.File]::WriteAllText($path, $Source)
             return $path
         }
-
-        function New-CapsulenvOwnedShortcutPolicy {
-            $source = @'
-function shortcut_folder($global) {
-    return [System.IO.Path]::Combine('C:\Users\test', 'Programs', 'Capsulenv Apps', '0123456789ab')
-}
-'@
-            return New-CapsulenvStaticFixture -Name 'owned-user-policy.ps1' -Source $source
-        }
     }
 
     It 'rejects foreign Scoop Start Menu namespace literals in runtime code' {
@@ -30,37 +21,36 @@ function Invoke-BadShortcutTarget {
     return [System.IO.Path]::Combine('C:\Users\test', 'Programs', 'Scoop Apps')
 }
 '@
-        $allowed = New-CapsulenvOwnedShortcutPolicy
-        $violations = @(
-            Get-CapsulenvHostIntegrationOwnershipViolations `
-                -Paths @($fixture, $allowed) `
-                -AllowedShortcutOverridePath $allowed
-        )
+        $violations = @(Get-CapsulenvHostIntegrationOwnershipViolations -Paths @($fixture))
         $violations.Count | Should -Be 1
         $violations[0].Rule | Should -Be 'HostStartMenuNamespace'
     }
 
-    It 'allows shortcut_folder only in the capsule-owned User Scoop policy' {
+    It 'rejects every Scoop shortcut_folder override' {
         $fixture = New-CapsulenvStaticFixture -Name 'shortcut-override.ps1' -Source @'
 function shortcut_folder($global) {
     return [System.IO.Path]::Combine('Programs', 'Capsulenv Apps')
 }
 '@
-        $allowed = New-CapsulenvOwnedShortcutPolicy
-        $foreignViolations = @(
-            Get-CapsulenvHostIntegrationOwnershipViolations `
-                -Paths @($fixture, $allowed) `
-                -AllowedShortcutOverridePath $allowed
-        )
-        $foreignViolations.Count | Should -Be 1
-        $foreignViolations[0].Rule | Should -Be 'ScoopShortcutOverrideOwnership'
+        $violations = @(Get-CapsulenvHostIntegrationOwnershipViolations -Paths @($fixture))
+        $violations.Count | Should -Be 1
+        $violations[0].Rule | Should -Be 'ScoopShortcutOverrideForbidden'
+    }
 
-        $ownedViolations = @(
-            Get-CapsulenvHostIntegrationOwnershipViolations `
-                -Paths @($fixture) `
-                -AllowedShortcutOverridePath $fixture
-        )
-        $ownedViolations.Count | Should -Be 0
+    It 'rejects Scoop runtime source adapters by filename' {
+        $runtimeRoot = Join-Path $TestDrive 'runtime-adapters'
+        [void](New-Item -ItemType Directory -Path $runtimeRoot -Force)
+        Set-Content -LiteralPath (Join-Path $runtimeRoot 'scoop-capsulenv-transform.ps1') -Value '# forbidden'
+        $violations = @(Get-CapsulenvScoopRuntimeAdapterViolations -RuntimeRoot $runtimeRoot)
+        $violations.Count | Should -Be 1
+        $violations[0].Rule | Should -Be 'NoScoopRuntimeAdapters'
+    }
+
+    It 'accepts a runtime directory with no Scoop source adapters' {
+        $runtimeRoot = Join-Path $TestDrive 'runtime-clean'
+        [void](New-Item -ItemType Directory -Path $runtimeRoot -Force)
+        Set-Content -LiteralPath (Join-Path $runtimeRoot 'Invoke-Capsulenv.ps1') -Value 'param()'
+        @(Get-CapsulenvScoopRuntimeAdapterViolations -RuntimeRoot $runtimeRoot).Count | Should -Be 0
     }
 
     It 'rejects persistent ownership reads from the session mode resolver' {
@@ -126,33 +116,28 @@ function Get-CapsulenvUvManagedPythonInstallations {
         ).Count | Should -Be 0
     }
 
-    It 'rejects a Scoop gateway that executes transformed libexec without upstream bootstrap' {
-        $fixture = New-CapsulenvStaticFixture -Name 'gateway-no-bootstrap.ps1' -Source @'
-$upstream = 'scoop.ps1'
-$source = [System.IO.File]::ReadAllText('scoop-install.ps1')
-$insertionPoint = [regex]::Match($source, '(?m)^\$opt\s*,')
-$source = $source.Insert($insertionPoint.Index, '. policy.ps1')
+    It 'rejects a Scoop shim that routes direct commands through a Capsulenv gateway' {
+        $fixture = New-CapsulenvStaticFixture -Name 'gateway-shim.ps1' -Source @'
+function Install-CapsulenvScoopShim {
+    $path = Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-gateway.ps1'
+    $ps1Text = '$PSScriptRoot'
+    $cmdText = '%~dp0'
+}
 '@
-        $violations = @(Get-CapsulenvScoopGatewayBootstrapViolations -Path $fixture)
-        $violations.Count | Should -BeGreaterThan 0
-        @($violations.Rule) | Should -Contain 'ScoopGatewayBootstrapCapture'
-        @($violations.Rule) | Should -Contain 'ScoopGatewayBootstrapPrepend'
+        $violations = @(Get-CapsulenvStockScoopBoundaryViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'StockScoopNoGateway'
+        @($violations.Rule) | Should -Contain 'StockScoopNoRuntimeTransform'
     }
 
-    It 'accepts a Scoop gateway that replays the installed dispatcher bootstrap before policy injection' {
-        $fixture = New-CapsulenvStaticFixture -Name 'gateway-bootstrap.ps1' -Source @'
-$upstream = 'scoop.ps1'
-$source = [System.IO.File]::ReadAllText('scoop-install.ps1')
-$upstreamSource = [System.IO.File]::ReadAllText($upstream)
-$dispatcherBoundary = [regex]::Match($upstreamSource, '(?m)^switch\s*\(\s*\$subCommand\s*\)\s*\{')
-if (-not $dispatcherBoundary.Success) { throw 'bad dispatch boundary' }
-$bootstrapSource = $upstreamSource.Substring(0, $dispatcherBoundary.Index)
-if ($bootstrapSource -notmatch '(?i)lib[\\/]core\.ps1') { throw 'bad core bootstrap' }
-$source = $bootstrapSource + "`r`n" + $source
-$insertionPoint = [regex]::Match($source, '(?m)^\$opt\s*,')
-$source = $source.Insert($insertionPoint.Index, '. policy.ps1')
+    It 'accepts a cmd-only trampoline while PowerShell resolves upstream Scoop directly from PATH' {
+        $fixture = New-CapsulenvStaticFixture -Name 'stock-shim.ps1' -Source @'
+function Install-CapsulenvScoopShim {
+    $cmdText = @"
+set "UPSTREAM=%~dp0..\apps\scoop\current\bin\scoop.ps1"
+"@
+}
 '@
-        @(Get-CapsulenvScoopGatewayBootstrapViolations -Path $fixture).Count | Should -Be 0
+        @(Get-CapsulenvStockScoopBoundaryViolations -Path $fixture).Count | Should -Be 0
     }
 
 }

@@ -218,6 +218,30 @@ function Install-CapsulenvBootstrapRepository {
     }
 }
 
+function Remove-CapsulenvLegacyScoopPowerShellShim {
+    [CmdletBinding()]
+    param()
+
+    $ps1Path = Join-Path (Join-Path (Get-CapsulenvScoopRoot) 'shims') 'scoop.ps1'
+    if (-not (Test-Path -LiteralPath $ps1Path -PathType Leaf)) {
+        return $false
+    }
+
+    # Only remove a PowerShell shim that is provably from a previous Capsulenv
+    # bootstrap generation. Foreign/upstream files in Scoop's shim directory are
+    # outside Capsulenv ownership and must be left untouched.
+    $source = [System.IO.File]::ReadAllText($ps1Path)
+    if (
+        -not $source.Contains('Capsulenv Scoop shim requires an active capsulenv shell.') -and
+        -not $source.Contains('Upstream Scoop entrypoint is missing:')
+    ) {
+        return $false
+    }
+
+    Remove-Item -LiteralPath $ps1Path -Force
+    return $true
+}
+
 function Install-CapsulenvScoopShim {
     [CmdletBinding()]
     param()
@@ -226,54 +250,24 @@ function Install-CapsulenvScoopShim {
     $shimsRoot = Join-Path $scoopRoot 'shims'
     [void](New-Item -ItemType Directory -Path $shimsRoot -Force)
 
-    $gatewayPath = Get-CapsulenvModuleRuntimePath -Name 'scoop-capsulenv-gateway.ps1'
-    $ps1Path = Join-Path $shimsRoot 'scoop.ps1'
-    $ps1Text = ('# {0}{1}' -f $gatewayPath, [Environment]::NewLine) + @'
-if ([string]::IsNullOrWhiteSpace($env:CAPSULENV_ROOT)) {
-    Write-Error 'Capsulenv Scoop shim requires an active capsulenv shell.'
-    exit 2
-}
-$path = Join-Path $env:CAPSULENV_ROOT 'modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1'
-$windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
-    $fallback = Get-Command powershell.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $fallback) {
-        Write-Error 'Capsulenv Scoop gateway requires Windows PowerShell 5.1.'
-        exit 2
-    }
-    $windowsPowerShell = [string]$fallback.Source
-}
-$controlArguments = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $path) + @($args)
-if ($MyInvocation.ExpectingInput) {
-    $input | & $windowsPowerShell @controlArguments
-} else {
-    & $windowsPowerShell @controlArguments
-}
-exit $LASTEXITCODE
-'@
-    if (-not (Test-Path -LiteralPath $ps1Path -PathType Leaf) -or [System.IO.File]::ReadAllText($ps1Path) -ne $ps1Text) {
-        [System.IO.File]::WriteAllText($ps1Path, $ps1Text, [System.Text.UTF8Encoding]::new($false))
-    }
-
+    # PowerShell sessions resolve apps\scoop\current\bin before this directory,
+    # so `scoop` is the genuine upstream scoop.ps1. Only cmd.exe needs a .cmd
+    # trampoline because .ps1 is normally absent from PATHEXT.
     $cmdPath = Join-Path $shimsRoot 'scoop.cmd'
-    $cmdText = ('@rem {0}{1}' -f $gatewayPath, [Environment]::NewLine) + @'
+    $cmdText = @'
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-if "%CAPSULENV_ROOT%"=="" (
-  >&2 echo Capsulenv Scoop shim requires an active capsulenv shell.
-  exit /b 2
-)
-set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1"
+set "CAPSULENV_UPSTREAM_SCOOP=%~dp0..\apps\scoop\current\bin\scoop.ps1"
 set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%CAPSULENV_CONTROL_POWERSHELL%" set "CAPSULENV_CONTROL_POWERSHELL=powershell.exe"
-"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_SCOOP_GATEWAY%" %*
+"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_UPSTREAM_SCOOP%" %*
 exit /b %ERRORLEVEL%
 '@
     if (-not (Test-Path -LiteralPath $cmdPath -PathType Leaf) -or [System.IO.File]::ReadAllText($cmdPath) -ne $cmdText) {
         [System.IO.File]::WriteAllText($cmdPath, $cmdText, [System.Text.UTF8Encoding]::new($false))
     }
 
-    return $ps1Path
+    return $cmdPath
 }
 
 function Initialize-CapsulenvScoopBootstrap {
@@ -306,6 +300,7 @@ function Initialize-CapsulenvScoopBootstrap {
             -Name 'Scoop'
     }
 
+    [void](Remove-CapsulenvLegacyScoopPowerShellShim)
     [void](Install-CapsulenvScoopShim)
 
     if (-not (Test-Path -LiteralPath (Join-Path $mainRoot 'bucket') -PathType Container)) {

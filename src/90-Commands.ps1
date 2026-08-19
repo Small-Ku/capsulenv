@@ -15,6 +15,8 @@ Getting started
 
 Daily commands
   capsulenv.cmd run <command> [arguments...]
+  capsulenv.cmd app plan <app|bucket/app>
+  capsulenv.cmd app install <app|bucket/app> [--allow-trusted]
   capsulenv.cmd app list [app]
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
   capsulenv.cmd user-shell [--force]
@@ -39,28 +41,44 @@ Topics: app, browser, user, eject, seed, cache, tools, repair, offline, bitwarde
         'app' {
 @'
 app commands
+  capsulenv.cmd app plan <app|bucket/app>
+      Resolve dependencies and classify manifest semantics without changing the
+      capsule. PortableSafe plans contain only the bounded declarative subset.
+
+  capsulenv.cmd app install <app|bucket/app> [--allow-trusted]
+      Install a PortableSafe plan with the Capsulenv executor. --allow-trusted
+      explicitly delegates the requested package to unmodified upstream Scoop;
+      arbitrary lifecycle code and host mutation are then outside PortableSafe.
+
   capsulenv.cmd app list [app]
-      List launchable shortcuts declared by installed Scoop manifests.
+      List launchable shortcut declarations from Capsulenv-owned packages and
+      legacy/upstream Scoop installs.
 
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
-      Launch a shortcut without creating a Start Menu .lnk. Use user/<app> or
-      global/<app> when both scopes contain the same app.
+      Launch through the unified runtime selector. Use capsule/<app>, user/<app>
+      or global/<app> when an explicit provider/scope is required. Unscoped names
+      prefer Capsulenv-owned PortableSafe packages.
+
+  scoop ...
+      Direct Scoop commands are never intercepted. They use upstream Scoop
+      semantics and are an explicit TrustedExecution boundary.
 '@ | Write-Host
         }
         'browser' {
 @'
 browser commands
-  capsulenv.cmd browser <scoop-app> [--host] [browser arguments...]
+  capsulenv.cmd browser <app> [--host] [browser arguments...]
   capsulenv.cmd firefox [--host] [browser arguments...]
   capsulenv.cmd zen [--host] [browser arguments...]
   capsulenv.cmd librewolf [--host] [browser arguments...]
 
-      The primary selector is the installed Scoop manifest name, optionally
-      scoped as user/<app> or global/<app>. A matching Browsers entry describes
-      only Gecko-specific details such as the persisted profile path.
+      The selector resolves an installed runtime app. Use capsule/<app> for a
+      Capsulenv-owned PortableSafe package or user/<app>/global/<app> for an
+      upstream Scoop install. A matching Browsers entry describes only
+      Gecko-specific details such as the persisted profile path.
 
       --host is explicit and uses only the configured product's machine
-      executable with the selected Scoop app's persisted profile. The three
+      executable with the selected app's persisted profile. The three
       short commands above remain compatibility aliases for firefox,
       zen-browser, and librewolf.
 '@ | Write-Host
@@ -75,7 +93,9 @@ user integration commands
 
   capsulenv.cmd install-user [--force]
   capsulenv.cmd enable-user [--force]
-      Install this capsule as the current Windows user's Scoop environment.
+      Synchronize explicit current-user integrations for this capsule.
+      PortableSafe Start Menu entries point back through the Capsulenv launcher;
+      direct upstream Scoop remains responsible for any integration it creates.
       enable-user is retained as a compatibility alias. If
       UserIntegration.DefaultBrowser is configured, also register that capsule
       Gecko browser and open its Default Apps page when confirmation is needed.
@@ -148,19 +168,20 @@ tool relocation commands
         'repair' {
 @'
 repair commands
-  capsulenv.cmd rehydrate [--skip-hooks] [--skip-persist-repairs]
+  capsulenv.cmd rehydrate [--skip-persist-repairs]
       [--skip-tool-repairs] [--strict-tool-repairs]
-      Repair relocation according to the current session mode. A standalone
-      invocation defaults to ShellOnly; run it inside user-shell for User-mode
-      repair semantics. Normal shell startup invokes relocation repair when
-      required.
+      Repair Capsulenv-owned package projections and bounded legacy Scoop
+      current/persist projections after relocation. It never replays manifest
+      lifecycle code. Ambiguous legacy state fails closed and must be repaired
+      explicitly with upstream Scoop.
 
   capsulenv.cmd init [...]
-      Compatibility/advanced alias for explicit full initialization.
+      Compatibility/advanced alias for explicit full initialization. The legacy
+      --skip-hooks flag is accepted but lifecycle replay no longer exists.
 
   capsulenv.cmd repair-persist [app...] [--dry-run] [--last]
-  capsulenv.cmd hooks <pre_install|post_install> <app> [app...]
   capsulenv.cmd reset [app...]
+      Reconcile only package/runtime projections; this is not `scoop reset`.
 '@ | Write-Host
         }
         'offline' {
@@ -677,20 +698,16 @@ function Invoke-Capsulenv {
                 Format-List
         }
         'hooks' {
-            if ($remaining.Count -lt 2) {
-                throw 'Usage: hooks <pre_install|post_install> <app> [app...]'
-            }
-            $apps = @($remaining[1..($remaining.Count - 1)])
-            Invoke-CapsulenvScoopHookReplay -Hook $remaining[0] -Apps $apps
+            throw "capsulenv hooks was removed with the Scoop runtime adapter. Arbitrary manifest lifecycle code belongs to explicit upstream Scoop execution; use 'scoop reset/install/update' only after reviewing that package's semantics."
         }
         'reset' {
             [void](Set-CapsulenvSessionEnvironment)
             $apps = if ($remaining.Count -gt 0) { $remaining } else { @('*') }
-            [void](Reset-CapsulenvScoop -Apps $apps)
+            [void](Repair-CapsulenvInstalledAppProjections -Apps $apps)
         }
         'reset-shims' {
             [void](Set-CapsulenvSessionEnvironment)
-            [void](Reset-CapsulenvScoop)
+            [void](Repair-CapsulenvInstalledAppProjections)
         }
         'install-user' {
             $unknown = @($remaining | Where-Object { $_ -ne '--force' })

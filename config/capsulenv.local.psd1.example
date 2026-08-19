@@ -7,19 +7,6 @@
         # GlobalRoot = 'D:\portable\scoop-global'
         # RehydrateOnRelocation = $false
 
-        # Only replay hooks that are safe and needed after relocation.
-        # pre_install is deliberately not enabled by default because many
-        # manifests treat it as a one-shot transformation.
-        # ReplayHooks replaces the default allow-list as one unit.
-        # Use @{} to disable automatic hook replay entirely.
-        # Keys are installed Scoop app selectors. Use user/<app> or
-        # global/<app> when a rule must target one scope exactly.
-        # ReplayHooks = @{
-        #     firefox = @('post_install')
-        #     'global/zen-browser' = @('post_install')
-        # }
-
-
         # RelocationRepairs also replaces the default allow-list as one unit.
         # Use @{} to disable all persisted text path repairs.
         # Keys accept the same <app> / user/<app> / global/<app> selector.

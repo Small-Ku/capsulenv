@@ -186,45 +186,11 @@ function Assert-CapsulenvConfiguration {
     }
 
     if (
-        -not $Configuration.Scoop.ContainsKey('ReplayHooks') -or
-        $Configuration.Scoop.ReplayHooks -isnot [hashtable]
-    ) {
-        throw 'Scoop.ReplayHooks must be a hashtable.'
-    }
-    if (
         -not $Configuration.Scoop.ContainsKey('RelocationRepairs') -or
         $Configuration.Scoop.RelocationRepairs -isnot [hashtable]
     ) {
         throw 'Scoop.RelocationRepairs must be a hashtable.'
     }
-    if (
-        -not $Configuration.Scoop.ContainsKey('ShellOnlyLifecyclePolicy') -or
-        $Configuration.Scoop.ShellOnlyLifecyclePolicy -isnot [hashtable]
-    ) {
-        throw 'Scoop.ShellOnlyLifecyclePolicy must be a hashtable.'
-    }
-    foreach ($fingerprint in $Configuration.Scoop.ShellOnlyLifecyclePolicy.Keys) {
-        $fingerprintText = [string]$fingerprint
-        if ($fingerprintText -notmatch '^[0-9a-fA-F]{64}$') {
-            throw "Scoop.ShellOnlyLifecyclePolicy contains an invalid SHA-256 fingerprint: $fingerprintText"
-        }
-        $action = [string]$Configuration.Scoop.ShellOnlyLifecyclePolicy[$fingerprint]
-        if ($action -notin @('Allow', 'Skip')) {
-            throw "Scoop.ShellOnlyLifecyclePolicy action must be Allow or Skip for fingerprint $fingerprintText."
-        }
-    }
-    foreach ($app in $Configuration.Scoop.ReplayHooks.Keys) {
-        if ([string]::IsNullOrWhiteSpace([string]$app)) {
-            throw 'Scoop.ReplayHooks contains an empty application name.'
-        }
-        [void](Split-CapsulenvScoopAppSelector -Selector ([string]$app))
-        foreach ($hook in @($Configuration.Scoop.ReplayHooks[$app])) {
-            if (([string]$hook) -notin @('pre_install', 'post_install')) {
-                throw "Unsupported Scoop lifecycle hook '$hook' for '$app'."
-            }
-        }
-    }
-
     foreach ($app in $Configuration.Scoop.RelocationRepairs.Keys) {
         $appName = [string]$app
         if ([string]::IsNullOrWhiteSpace($appName)) {
@@ -534,7 +500,7 @@ function Assert-CapsulenvConfiguration {
         }
     }
 
-    $reserved = @('CAPSULENV_ROOT', 'CAPSULENV_ID', 'CAPSULENV_SCRATCH', 'CAPSULENV_MODE', 'CAPSULENV_SCOOP_LIFECYCLE_POLICY', 'SCOOP', 'SCOOP_GLOBAL', 'SCOOP_CACHE', 'SSH_AUTH_SOCK', 'PATH')
+    $reserved = @('CAPSULENV_ROOT', 'CAPSULENV_ID', 'CAPSULENV_SCRATCH', 'CAPSULENV_MODE', 'SCOOP', 'SCOOP_GLOBAL', 'SCOOP_CACHE', 'SSH_AUTH_SOCK', 'PATH')
     foreach ($name in @($Configuration.Environment.PathVariables.Keys) + @($Configuration.Environment.Variables.Keys)) {
         if ($reserved -contains [string]$name) {
             throw "Environment variable is managed by a dedicated capsulenv setting and cannot be overridden here: $name"
@@ -588,7 +554,7 @@ function Import-CapsulenvConfiguration {
         # Scoop repair maps are allow-lists and must be replaceable as one unit.
         # Empty local hashtables therefore disable their automatic behavior.
         if ($local.ContainsKey('Scoop') -and $local.Scoop -is [hashtable]) {
-            foreach ($allowListName in @('ReplayHooks', 'RelocationRepairs', 'ShellOnlyLifecyclePolicy')) {
+            foreach ($allowListName in @('RelocationRepairs')) {
                 if ($local.Scoop.ContainsKey($allowListName)) {
                     $configuration.Scoop[$allowListName] = $local.Scoop[$allowListName]
                 }

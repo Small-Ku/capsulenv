@@ -1,126 +1,106 @@
-Describe 'Capsulenv Scoop reset mode dispatch' {
+Describe 'Capsulenv package projection repair boundary' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
         $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
         Import-Module $script:Build.ModulePath -Force
+        $script:Module = Get-Module Capsulenv
     }
 
     AfterAll {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
-    It 'uses the self-host-safe User reset helper instead of native scoop reset' {
-        Mock Invoke-CapsulenvPortableScoopReset {} -ModuleName Capsulenv
-        Mock Invoke-CapsulenvUserScoopReset { $true } -ModuleName Capsulenv
-        Mock Invoke-CapsulenvScoopCommand { throw 'native scoop command must not be used for User reset' } -ModuleName Capsulenv
+    It 'delegates the compatibility reset command to bounded projection repair only' {
+        Mock Repair-CapsulenvInstalledAppProjections { $true } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvScoopCommand { throw 'upstream Scoop must not be invoked by Capsulenv projection repair' } -ModuleName Capsulenv
 
-        Reset-CapsulenvScoop -Apps @('*') -IntegrationMode User -Quiet | Should -BeTrue
+        Reset-CapsulenvScoop -Apps @('user/git') -IntegrationMode ShellOnly -Quiet | Should -BeTrue
 
-        Should -Invoke Invoke-CapsulenvUserScoopReset -ModuleName Capsulenv -Times 1 -Exactly
-        Should -Invoke Invoke-CapsulenvPortableScoopReset -ModuleName Capsulenv -Times 0 -Exactly
+        Should -Invoke Repair-CapsulenvInstalledAppProjections -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $Apps.Count -eq 1 -and $Apps[0] -eq 'user/git' -and $IntegrationMode -eq 'ShellOnly'
+        }
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
     }
-
 
     It 'keeps Scoop command output out of the returned exit-code value' {
         $fakeScoop = Join-Path $TestDrive 'fake-scoop.ps1'
         @'
-Write-Output 'Creating shim for pwsh.'
+Write-Output 'upstream output'
 $global:LASTEXITCODE = 0
 '@ | Set-Content -LiteralPath $fakeScoop -Encoding UTF8
         Mock Get-CapsulenvScoopExecutable { $fakeScoop } -ModuleName Capsulenv
 
-        $exitCode = & (Get-Module Capsulenv) { Invoke-CapsulenvScoopCommand -Arguments @('noop') -AllowFailure }
+        $exitCode = & $script:Module { Invoke-CapsulenvScoopCommand -Arguments @('noop') -AllowFailure }
 
         @($exitCode).Count | Should -Be 1
         $exitCode | Should -BeOfType ([int])
         $exitCode | Should -Be 0
     }
 
-    It 'keeps a deferred running app non-fatal and reports the User reset as incomplete' {
-        Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
-        Mock Get-CapsulenvScoopUserResetScriptPath { 'mock-user-reset.ps1' } -ModuleName Capsulenv
-        Mock Install-CapsulenvTemporaryScoopCommand {
-            [pscustomobject]@{ Command = 'capsulenv-user-reset-test'; Path = (Join-Path $TestDrive 'temporary-reset.ps1') }
-        } -ModuleName Capsulenv
-        Mock Invoke-CapsulenvScoopCommand { 2 } -ModuleName Capsulenv
-        Mock Test-Path { $false } -ModuleName Capsulenv
-
-        $result = & (Get-Module Capsulenv) { Invoke-CapsulenvUserScoopReset -Apps @('*') -DeferRunningApps }
-
-        $result | Should -BeFalse
-        Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $AllowFailure -and $Arguments -contains ':defer' -and $Arguments -notcontains '-DeferRunningApps'
+    It 'selects the only metadata-bearing legacy version when current is unavailable' {
+        $appRoot = Join-Path $TestDrive 'single/apps/tool'
+        $versionRoot = Join-Path $appRoot '1.0.0'
+        New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
+        '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'manifest.json') -Encoding UTF8
+        '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'install.json') -Encoding UTF8
+        $location = [pscustomobject]@{
+            Selector = 'user/tool'
+            Name = 'tool'
+            AppRoot = $appRoot
+            CurrentRoot = (Join-Path $appRoot 'current')
         }
+
+        $resolved = & $script:Module { param($Location) Resolve-CapsulenvLegacyScoopVersionRoot -Location $Location } $location
+        $resolved | Should -Be $versionRoot
     }
 
-
-    It 'keeps deferred mode intact through Scoop-style string-array dispatch' {
-        $fakeRoot = Join-Path $TestDrive 'dispatch-root'
-        $fakeScoop = Join-Path $fakeRoot 'scoop'
-        $fakeShims = Join-Path $fakeScoop 'shims'
-        $fakeLib = Join-Path $fakeScoop 'apps/scoop/current/lib'
-        $fakeScripts = Join-Path $fakeRoot 'modules/Capsulenv/runtime'
-        New-Item -ItemType Directory -Path $fakeShims, $fakeLib, $fakeScripts -Force | Out-Null
-
-        @'
-function installed_apps($global) { if (-not $global) { 'librewolf' } }
-function parse_app($requested) { @($requested, $null, $null) }
-function installed($app, $global) { return (-not $global -and $app -eq 'librewolf') }
-function Select-CurrentVersion { '1.0' }
-function installed_manifest { [pscustomobject]@{} }
-function install_info { [pscustomobject]@{ architecture = '64bit' } }
-function is_admin { $false }
-'@ | Set-Content -LiteralPath (Join-Path $fakeLib 'manifest.ps1') -Encoding UTF8
-        foreach ($name in @('system.ps1', 'install.ps1', 'versions.ps1', 'shortcuts.ps1')) {
-            Set-Content -LiteralPath (Join-Path $fakeLib $name) -Value '' -Encoding UTF8
+    It 'fails closed when multiple legacy versions exist without active-version evidence' {
+        $appRoot = Join-Path $TestDrive 'ambiguous/apps/tool'
+        foreach ($version in @('1.0.0', '2.0.0')) {
+            $versionRoot = Join-Path $appRoot $version
+            New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
+            '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'manifest.json') -Encoding UTF8
+            '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'install.json') -Encoding UTF8
         }
-        Copy-Item -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-policy.ps1') -Destination (Join-Path $fakeScripts 'scoop-capsulenv-user-policy.ps1')
-        @'
-function Test-CapsulenvResetHasBlockingProcesses {
-    param([string]$App, [bool]$Global)
-    return $true
-}
-'@ | Set-Content -LiteralPath (Join-Path $fakeScripts 'scoop-capsulenv-process-guard.ps1') -Encoding UTF8
-
-        $helper = Join-Path $fakeShims 'scoop-capsulenv-user-reset-test.ps1'
-        Copy-Item -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-reset.ps1') -Destination $helper
-        $oldRoot = $env:CAPSULENV_ROOT
-        try {
-            $env:CAPSULENV_ROOT = $fakeRoot
-            Remove-Variable LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
-            [string[]]$dispatchArguments = @(':defer', 'librewolf')
-            & $helper @dispatchArguments
-            $LASTEXITCODE | Should -Be 2
-        } finally {
-            $env:CAPSULENV_ROOT = $oldRoot
+        $location = [pscustomobject]@{
+            Selector = 'user/tool'
+            Name = 'tool'
+            AppRoot = $appRoot
+            CurrentRoot = (Join-Path $appRoot 'current')
         }
+
+        { & $script:Module { param($Location) Resolve-CapsulenvLegacyScoopVersionRoot -Location $Location } $location } |
+            Should -Throw '*Cannot prove the active version*upstream*'
     }
 
-    It 'keeps explicit User reset strict when deferred mode is not requested' {
-        Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
-        Mock Get-CapsulenvScoopUserResetScriptPath { 'mock-user-reset.ps1' } -ModuleName Capsulenv
-        Mock Install-CapsulenvTemporaryScoopCommand {
-            [pscustomobject]@{ Command = 'capsulenv-user-reset-test'; Path = (Join-Path $TestDrive 'temporary-reset.ps1') }
-        } -ModuleName Capsulenv
-        Mock Invoke-CapsulenvScoopCommand { 1 } -ModuleName Capsulenv
-        Mock Test-Path { $false } -ModuleName Capsulenv
-
-        { & (Get-Module Capsulenv) { Invoke-CapsulenvUserScoopReset -Apps @('librewolf') } } |
-            Should -Throw '*failed with exit code 1*'
-        Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $AllowFailure -and $Arguments -contains ':strict' -and $Arguments -notcontains '-DeferRunningApps'
-        }
+    It 'rejects legacy selectors that could escape the Scoop app root' {
+        { & $script:Module { Get-CapsulenvLegacyScoopLocation -Selector 'user/..' } } |
+            Should -Throw '*Invalid installed app name*'
     }
 
-    It 'keeps ShellOnly on the non-persistent portable reset helper' {
-        Mock Invoke-CapsulenvPortableScoopReset {} -ModuleName Capsulenv
-        Mock Invoke-CapsulenvUserScoopReset { throw 'User reset helper must not run in ShellOnly' } -ModuleName Capsulenv
+    It 'does not trust a legacy current link whose target is outside the app root' {
+        $appRoot = Join-Path $TestDrive 'outside-target/apps/tool'
+        $outside = Join-Path $TestDrive 'outside-target/foreign/1.0.0'
+        New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $outside -Force | Out-Null
+        '{}' | Set-Content -LiteralPath (Join-Path $outside 'manifest.json') -Encoding UTF8
+        '{}' | Set-Content -LiteralPath (Join-Path $outside 'install.json') -Encoding UTF8
+        $location = [pscustomobject]@{
+            Selector = 'user/tool'
+            Name = 'tool'
+            AppRoot = $appRoot
+            CurrentRoot = (Join-Path $appRoot 'current')
+        }
 
-        Reset-CapsulenvScoop -Apps @('*') -IntegrationMode ShellOnly -Quiet | Should -BeTrue
+        Mock Get-CapsulenvReparseTarget { $outside } -ModuleName Capsulenv -ParameterFilter {
+            $Path -eq $location.CurrentRoot
+        }
+        Mock Get-CapsulenvReparseTarget { $null } -ModuleName Capsulenv -ParameterFilter {
+            $Path -ne $location.CurrentRoot
+        }
 
-        Should -Invoke Invoke-CapsulenvPortableScoopReset -ModuleName Capsulenv -Times 1 -Exactly
-        Should -Invoke Invoke-CapsulenvUserScoopReset -ModuleName Capsulenv -Times 0 -Exactly
+        { & $script:Module { param($Location) Resolve-CapsulenvLegacyScoopVersionRoot -Location $Location } $location } |
+            Should -Throw '*No installed version metadata*'
     }
 }

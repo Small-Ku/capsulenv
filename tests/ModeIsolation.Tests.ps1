@@ -10,12 +10,9 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:DoctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
         $script:ProjectCacheSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/36-ProjectCacheRegistry.ps1') -Raw
         $script:BootstrapSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/41-ScoopBootstrap.ps1') -Raw
-        $script:PortableResetSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-portable-reset.ps1') -Raw
-        $script:UserResetSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-reset.ps1') -Raw
-        $script:ResetGuardSource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-process-guard.ps1') -Raw
-        $script:ScoopGatewaySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-gateway.ps1') -Raw
-        $script:ScoopShellOnlyPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-shellonly-policy.ps1') -Raw
-        $script:ScoopUserPolicySource = Get-Content -LiteralPath (Join-Path $script:Root 'module-runtime/scoop-capsulenv-user-policy.ps1') -Raw
+        $script:PackageExecutorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/44-PackageExecutor.ps1') -Raw
+        $script:PackageHostIntegrationSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/45-PackageHostIntegration.ps1') -Raw
+        $script:LegacyProjectionSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/46-LegacyScoopProjection.ps1') -Raw
         . (Join-Path $script:Root 'src/05-DataFile.ps1')
     }
 
@@ -26,58 +23,32 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $runner | Should -Not -Match '\.Smoke\.ps1'
     }
 
-    It 'keeps ShellOnly Scoop repair capsule-owned and reserves user integration for User mode' {
-        $script:PortableResetSource | Should -Match 'link_current'
-        $script:PortableResetSource | Should -Match 'create_shims'
-        $script:PortableResetSource | Should -Match 'persist_data'
-        $script:PortableResetSource | Should -Match 'function Add-Path'
-        $script:PortableResetSource | Should -Match '(?s)SetEnvironmentVariable\(\s*\$TargetEnvVar,.*?''Process'''
-        $script:PortableResetSource | Should -Not -Match '(?s)SetEnvironmentVariable\([^)]*?,\s*''User''\s*\)'
-        $script:PortableResetSource | Should -Not -Match '(?s)SetEnvironmentVariable\([^)]*?,\s*''Machine''\s*\)'
-        $script:PortableResetSource | Should -Not -Match 'create_startmenu_shortcuts'
-        $script:PortableResetSource | Should -Not -Match '\benv_add_path\b'
-        $script:PortableResetSource | Should -Not -Match '\benv_set\b'
-        $script:PortableResetSource | Should -Match 'Test-CapsulenvResetHasBlockingProcesses'
-        $script:ResetGuardSource | Should -Match '\$_.Id -ne \$PID'
-        $script:ResetGuardSource | Should -Match 'test_running_process \$App \$Global'
-        $script:UserResetSource | Should -Match 'Test-CapsulenvResetHasBlockingProcesses'
-        $script:UserResetSource.Contains("':defer' { `$deferRunningApps = `$true }") | Should -BeTrue
-        $script:UserResetSource | Should -Match '\$deferred = \$true'
-        $script:UserResetSource | Should -Match 'if \(\$deferred\) \{ exit 2 \}'
-        $script:UserResetSource | Should -Match 'scoop-capsulenv-user-policy.ps1'
-        $script:UserResetSource | Should -Match 'create_startmenu_shortcuts'
-        $script:UserResetSource | Should -Match 'env_add_path'
-        $script:UserResetSource | Should -Match 'env_set'
-        $script:ScoopSource | Should -Match 'Invoke-CapsulenvUserScoopReset'
-        $script:ScoopSource | Should -Match '-DeferRunningApps:\(\$IntegrationMode -eq ''User''\)'
-        $script:ScoopSource | Should -Match "IntegrationMode -eq 'ShellOnly'"
-        $script:ScoopSource | Should -Match 'Invoke-CapsulenvPortableScoopReset'
-        $script:ScoopSource | Should -Match "IntegrationMode -eq 'User'"
-        $script:ScoopSource | Should -Match 'Invoke-CapsulenvConfiguredHookReplay'
-        $script:ScoopSource | Should -Match 'lifecycle hook replay is disabled in ShellOnly mode'
-        $script:ScoopGatewaySource | Should -Match "'install', 'update', 'uninstall', 'reset', 'shim'"
-        $script:ScoopGatewaySource | Should -Match "'install', 'download', 'virustotal', 'import'"
-        $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop update'
-        $script:ScoopGatewaySource | Should -Match 'could not guard its nested Scoop install'
-        $script:ScoopGatewaySource | Should -Match "scoop-capsulenv-user-policy\.ps1"
-        $script:ScoopGatewaySource | Should -Match "integrationMode -eq 'User'"
-        $script:ScoopUserPolicySource | Should -Match "'Capsulenv Apps'"
-        $script:ScoopUserPolicySource | Should -Not -Match "'Scoop Apps'"
-        $script:ScoopGatewaySource.Contains('$script:CapsulenvGatewayPath = [System.IO.Path]::GetFullPath($PSCommandPath)') | Should -BeTrue
-        $script:ScoopGatewaySource.Contains('$gatewayPath = $script:CapsulenvGatewayPath') | Should -BeTrue
-        $script:ScoopGatewaySource.Contains("`$ps1Text = ('# {0}{1}' -f `$gatewayPath") | Should -BeTrue
-        $script:ScoopGatewaySource.Contains("`$cmdText = ('@rem {0}{1}' -f `$gatewayPath") | Should -BeTrue
-        $script:ScoopShellOnlyPolicySource.Contains("[Environment]::SetEnvironmentVariable(`$Name, `$Value, 'Process')") | Should -BeTrue
-        $script:ScoopShellOnlyPolicySource | Should -Not -Match "SetEnvironmentVariable\(.*?'User'"
-        $script:ScoopShellOnlyPolicySource | Should -Not -Match "SetEnvironmentVariable\(.*?'Machine'"
-        $script:ScoopShellOnlyPolicySource | Should -Match 'function create_startmenu_shortcuts'
-        $script:ScoopShellOnlyPolicySource | Should -Match 'skipping Scoop Start Menu shortcuts'
-        $script:ScoopShellOnlyPolicySource | Should -Match "'Block'"
+    It 'keeps package repair bounded and reserves explicit host integration for User mode' {
+        $script:LegacyProjectionSource | Should -Match 'Repair-CapsulenvLegacyPersistProjection'
+        $script:LegacyProjectionSource | Should -Match 'Cannot prove the active version'
+        $script:LegacyProjectionSource | Should -Match 'Refusing to replace a normal directory'
+        $script:LegacyProjectionSource | Should -Match 'Repair-CapsulenvPackageFileProjection'
+        $script:LegacyProjectionSource | Should -Not -Match 'apps\scoop\current\lib'
+        $script:LegacyProjectionSource | Should -Not -Match 'shortcut_folder'
+        $script:ScoopSource | Should -Match 'Repair-CapsulenvInstalledAppProjections'
+        $script:ScoopSource | Should -Not -Match 'Invoke-CapsulenvPortableScoopReset|Invoke-CapsulenvUserScoopReset'
+        $script:ScoopSource | Should -Not -Match 'Invoke-CapsulenvConfiguredHookReplay'
+        $script:PackageExecutorSource | Should -Match 'PortableSafe'
+        $script:PackageExecutorSource | Should -Match 'Get-CapsulenvPackageShimRoot'
+        $script:PackageHostIntegrationSource | Should -Match "Get-CapsulenvInstallMode\) -ne 'User'"
+        $script:PackageHostIntegrationSource | Should -Match "'capsule/'"
+        $script:PackageHostIntegrationSource | Should -Match "'app'"
+        $script:PackageHostIntegrationSource | Should -Match "'run'"
+        $runtimeAdapters = @(Get-ChildItem -LiteralPath (Join-Path $script:Root 'module-runtime') -Filter 'scoop-capsulenv-*' -File -ErrorAction SilentlyContinue)
+        $runtimeAdapters.Count | Should -Be 0
     }
 
     It 'puts local and portable-global Scoop shims on only the Capsulenv environment plan' {
         $script:EnvironmentSource.Contains('(Join-Path $variables.SCOOP ''shims'')') | Should -BeTrue
         $script:EnvironmentSource.Contains('(Join-Path $variables.SCOOP_GLOBAL ''shims'')') | Should -BeTrue
+        $script:EnvironmentSource | Should -Match 'Get-CapsulenvPackageShimRoot'
+        $script:BootstrapSource | Should -Match '\.\.\\apps\\scoop\\current\\bin\\scoop\.ps1'
+        $script:BootstrapSource | Should -Not -Match 'scoop-capsulenv-gateway|scoop-capsulenv-shellonly-policy'
         $script:EnvironmentSource | Should -Match 'SetEnvironmentVariable\(\$name, \[string\]\$plan\.Variables\[\$name\], ''Process''\)' 
         $script:EnvironmentSource | Should -Match 'Sync-CapsulenvUserEnvironment'
         $script:EnvironmentSource | Should -Match 'ManagedPathEntries'
@@ -86,14 +57,10 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'Get-CapsulenvScoopPathEnvironmentVariable'
         $script:EnvironmentSource | Should -Match "'ScoopRoot', 'ScoopGlobalRoot'"
         $script:EnvironmentSource | Should -Match 'SCOOP_CACHE'
-        $script:EnvironmentSource | Should -Match 'ShellOnlyLifecyclePolicy \| ConvertTo-Json -Compress'
         $script:EnvironmentSource.Contains('[string]$IntegrationMode = (Get-CapsulenvInstallMode)') | Should -BeTrue
         $script:EnvironmentSource.Contains("SetEnvironmentVariable('CAPSULENV_MODE', `$IntegrationMode, 'Process')") | Should -BeTrue
         $script:EnvironmentSource.Contains("if ([string]`$env:CAPSULENV_MODE -eq 'User')") | Should -BeTrue
-        $script:EnvironmentSource | Should -Match "CAPSULENV_SCOOP_LIFECYCLE_POLICY.*'Process'"
-        $script:BootstrapSource.Contains('set "CAPSULENV_SCOOP_GATEWAY=%CAPSULENV_ROOT%\modules\Capsulenv\runtime\scoop-capsulenv-gateway.ps1"') | Should -BeTrue
         $script:BootstrapSource.Contains('set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"') | Should -BeTrue
-        $script:BootstrapSource.Contains("Join-Path `$env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'") | Should -BeTrue
         $script:BootstrapSource | Should -Not -Match 'where pwsh\.exe'
         $script:BootstrapSource | Should -Match 'ReadAllText\(\$cmdPath\)'
     }
@@ -132,7 +99,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:BitwardenSource | Should -Match 'function Restore-CapsulenvGitOpenSshGlobal'
     }
 
-    It 'binds Capsulenv browser commands to Scoop-persisted profiles' {
+    It 'binds Capsulenv browser commands to persisted runtime profiles' {
         $config = Import-CapsulenvPowerShellDataFile -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1')
         $config.UserIntegration.DefaultBrowser | Should -Be ''
         $config.Browsers.Firefox.App | Should -Be 'firefox'

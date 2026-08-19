@@ -55,6 +55,13 @@ function Get-CapsulenvEnvironmentPlan {
     if (-not ($pathEntries -contains $packageShims)) {
         $pathEntries.Add($packageShims)
     }
+    # PowerShell resolves the genuine upstream dispatcher before Scoop's shim
+    # directory. `scoop` therefore means upstream Scoop rather than a Capsulenv
+    # command gateway. scoop.cmd remains only a cmd.exe compatibility trampoline.
+    $scoopBin = Join-Path $variables.SCOOP 'apps\scoop\current\bin'
+    if (-not ($pathEntries -contains $scoopBin)) {
+        $pathEntries.Add($scoopBin)
+    }
     foreach ($scoopShims in @(
         (Join-Path $variables.SCOOP 'shims'),
         (Join-Path $variables.SCOOP_GLOBAL 'shims')
@@ -224,11 +231,9 @@ function Set-CapsulenvSessionEnvironment {
     foreach ($name in $plan.Variables.Keys) {
         [Environment]::SetEnvironmentVariable($name, [string]$plan.Variables[$name], 'Process')
     }
-    # Process-only control plane for the capsule-owned Scoop shim. These are
-    # intentionally not part of the User environment plan or reversible ledger.
+    # Session mode remains process-only; package safety is selected by the
+    # Capsulenv command surface rather than by rewriting Scoop lifecycle code.
     [Environment]::SetEnvironmentVariable('CAPSULENV_MODE', $IntegrationMode, 'Process')
-    $scoopLifecyclePolicyJson = $configuration.Scoop.ShellOnlyLifecyclePolicy | ConvertTo-Json -Compress
-    [Environment]::SetEnvironmentVariable('CAPSULENV_SCOOP_LIFECYCLE_POLICY', $scoopLifecyclePolicyJson, 'Process')
     $sessionPath = Remove-CapsulenvPathEntries `
         -ExistingPath $env:PATH `
         -Remove $foreignScoopShimPaths
@@ -760,6 +765,9 @@ function Install-CapsulenvUserEnvironment {
     $relocationContext = if ($rehydrationRequired) { Get-CapsulenvRelocationContext } else { $null }
     $hadSessionGitIntent = Test-CapsulenvGitOpenSshSessionConfigured
     [void](Sync-CapsulenvUserEnvironment -RelocationContext $relocationContext)
+    if (-not $rehydrationRequired) {
+        Sync-CapsulenvPackageStartMenuShortcuts
+    }
     Initialize-CapsulenvGitOpenSshSession
     if ($hadSessionGitIntent -and -not (Test-Path -LiteralPath (Get-CapsulenvGitConfigBackupPath) -PathType Leaf)) {
         Write-CapsulenvMessage -Level Warning -Message 'Bitwarden Git/OpenSSH was configured only for ShellOnly sessions. User mode does not silently promote optional Git integration; run `capsulenv.cmd bitwarden configure-git` if you want persistent User Git configuration.'

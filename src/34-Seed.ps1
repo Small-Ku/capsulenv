@@ -526,10 +526,8 @@ function Copy-CapsulenvShellOnlyScoopSeedSnapshot {
 
     $readyApps = @($plan.Apps | Where-Object { $_.Status -eq 'Ready' })
     if ($readyApps.Count -gt 0) {
-        # The final portable reset touches every installed app so it can rebuild a
-        # coherent local/global link set.  Fail before copying anything when an
-        # existing or planned global app would make that reset require elevation.
-        Assert-CapsulenvGlobalScoopResetAccess
+        # Copying a foreign/global Scoop snapshot can still require elevation to
+        # read its source state. The later projection repair itself is capsule-only.
         $readyGlobalApps = @($readyApps | Where-Object { $_.Global })
         if ($readyGlobalApps.Count -gt 0 -and -not (Test-CapsulenvAdministrator)) {
             $summary = @($readyGlobalApps | ForEach-Object { $_.Name } | Sort-Object -Unique | Select-Object -First 8) -join ', '
@@ -576,10 +574,10 @@ function Copy-CapsulenvShellOnlyScoopSeedSnapshot {
     }
 
     if ($copiedApps.Count -gt 0) {
-        # Rebuild every installed portable app in one pass so the helper can retain
-        # its exact local/global scope tuples and replace copied host current/persist
-        # links without executing package lifecycle hooks or user integration.
-        [void](Reset-CapsulenvScoop -Apps @('*') -IntegrationMode ShellOnly -Quiet)
+        # Reconcile every copied legacy app in one pass, retaining exact local/global
+        # scope while rebuilding only provable current/persist projections. No
+        # package lifecycle hook or host shortcut/environment integration executes.
+        [void](Repair-CapsulenvInstalledAppProjections -Apps @('*') -IntegrationMode ShellOnly)
     }
 
     return [pscustomobject]@{
@@ -618,7 +616,8 @@ function Seed-CapsulenvScoopInventory {
         if ($mode -eq 'User') {
             [void](Set-CapsulenvSessionEnvironment)
             [void](Initialize-CapsulenvScoopBootstrap)
-            [void](Invoke-CapsulenvScoopCommand -Arguments @('import', $destination) -UseGateway)
+            Write-CapsulenvMessage -Level Warning -Message 'Applying a Scoop inventory delegates installation to unmodified upstream Scoop. Package lifecycle code and host mutation are outside PortableSafe guarantees.'
+            [void](Invoke-CapsulenvScoopCommand -Arguments @('import', $destination))
             $applyStrategy = 'NativeImport'
         } else {
             if ($null -eq $hostScoop) {

@@ -74,7 +74,7 @@ function Split-CapsulenvScoopAppSelector {
         $name = $Selector.Substring($separator + 1)
     }
 
-    if ($name -match '[\\/:*?"<>|]') {
+    if (-not (Test-CapsulenvPortableFileNameComponent -Value $name)) {
         throw "Invalid installed app name '$name'."
     }
 

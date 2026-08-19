@@ -374,6 +374,7 @@ function Get-CapsulenvStatus {
 
     $context = Get-CapsulenvContext
     $installedApps = @(Get-CapsulenvInstalledScoopApps)
+    $portableSafePackages = @(Get-CapsulenvInstalledPackageStates)
     $projectLinks = @(Read-CapsulenvProjectCacheRegistry)
     $toolWorkspaces = @(Read-CapsulenvToolWorkspaceRegistry)
     $offline = Get-CapsulenvOfflineReadiness
@@ -384,6 +385,7 @@ function Get-CapsulenvStatus {
         Root = $context.Root
         Mode = Get-CapsulenvInstallMode
         PersistentUserIntegration = ((Get-CapsulenvUserIntegrationMode) -eq 'User')
+        PortableSafePackages = $portableSafePackages.Count
         ScoopApps = $installedApps.Count
         Relocation = if ($relocationRequired) { 'Pending' } else { 'Ready' }
         ProjectLinks = $projectLinks.Count

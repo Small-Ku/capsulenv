@@ -113,7 +113,8 @@ Describe 'Capsulenv static and relocation' {
         $analyzerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Analyze-Capsulenv.ps1'))
         foreach ($requiredBoundaryPolicy in @(
             'ControlBootstrapCommands',
-            'ScoopGatewayBootstrapViolations',
+            'StockScoopBoundaryViolations',
+            'ScoopRuntimeAdapterViolations',
             'Import-PowerShellDataFile',
             'Control-host bootstrap must remain PowerShell language/.NET-only'
         )) {
@@ -181,8 +182,11 @@ Describe 'Capsulenv static and relocation' {
             'Initialize-Capsulenv',
             'Invoke-CapsulenvDoctor',
             'Invoke-CapsulenvScoopRehydrate',
-            'Invoke-CapsulenvScoopHookReplay',
             'Reset-CapsulenvScoop',
+            'Repair-CapsulenvInstalledAppProjections',
+            'Get-CapsulenvPackageManifestPlan',
+            'Get-CapsulenvPackageInstallPlan',
+            'Install-CapsulenvPortablePackage',
             'Test-CapsulenvScoopRehydrationRequired',
             'Get-CapsulenvRelocationContext',
             'Invoke-CapsulenvPersistRelocationRepair',
@@ -409,7 +413,7 @@ Describe 'Capsulenv static and relocation' {
             $tempConfigRoot = Join-Path $tempRoot 'config'
             [void](New-Item -ItemType Directory -Path $tempConfigRoot -Force)
             Copy-Item -LiteralPath (Join-Path (Join-Path $root 'config') 'capsulenv.psd1') -Destination $tempConfigRoot
-'@{ Scoop = @{ ReplayHooks = @{}; RelocationRepairs = @{}; ShellOnlyLifecyclePolicy = @{} } }' |
+'@{ Scoop = @{ RelocationRepairs = @{} } }' |
                 Set-Content -LiteralPath (Join-Path $tempConfigRoot 'capsulenv.local.psd1') -Encoding UTF8
 
             $replacementConfig = & $module {
@@ -418,14 +422,8 @@ Describe 'Capsulenv static and relocation' {
                 Get-CapsulenvConfiguration -Refresh
             } $tempRoot
             Assert-CapsulenvTest `
-                -Condition ($replacementConfig.Scoop.ReplayHooks.Count -eq 0) `
-                -Message 'Local ReplayHooks must replace the default allow-list as one unit.'
-            Assert-CapsulenvTest `
                 -Condition ($replacementConfig.Scoop.RelocationRepairs.Count -eq 0) `
                 -Message 'Local RelocationRepairs must replace the default allow-list as one unit.'
-            Assert-CapsulenvTest `
-                -Condition ($replacementConfig.Scoop.ShellOnlyLifecyclePolicy.Count -eq 0) `
-                -Message 'Local ShellOnlyLifecyclePolicy must replace the default allow-list as one unit.'
 
             [void](New-Item -ItemType Directory -Path (Join-Path $tempRoot '.capsulenv') -Force)
             '{}' | Set-Content -LiteralPath (Join-Path (Join-Path $tempRoot '.capsulenv') 'scoop-rehydration.json') -Encoding UTF8
@@ -440,7 +438,7 @@ Describe 'Capsulenv static and relocation' {
                 Get-Content -LiteralPath (Get-CapsulenvRehydrationStatePath) -Raw | ConvertFrom-Json
             }
             Assert-CapsulenvTest `
-                -Condition ([int]$savedState.SchemaVersion -eq 3) `
+                -Condition ([int]$savedState.SchemaVersion -eq 4) `
                 -Message 'Rehydration state must support replacing an existing state file atomically.'
             $rehydrationRollbacks = @(Get-ChildItem -LiteralPath (Join-Path $tempRoot '.capsulenv') -Filter '.capsulenv-rehydration-*.rollback' -ErrorAction SilentlyContinue)
             Assert-CapsulenvTest `
@@ -448,12 +446,12 @@ Describe 'Capsulenv static and relocation' {
                 -Message 'Successful rehydration state replacement must not leave rollback files behind.'
 
             $pendingRehydration = & $module {
-                Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null -PendingScoopReset $true
+                Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null -PendingProjectionRepair $true
                 Test-CapsulenvScoopRehydrationRequired
             }
             Assert-CapsulenvTest `
                 -Condition $pendingRehydration `
-                -Message 'A deferred User-mode Scoop reset must keep rehydration pending for the next activation.'
+                -Message 'A deferred legacy projection repair must keep rehydration pending for the next activation.'
         } finally {
             & $module { param($OriginalRoot) [void](Initialize-CapsulenvContext -Root $OriginalRoot) } $root
             if (Test-Path -LiteralPath $tempRoot) {
@@ -509,7 +507,6 @@ Describe 'Capsulenv static and relocation' {
             @'
         @{
             Scoop = @{
-                ReplayHooks = @{}
                 RelocationRepairs = @{
                     'test-app' = @(
                         @{ Path = 'settings.json'; Format = 'json'; MaxBytes = 1048576 }
@@ -568,9 +565,6 @@ Describe 'Capsulenv static and relocation' {
             -Condition (-not $config.Bitwarden.ContainsKey('AppDataDir')) `
             -Message 'Bitwarden app-data must be owned by Scoop persist.'
         Assert-CapsulenvTest `
-            -Condition (-not $config.Scoop.ReplayHooks.ContainsKey('bitwarden')) `
-            -Message 'Bitwarden pre_install must not be replayed automatically.'
-        Assert-CapsulenvTest `
             -Condition (-not $config.Scoop.RelocationRepairs.ContainsKey('bitwarden')) `
             -Message 'Bitwarden app state must not receive generic path replacement by default.'
         foreach ($browserApp in @('firefox', 'firefox-esr', 'zen-browser', 'librewolf')) {
@@ -581,17 +575,6 @@ Describe 'Capsulenv static and relocation' {
         Assert-CapsulenvTest `
             -Condition ($config.Bitwarden.Authorization -in @('always', 'never', 'remember-until-lock')) `
             -Message 'Bitwarden.Authorization is invalid.'
-        Assert-CapsulenvTest `
-            -Condition (-not $config.Scoop.ReplayHooks.ContainsKey('zen')) `
-            -Message 'Ambiguous app aliases must not receive automatic lifecycle replay.'
-        Assert-CapsulenvTest `
-            -Condition ($config.Scoop.ShellOnlyLifecyclePolicy.Count -gt 0) `
-            -Message 'Default ShellOnly lifecycle policy must contain reviewed content fingerprints.'
-        foreach ($policyAction in @($config.Scoop.ShellOnlyLifecyclePolicy.Values)) {
-            Assert-CapsulenvTest `
-                -Condition ([string]$policyAction -in @('Allow', 'Skip')) `
-                -Message "Unexpected ShellOnly lifecycle policy action: $policyAction"
-        }
         foreach ($browser in @('Firefox', 'FirefoxESR', 'Zen', 'LibreWolf')) {
             Assert-CapsulenvTest `
                 -Condition (-not $config.Browsers[$browser].ContainsKey('ProfileDir')) `
@@ -760,45 +743,17 @@ Describe 'Capsulenv static and relocation' {
             -Condition ($quotedArgument -eq '"C:\Path With Space\\"') `
             -Message "Native process argument quoting was incorrect: $quotedArgument"
 
-        $replayPath = Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-replay.ps1'
-        $replayText = [System.IO.File]::ReadAllText($replayPath)
-        foreach ($requiredText in @('installed_manifest', 'install_info', 'Invoke-HookScript', 'pre_install', 'post_install')) {
-            Assert-CapsulenvTest `
-                -Condition $replayText.Contains($requiredText) `
-                -Message "Lifecycle runner is missing required installed-manifest behavior: $requiredText"
-        }
+        $runtimeAdapters = @(Get-ChildItem -LiteralPath (Join-Path $root 'module-runtime') -Filter 'scoop-capsulenv-*' -File -Recurse -ErrorAction SilentlyContinue)
         Assert-CapsulenvTest `
-            -Condition (-not $replayText.Contains('scoop install')) `
-            -Message 'Lifecycle replay must not reinstall or download applications.'
-
-
-        # Scoop dispatches custom-command arguments by collecting them into a string[]
-        # and array-splatting that array into scoop-<command>.ps1. Array splatting does
-        # not reinterpret '-Hook' as a named parameter, so the replay runner must use
-        # positional binding for Hook and Apps.
-        $scoopSource = [System.IO.File]::ReadAllText(
-            (Join-Path (Join-Path $root 'src') '40-Scoop.ps1')
-        )
+            -Condition ($runtimeAdapters.Count -eq 0) `
+            -Message 'Runtime must not contain Scoop source-rewriting adapters.'
+        $legacyProjectionSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '46-LegacyScoopProjection.ps1'))
         Assert-CapsulenvTest `
-            -Condition $scoopSource.Contains('$arguments = @($temporaryCommand.Command, $Hook) + @($Apps)') `
-            -Message 'Scoop lifecycle replay must pass Hook positionally through the custom-command dispatcher.'
-        $legacyNamedHookCall = @'
-        @($temporaryCommand.Command, '-Hook', $Hook)
-'@
+            -Condition (-not $legacyProjectionSource.Contains('apps\scoop\current\lib')) `
+            -Message 'Legacy projection repair must not load Scoop implementation libraries.'
         Assert-CapsulenvTest `
-            -Condition (-not $scoopSource.Contains($legacyNamedHookCall.Trim())) `
-            -Message 'Scoop custom-command array splatting cannot forward -Hook as a named parameter.'
-
-        $dispatchError = $null
-        try {
-            [string[]]$scoopStyleArguments = @('post_install', 'firefox')
-            & $replayPath @scoopStyleArguments
-        } catch {
-            $dispatchError = $_.Exception.Message
-        }
-        Assert-CapsulenvTest `
-            -Condition ($null -ne $dispatchError -and $dispatchError.Contains('Required Scoop library was not found')) `
-            -Message "Lifecycle replay positional binding did not survive Scoop-style array splatting: $dispatchError"
+            -Condition (-not $legacyProjectionSource.Contains('shortcut_folder')) `
+            -Message 'Legacy projection repair must not override Scoop shortcut semantics.'
 
         $relocationSource = @(
             [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '45-Relocation.ps1')),
@@ -833,13 +788,11 @@ Describe 'Capsulenv static and relocation' {
                 -Message "Tool relocation still hard-codes a Scoop app current path: $legacyToolPath"
         }
 
-        $portableResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-portable-reset.ps1'))
-        $userResetSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-user-reset.ps1'))
-        $replaySource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'scoop-capsulenv-replay.ps1'))
-        foreach ($scopedSource in @($portableResetSource, $userResetSource, $replaySource)) {
+        $projectionSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'src') '46-LegacyScoopProjection.ps1'))
+        foreach ($requiredProjectionBehavior in @('Resolve-CapsulenvLegacyScoopVersionRoot', 'Repair-CapsulenvLegacyPersistProjection', 'Refusing to replace a normal directory', 'Run upstream ''scoop reset')) {
             Assert-CapsulenvTest `
-                -Condition $scopedSource.Contains("'^(?i:(user|global))/(.+)$'") `
-                -Message 'Scoop reset/replay helper is missing user/global app-selector parsing.'
+                -Condition $projectionSource.Contains($requiredProjectionBehavior) `
+                -Message "Legacy Scoop projection is missing fail-closed behavior: $requiredProjectionBehavior"
         }
 
         $bitwardenSource = [System.IO.File]::ReadAllText(
@@ -860,8 +813,8 @@ Describe 'Capsulenv static and relocation' {
             -Condition $bitwardenSource.Contains('Get-CapsulenvJsonTopLevelProperties') `
             -Message 'Bitwarden setting patch must locate only top-level JSON properties.'
         Assert-CapsulenvTest `
-            -Condition $bitwardenSource.Contains('Reset-CapsulenvScoop -Apps') `
-            -Message 'Bitwarden setup must let Scoop rebuild its persist link before patching settings.'
+            -Condition $bitwardenSource.Contains('Repair-CapsulenvInstalledAppProjections -Apps') `
+            -Message 'Bitwarden setup must reconcile the package persist projection before patching settings.'
         Assert-CapsulenvTest `
             -Condition (-not $bitwardenSource.Contains('ConvertTo-Json -Depth 100')) `
             -Message 'Bitwarden state must not be wholesale reserialized.'
@@ -908,7 +861,7 @@ Describe 'Capsulenv static and relocation' {
             Assert-CapsulenvTest `
                 -Condition (Test-Path -LiteralPath (Join-Path $installRoot 'modules\Capsulenv\Capsulenv.psd1') -PathType Leaf) `
                 -Message 'Installer did not deploy the prebuilt module.'
-            foreach ($mutableDirectory in @('scoop', 'scoop-global', 'cache', 'tool-data', 'project-cache', 'workspace', '.capsulenv')) {
+            foreach ($mutableDirectory in @('scoop', 'scoop-global', 'packages', 'package-persist', 'shims', 'cache', 'tool-data', 'project-cache', 'workspace', '.capsulenv')) {
                 Assert-CapsulenvTest `
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot $mutableDirectory))) `
                     -Message "Deployment unexpectedly created mutable runtime state: $mutableDirectory"

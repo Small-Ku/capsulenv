@@ -199,12 +199,6 @@ function Invoke-CapsulenvDoctor {
         -Importance Optional `
         -Detail $persistRoot))
 
-    $runner = Get-CapsulenvScoopReplayScriptPath
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Lifecycle replay runner' `
-        -Passed (Test-Path -LiteralPath $runner -PathType Leaf) `
-        -Detail $runner))
-
     $rehydrationRequired = Test-CapsulenvScoopRehydrationRequired
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Relocation rehydration' `
@@ -468,14 +462,19 @@ function Initialize-CapsulenvIntegrations {
     [void](Initialize-CapsulenvScoopBootstrap)
     Repair-CapsulenvPackageProjections
     $configuration = Get-CapsulenvConfiguration
+    $didRehydrate = $false
     if (
         $configuration.Scoop.RehydrateOnRelocation -and
         (Test-CapsulenvScoopRehydrationRequired)
     ) {
-        Write-CapsulenvMessage -Level Info -Message 'Portable Scoop root or host changed; rehydrating installed apps...'
+        Write-CapsulenvMessage -Level Info -Message 'Capsule root or host changed; rehydrating installed package projections...'
         Invoke-CapsulenvScoopRehydrate -IntegrationMode $IntegrationMode
+        $didRehydrate = $true
     }
     [void](Repair-CapsulenvProjectCacheLinks -Quiet)
+    if ($IntegrationMode -eq 'User' -and -not $didRehydrate) {
+        Sync-CapsulenvPackageStartMenuShortcuts
+    }
     Initialize-CapsulenvBitwarden
     Initialize-CapsulenvSingBox
 }
