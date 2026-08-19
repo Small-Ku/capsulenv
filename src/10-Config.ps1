@@ -116,11 +116,23 @@ function Assert-CapsulenvConfiguration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][hashtable]$Configuration)
 
-    foreach ($sectionName in @('Scoop', 'Environment', 'ToolStorage', 'Bitwarden', 'SingBox', 'Browsers', 'UserIntegration')) {
+    foreach ($sectionName in @('Packages', 'Scoop', 'Environment', 'ToolStorage', 'Bitwarden', 'SingBox', 'Browsers', 'UserIntegration')) {
         if (-not $Configuration.ContainsKey($sectionName) -or $Configuration[$sectionName] -isnot [hashtable]) {
             throw "Configuration section is missing or invalid: $sectionName"
         }
     }
+    foreach ($packagePathName in @('Root', 'Shims', 'Persist', 'Cache')) {
+        if (
+            -not $Configuration.Packages.ContainsKey($packagePathName) -or
+            [string]::IsNullOrWhiteSpace([string]$Configuration.Packages[$packagePathName])
+        ) {
+            throw "Packages configuration value is missing: $packagePathName"
+        }
+        Assert-CapsulenvPortableStoragePath `
+            -Name ("Packages.{0}" -f $packagePathName) `
+            -Path ([string]$Configuration.Packages[$packagePathName])
+    }
+
     if (
         -not $Configuration.Scoop.ContainsKey('Root') -or
         [string]::IsNullOrWhiteSpace([string]$Configuration.Scoop.Root)
@@ -594,7 +606,7 @@ function Import-CapsulenvConfiguration {
     if (-not $configuration.ContainsKey('SchemaVersion')) {
         throw 'Configuration is missing SchemaVersion.'
     }
-    if ([int]$configuration.SchemaVersion -ne 11) {
+    if ([int]$configuration.SchemaVersion -ne 12) {
         throw "Unsupported configuration schema: $($configuration.SchemaVersion)"
     }
     Assert-CapsulenvConfiguration -Configuration $configuration

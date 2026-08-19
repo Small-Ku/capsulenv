@@ -1,5 +1,14 @@
 @{
-    SchemaVersion = 11
+    SchemaVersion = 12
+
+    Packages = @{
+        # Capsulenv-owned declarative packages. These paths are capsule-local
+        # and deliberately separate from stock Scoop's app/shim ownership.
+        Root = 'packages'
+        Shims = 'shims'
+        Persist = 'package-persist'
+        Cache = 'cache\packages'
+    }
 
     Scoop = @{
         Root = 'scoop'
