@@ -62,7 +62,7 @@ function Split-CapsulenvScoopAppSelector {
     $separator = $Selector.IndexOf('/')
     if ($separator -ge 0) {
         if ($separator -eq 0 -or $separator -eq ($Selector.Length - 1) -or $Selector.IndexOf('/', $separator + 1) -ge 0) {
-            throw "Invalid Scoop app selector '$Selector'. Use <app>, capsule/<app>, user/<app>, or global/<app>."
+            throw "Invalid installed app selector '$Selector'. Use <app>, capsule/<app>, user/<app>, or global/<app>."
         }
         $scopeToken = $Selector.Substring(0, $separator).ToLowerInvariant()
         switch ($scopeToken) {
@@ -97,9 +97,22 @@ function Get-CapsulenvInstalledScoopApp {
 
     foreach ($scope in $scopes) {
         $rootRecord = Get-CapsulenvScoopAppRootRecord -Scope $scope
-        $current = Join-Path (Join-Path $rootRecord.AppsRoot $parsed.Name) 'current'
-        if (-not (Test-Path -LiteralPath $current -PathType Container)) {
-            continue
+        $packageState = $null
+        if ($scope -eq 'Capsule') {
+            $packageState = Get-CapsulenvInstalledPackageState -Name $parsed.Name -AllowMissing
+            if ($null -eq $packageState) {
+                continue
+            }
+            $current = [string]$packageState.CurrentRoot
+            $currentTarget = Get-CapsulenvReparseTarget -Path $current
+            if ($null -eq $currentTarget -or -not (Test-CapsulenvSamePath -Left $currentTarget -Right ([string]$packageState.InstallRoot))) {
+                throw "Capsulenv package current projection is missing or no longer owned: $current. Run capsulenv rehydrate."
+            }
+        } else {
+            $current = Join-Path (Join-Path $rootRecord.AppsRoot $parsed.Name) 'current'
+            if (-not (Test-Path -LiteralPath $current -PathType Container)) {
+                continue
+            }
         }
         $manifestPath = Join-Path $current 'manifest.json'
         $installPath = Join-Path $current 'install.json'
@@ -114,7 +127,7 @@ function Get-CapsulenvInstalledScoopApp {
             $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
             $install = Get-Content -LiteralPath $installPath -Raw | ConvertFrom-Json
         } catch {
-            throw "Failed to read installed Scoop metadata for $($scope.ToLowerInvariant())/$($parsed.Name): $($_.Exception.Message)"
+            throw "Failed to read installed app metadata for $($scope.ToLowerInvariant())/$($parsed.Name): $($_.Exception.Message)"
         }
 
         $matches.Add([pscustomobject]@{
@@ -294,19 +307,42 @@ function ConvertTo-CapsulenvInstalledShortcut {
     }
 
     $target = if ([System.IO.Path]::IsPathRooted($targetSpec)) {
-        [System.IO.Path]::GetFullPath($targetSpec)
+        $resolvedTarget = [System.IO.Path]::GetFullPath($targetSpec)
+        if (
+            [string]$App.Scope -eq 'Capsule' -and
+            -not (Test-CapsulenvSamePath -Left $resolvedTarget -Right ([string]$App.Current)) -and
+            -not (Test-CapsulenvPathNested -Parent ([string]$App.Current) -Child $resolvedTarget)
+        ) {
+            throw "Capsulenv package shortcut target escapes its current projection: $targetSpec"
+        }
+        $resolvedTarget
     } else {
-        [System.IO.Path]::GetFullPath((Join-Path $App.Current $targetSpec))
+        Resolve-CapsulenvScoopAppRelativePath -Root $App.Current -RelativePath $targetSpec
     }
     $arguments = if ($parts.Count -ge 3 -and $null -ne $parts[2]) {
         Expand-CapsulenvScoopShortcutValue -Value ([string]$parts[2]) -App $App
     } else {
         ''
     }
-    $icon = if ($parts.Count -ge 4 -and $null -ne $parts[3]) {
+    $iconSpec = if ($parts.Count -ge 4 -and $null -ne $parts[3]) {
         Expand-CapsulenvScoopShortcutValue -Value ([string]$parts[3]) -App $App
     } else {
         ''
+    }
+    $icon = if ([string]::IsNullOrWhiteSpace($iconSpec)) {
+        ''
+    } elseif ([System.IO.Path]::IsPathRooted($iconSpec)) {
+        $resolvedIcon = [System.IO.Path]::GetFullPath($iconSpec)
+        if (
+            [string]$App.Scope -eq 'Capsule' -and
+            -not (Test-CapsulenvSamePath -Left $resolvedIcon -Right ([string]$App.Current)) -and
+            -not (Test-CapsulenvPathNested -Parent ([string]$App.Current) -Child $resolvedIcon)
+        ) {
+            throw "Capsulenv package shortcut icon escapes its current projection: $iconSpec"
+        }
+        $resolvedIcon
+    } else {
+        Resolve-CapsulenvScoopAppRelativePath -Root $App.Current -RelativePath $iconSpec
     }
 
     return [pscustomobject]@{
@@ -338,9 +374,17 @@ function ConvertTo-CapsulenvInstalledBin {
 
     $targetSpec = Expand-CapsulenvScoopShortcutValue -Value ([string]$parts[0]) -App $App
     $target = if ([System.IO.Path]::IsPathRooted($targetSpec)) {
-        [System.IO.Path]::GetFullPath($targetSpec)
+        $resolvedTarget = [System.IO.Path]::GetFullPath($targetSpec)
+        if (
+            [string]$App.Scope -eq 'Capsule' -and
+            -not (Test-CapsulenvSamePath -Left $resolvedTarget -Right ([string]$App.Current)) -and
+            -not (Test-CapsulenvPathNested -Parent ([string]$App.Current) -Child $resolvedTarget)
+        ) {
+            throw "Capsulenv package bin target escapes its current projection: $targetSpec"
+        }
+        $resolvedTarget
     } else {
-        [System.IO.Path]::GetFullPath((Join-Path $App.Current $targetSpec))
+        Resolve-CapsulenvScoopAppRelativePath -Root $App.Current -RelativePath $targetSpec
     }
     $alias = if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace([string]$parts[1])) {
         [string]$parts[1]
@@ -387,7 +431,7 @@ function Resolve-CapsulenvScoopAppRelativePath {
         [System.IO.Path]::IsPathRooted($RelativePath) -or
         $RelativePath -match '(^|[\\/])\.\.([\\/]|$)'
     ) {
-        throw "Scoop app integration paths must remain relative to their owning app: $RelativePath"
+        throw "App integration paths must remain relative to their owning app: $RelativePath"
     }
     # Scoop manifests/configuration use Windows separators. Normalize both
     # forms so the same resolver can also be tested on non-Windows hosts.
@@ -402,7 +446,7 @@ function Resolve-CapsulenvScoopAppRelativePath {
             [System.StringComparison]::OrdinalIgnoreCase
         )
     ) {
-        throw "Scoop app integration path escapes its owning app: $RelativePath"
+        throw "App integration path escapes its owning app: $RelativePath"
     }
     return $resolved
 }
@@ -434,10 +478,10 @@ function Resolve-CapsulenvScoopAppExecutable {
                 }
         )
         if ($matches.Count -ne 1) {
-            throw "Installed Scoop app '$($installed.Selector)' does not expose exactly one bin named '$BinName'."
+            throw "Installed app '$($installed.Selector)' does not expose exactly one bin named '$BinName'."
         }
         if (-not (Test-Path -LiteralPath $matches[0].Target -PathType Leaf)) {
-            throw "Configured Scoop bin target is missing: $($matches[0].Target)"
+            throw "Configured bin target is missing: $($matches[0].Target)"
         }
         return [string]$matches[0].Target
     }
@@ -445,10 +489,10 @@ function Resolve-CapsulenvScoopAppExecutable {
     if (-not [string]::IsNullOrWhiteSpace($ShortcutName)) {
         $matches = @(Get-CapsulenvScoopAppShortcuts -App $installed.Selector | Where-Object { [string]$_.Name -eq $ShortcutName })
         if ($matches.Count -ne 1) {
-            throw "Installed Scoop app '$($installed.Selector)' does not expose exactly one shortcut named '$ShortcutName'."
+            throw "Installed app '$($installed.Selector)' does not expose exactly one shortcut named '$ShortcutName'."
         }
         if (-not (Test-Path -LiteralPath $matches[0].Target -PathType Leaf)) {
-            throw "Configured Scoop shortcut target is missing: $($matches[0].Target)"
+            throw "Configured shortcut target is missing: $($matches[0].Target)"
         }
         return [string]$matches[0].Target
     }
@@ -469,9 +513,9 @@ function Resolve-CapsulenvScoopAppExecutable {
         return [string]$unique[0]
     }
     if ($unique.Count -eq 0) {
-        throw "Installed Scoop app '$($installed.Selector)' has no resolvable bin or shortcut executable. Configure RelativePath, BinName, or ShortcutName."
+        throw "Installed app '$($installed.Selector)' has no resolvable bin or shortcut executable. Configure RelativePath, BinName, or ShortcutName."
     }
-    throw "Installed Scoop app '$($installed.Selector)' exposes multiple executable targets. Configure RelativePath, BinName, or ShortcutName."
+    throw "Installed app '$($installed.Selector)' exposes multiple executable targets. Configure RelativePath, BinName, or ShortcutName."
 }
 
 function Resolve-CapsulenvScoopAppPersistPath {
@@ -506,10 +550,10 @@ function Resolve-CapsulenvScoopAppRuntimePersistPath {
 
     # Runtime consumers should address a persisted item through the source path
     # inside app/current when the installed manifest owns such a persist link.
-    # Scoop creates that source as the junction/hardlink that points at the
+    # The provider creates that source as the projection that points at its
     # persist store. Using the app-visible path keeps command lines identical to
     # those emitted by the app's own launcher while the underlying data remains
-    # owned by scoop/persist.
+    # owned by the selected package provider.
     $persistRecord = Get-CapsulenvInstalledManifestPropertyRecord -App $installed -Name 'persist'
     $persistValue = $persistRecord.Value
     if ($null -eq $persistValue) {

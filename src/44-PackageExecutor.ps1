@@ -2,6 +2,9 @@ function Get-CapsulenvPackageStatePath {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Name)
 
+    if (-not (Test-CapsulenvPortableFileNameComponent -Value $Name)) {
+        throw "Invalid Capsulenv package state name: $Name"
+    }
     return Join-Path (Get-CapsulenvPackageStateRoot) ($Name + '.json')
 }
 
@@ -22,8 +25,12 @@ function Get-CapsulenvInstalledPackageState {
     } catch {
         throw "Capsulenv package state is invalid for '$Name': $($_.Exception.Message)"
     }
-    if ([int]$state.SchemaVersion -ne 1 -or [string]$state.Name -ne $Name) {
-        throw "Capsulenv package state has an unsupported schema or identity: $path"
+    if (
+        [int]$state.SchemaVersion -ne 1 -or
+        [string]$state.Provider -ne 'Capsulenv' -or
+        [string]$state.Name -ne $Name
+    ) {
+        throw "Capsulenv package state has an unsupported schema, provider, or identity: $path"
     }
     $capsuleId = $state.PSObject.Properties['CapsuleId']
     if (
@@ -33,9 +40,62 @@ function Get-CapsulenvInstalledPackageState {
         throw "Capsulenv package state belongs to another capsule identity: $path"
     }
 
+    try {
+        $reference = Split-CapsulenvPackageReference -Reference ([string]$state.Reference)
+    } catch {
+        throw "Capsulenv package state has an invalid source reference: $path"
+    }
+    if (
+        [string]$reference.Name -ne $Name -or
+        [string]::IsNullOrWhiteSpace([string]$reference.Bucket) -or
+        [string]$reference.Bucket -ne [string]$state.Bucket -or
+        -not (Test-CapsulenvPortableFileNameComponent -Value ([string]$state.Version)) -or
+        [string]$state.Architecture -notin @('64bit', '32bit', 'arm64')
+    ) {
+        throw "Capsulenv package state has inconsistent package identity metadata: $path"
+    }
+
     $installRoot = Resolve-CapsulenvStatePathReference -Reference ([string]$state.InstallRoot)
     $currentRoot = Resolve-CapsulenvStatePathReference -Reference ([string]$state.CurrentRoot)
     $persistRoot = Resolve-CapsulenvStatePathReference -Reference ([string]$state.PersistRoot)
+    $packageRoot = Join-Path (Get-CapsulenvPackageRoot) $Name
+    $expectedInstallRoot = Join-Path $packageRoot ([string]$state.Version)
+    $expectedCurrentRoot = Join-Path $packageRoot 'current'
+    $expectedPersistRoot = Join-Path (Get-CapsulenvPackagePersistRoot) $Name
+    foreach ($rootCheck in @(
+        [pscustomobject]@{ Actual = $installRoot; Expected = $expectedInstallRoot; Label = 'install' },
+        [pscustomobject]@{ Actual = $currentRoot; Expected = $expectedCurrentRoot; Label = 'current' },
+        [pscustomobject]@{ Actual = $persistRoot; Expected = $expectedPersistRoot; Label = 'persist' }
+    )) {
+        if (-not (Test-CapsulenvSamePath -Left ([string]$rootCheck.Actual) -Right ([string]$rootCheck.Expected))) {
+            throw "Capsulenv package state $($rootCheck.Label) path escapes its owned projection: $path"
+        }
+    }
+
+    $manifestPath = Join-Path $installRoot 'manifest.json'
+    $installPath = Join-Path $installRoot 'install.json'
+    foreach ($fingerprint in @(
+        [pscustomobject]@{ Path = $manifestPath; Property = 'InstalledManifestSha256'; Label = 'installed manifest' },
+        [pscustomobject]@{ Path = $installPath; Property = 'InstallMetadataSha256'; Label = 'install metadata' }
+    )) {
+        $record = $state.PSObject.Properties[[string]$fingerprint.Property]
+        if (
+            $null -eq $record -or
+            [string]$record.Value -notmatch '^[0-9a-fA-F]{64}$' -or
+            -not (Test-Path -LiteralPath ([string]$fingerprint.Path) -PathType Leaf)
+        ) {
+            throw "Capsulenv package state is missing trusted $($fingerprint.Label) metadata: $path"
+        }
+        $actualHash = Get-CapsulenvFileSha256 -Path ([string]$fingerprint.Path)
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($actualHash, [string]$record.Value)) {
+            throw "Capsulenv package $($fingerprint.Label) changed outside the package executor: $($fingerprint.Path)"
+        }
+    }
+    $sourceFingerprint = $state.PSObject.Properties['SourceManifestSha256']
+    if ($null -eq $sourceFingerprint -or [string]$sourceFingerprint.Value -notmatch '^[0-9a-fA-F]{64}$') {
+        throw "Capsulenv package state is missing its source manifest fingerprint: $path"
+    }
+
     return [pscustomobject]@{
         Path = $path
         State = $state
@@ -44,11 +104,14 @@ function Get-CapsulenvInstalledPackageState {
         Architecture = [string]$state.Architecture
         Bucket = [string]$state.Bucket
         Reference = [string]$state.Reference
+        SourceManifestSha256 = ([string]$sourceFingerprint.Value).ToLowerInvariant()
+        InstalledManifestSha256 = ([string]$state.InstalledManifestSha256).ToLowerInvariant()
+        InstallMetadataSha256 = ([string]$state.InstallMetadataSha256).ToLowerInvariant()
         InstallRoot = $installRoot
         CurrentRoot = $currentRoot
         PersistRoot = $persistRoot
-        ManifestPath = Join-Path $installRoot 'manifest.json'
-        InstallPath = Join-Path $installRoot 'install.json'
+        ManifestPath = $manifestPath
+        InstallPath = $installPath
         PersistMappings = @($state.PersistMappings)
         Shims = @($state.Shims)
         Capabilities = @($state.Capabilities)
@@ -57,7 +120,7 @@ function Get-CapsulenvInstalledPackageState {
 
 function Get-CapsulenvInstalledPackageStates {
     [CmdletBinding()]
-    param()
+    param([switch]$Strict)
 
     $stateRoot = Get-CapsulenvPackageStateRoot
     if (-not (Test-Path -LiteralPath $stateRoot -PathType Container)) {
@@ -69,6 +132,7 @@ function Get-CapsulenvInstalledPackageStates {
             $name = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
             $results.Add((Get-CapsulenvInstalledPackageState -Name $name))
         } catch {
+            if ($Strict) { throw }
             Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
         }
     }
@@ -87,12 +151,15 @@ function Resolve-CapsulenvPackageDependencyReference {
         return $Dependency
     }
     $candidate = ('{0}/{1}' -f $ParentPlan.Bucket, $parsed.Name)
-    try {
-        [void](Resolve-CapsulenvPackageManifest -Reference $candidate)
+    $bucketRoot = Join-Path (Get-CapsulenvScoopRoot) ('buckets\' + [string]$ParentPlan.Bucket)
+    $candidatePath = Join-Path $bucketRoot ('bucket\' + [string]$parsed.Name + '.json')
+    if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+        # Prefer same-bucket dependencies when the manifest exists. Do not catch
+        # parse/classification failures here: malformed metadata must fail closed
+        # instead of silently falling back to a different bucket.
         return $candidate
-    } catch {
-        return $Dependency
     }
+    return $Dependency
 }
 
 function Add-CapsulenvPackagePlanNode {
@@ -374,17 +441,64 @@ function Set-CapsulenvPackageFileLink {
         [Parameter(Mandatory = $true)][string]$Target
     )
 
-    if (Test-Path -LiteralPath $Path -PathType Leaf) {
-        if ((Test-CapsulenvWindows) -and (Test-CapsulenvHardLinkMatch -Left $Path -Right $Target)) {
+    $existingTarget = Get-CapsulenvReparseTarget -Path $Path
+    if ($null -ne $existingTarget) {
+        if (Test-CapsulenvSamePath -Left $existingTarget -Right $Target) {
             return
         }
         Remove-Item -LiteralPath $Path -Force
+    } elseif (Test-Path -LiteralPath $Path -PathType Leaf) {
+        if ((Test-CapsulenvWindows) -and (Test-CapsulenvHardLinkMatch -Left $Path -Right $Target)) {
+            return
+        }
+        throw "Refusing to replace a normal file while projecting package persistence: $Path"
     } elseif (Test-Path -LiteralPath $Path) {
         throw "Refusing to replace a non-file path while projecting package persistence: $Path"
     }
     [void](New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force)
     $linkType = if (Test-CapsulenvWindows) { 'HardLink' } else { 'SymbolicLink' }
     [void](New-Item -ItemType $linkType -Path $Path -Target $Target -Force)
+}
+
+function Repair-CapsulenvPackageFileProjection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Target,
+        [Parameter(Mandatory = $true)][string]$OwnershipLabel
+    )
+
+    if (-not (Test-Path -LiteralPath $Target -PathType Leaf)) {
+        throw "Persist target is not a file while repairing $OwnershipLabel`: $Target"
+    }
+
+    $existingTarget = Get-CapsulenvReparseTarget -Path $Path
+    if ($null -ne $existingTarget) {
+        if (Test-CapsulenvSamePath -Left $existingTarget -Right $Target) {
+            return
+        }
+        Remove-Item -LiteralPath $Path -Force
+        Set-CapsulenvPackageFileLink -Path $Path -Target $Target
+        return
+    }
+
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        throw "Persist source kind no longer matches its file target while repairing $OwnershipLabel`: $Path"
+    }
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        if ((Test-CapsulenvWindows) -and (Test-CapsulenvHardLinkMatch -Left $Path -Right $Target)) {
+            return
+        }
+        $sourceHash = Get-CapsulenvFileSha256 -Path $Path
+        $targetHash = Get-CapsulenvFileSha256 -Path $Target
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($sourceHash, $targetHash)) {
+            throw "Refusing to replace a diverged normal file while repairing $OwnershipLabel`: $Path"
+        }
+        Remove-Item -LiteralPath $Path -Force
+    } elseif (Test-Path -LiteralPath $Path) {
+        throw "Refusing to replace an unknown path while repairing $OwnershipLabel`: $Path"
+    }
+    Set-CapsulenvPackageFileLink -Path $Path -Target $Target
 }
 
 function Get-CapsulenvPackagePersistDefinitions {
@@ -471,6 +585,11 @@ function Save-CapsulenvPackageInstalledState {
     [void](New-Item -ItemType Directory -Path (Split-Path -Parent $statePath) -Force)
     $temporary = Join-Path (Split-Path -Parent $statePath) ('.package-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
     try {
+        $manifestPath = Join-Path $VersionRoot 'manifest.json'
+        $installPath = Join-Path $VersionRoot 'install.json'
+        if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -or -not (Test-Path -LiteralPath $installPath -PathType Leaf)) {
+            throw "Capsulenv package metadata is incomplete and cannot be recorded: $VersionRoot"
+        }
         [ordered]@{
             SchemaVersion = 1
             CapsuleId = (Get-CapsulenvIdentity)
@@ -480,6 +599,9 @@ function Save-CapsulenvPackageInstalledState {
             Architecture = [string]$Plan.Architecture
             Bucket = [string]$Plan.Bucket
             Reference = [string]$Plan.Reference
+            SourceManifestSha256 = (Get-CapsulenvFileSha256 -Path ([string]$Plan.ManifestPath))
+            InstalledManifestSha256 = (Get-CapsulenvFileSha256 -Path $manifestPath)
+            InstallMetadataSha256 = (Get-CapsulenvFileSha256 -Path $installPath)
             InstallRoot = ConvertTo-CapsulenvStatePathReference -Path $VersionRoot
             CurrentRoot = ConvertTo-CapsulenvStatePathReference -Path $currentRoot
             PersistRoot = ConvertTo-CapsulenvStatePathReference -Path $persistRoot
@@ -512,7 +634,7 @@ function Write-CapsulenvPackageShim {
         [Parameter(Mandatory = $true)][string]$Alias
     )
 
-    if ($Alias -match '[\\/]' -or $Alias -in @('capsulenv', 'scoop')) {
+    if (-not (Test-CapsulenvPortableFileNameComponent -Value $Alias) -or $Alias -in @('capsulenv', 'scoop')) {
         throw "Invalid or reserved Capsulenv package shim alias: $Alias"
     }
     $shimRoot = Get-CapsulenvPackageShimRoot
@@ -570,20 +692,33 @@ function Install-CapsulenvPortablePackageNode {
         throw "Package '$($Plan.Reference)' is not PortableSafe: $($Plan.Classification)"
     }
     $existing = Get-CapsulenvInstalledPackageState -Name ([string]$Plan.Name) -AllowMissing
-    if (
-        $null -ne $existing -and
-        [string]$existing.Version -eq [string]$Plan.Version -and
-        [string]$existing.Architecture -eq [string]$Plan.Architecture -and
-        (Test-Path -LiteralPath $existing.InstallRoot -PathType Container)
-    ) {
-        Repair-CapsulenvPackageProjection -State $existing
-        $shims = @(Sync-CapsulenvPackageShims -Name ([string]$Plan.Name))
-        Save-CapsulenvPackageInstalledState `
-            -Plan $Plan `
-            -VersionRoot $existing.InstallRoot `
-            -PersistMappings @($existing.PersistMappings) `
-            -Shims $shims
-        return Get-CapsulenvInstalledPackageState -Name ([string]$Plan.Name)
+    $sourceManifestSha256 = Get-CapsulenvFileSha256 -Path ([string]$Plan.ManifestPath)
+    if ($null -ne $existing) {
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$existing.Reference, [string]$Plan.Reference)) {
+            throw "Capsulenv package name '$($Plan.Name)' is already owned by '$($existing.Reference)'; refusing to replace it implicitly with '$($Plan.Reference)'."
+        }
+        if (
+            [string]$existing.Version -eq [string]$Plan.Version -and
+            [string]$existing.Architecture -eq [string]$Plan.Architecture
+        ) {
+            if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$existing.SourceManifestSha256, $sourceManifestSha256)) {
+                throw "The source manifest changed for already-installed package '$($Plan.Reference)' version '$($Plan.Version)'. Explicit update/reinstall semantics are required."
+            }
+            if (-not (Test-Path -LiteralPath $existing.InstallRoot -PathType Container)) {
+                throw "Installed Capsulenv package files are missing: $($existing.Name) $($existing.InstallRoot)"
+            }
+            Repair-CapsulenvPackageProjection -State $existing
+            $shims = @(Sync-CapsulenvPackageShims -Name ([string]$Plan.Name))
+            Save-CapsulenvPackageInstalledState `
+                -Plan $Plan `
+                -VersionRoot $existing.InstallRoot `
+                -PersistMappings @($existing.PersistMappings) `
+                -Shims $shims
+            return Get-CapsulenvInstalledPackageState -Name ([string]$Plan.Name)
+        }
+        if ([string]$existing.Version -eq [string]$Plan.Version) {
+            throw "Package '$($Plan.Reference)' version '$($Plan.Version)' is already installed for architecture '$($existing.Architecture)'; architecture replacement is not implicit."
+        }
     }
 
     $appRoot = Join-Path (Get-CapsulenvPackageRoot) ([string]$Plan.Name)
@@ -605,7 +740,15 @@ function Install-CapsulenvPortablePackageNode {
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $temporaryRoot 'install.json') -Encoding UTF8
         Move-Item -LiteralPath $temporaryRoot -Destination $versionRoot
         Set-CapsulenvPackageDirectoryLink -Path (Join-Path $appRoot 'current') -Target $versionRoot
-        Save-CapsulenvPackageInstalledState -Plan $Plan -VersionRoot $versionRoot -PersistMappings $persistMappings
+        $previousShims = if ($null -ne $existing) { @($existing.Shims) } else { @() }
+        # Seed the new state with prior shim ownership until reconciliation has
+        # removed aliases no longer declared by the new version. Otherwise an
+        # update could forget which stale shim it is allowed to delete.
+        Save-CapsulenvPackageInstalledState `
+            -Plan $Plan `
+            -VersionRoot $versionRoot `
+            -PersistMappings $persistMappings `
+            -Shims $previousShims
         $shims = @(Sync-CapsulenvPackageShims -Name ([string]$Plan.Name))
         Save-CapsulenvPackageInstalledState -Plan $Plan -VersionRoot $versionRoot -PersistMappings $persistMappings -Shims $shims
         return Get-CapsulenvInstalledPackageState -Name ([string]$Plan.Name)
@@ -631,6 +774,9 @@ function Install-CapsulenvPortablePackage {
     $results = New-Object System.Collections.Generic.List[object]
     foreach ($plan in @($installPlan.Packages)) {
         $results.Add((Install-CapsulenvPortablePackageNode -Plan $plan))
+    }
+    if ((Get-CapsulenvInstallMode) -eq 'User') {
+        Sync-CapsulenvPackageStartMenuShortcuts
     }
     return $results.ToArray()
 }
@@ -661,12 +807,10 @@ function Repair-CapsulenvPackageProjection {
                 Set-CapsulenvPackageDirectoryLink -Path $source -Target $target
             }
         } else {
-            if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or ((Test-CapsulenvWindows) -and -not (Test-CapsulenvHardLinkMatch -Left $source -Right $target))) {
-                if (Test-Path -LiteralPath $source) {
-                    Remove-Item -LiteralPath $source -Force
-                }
-                Set-CapsulenvPackageFileLink -Path $source -Target $target
-            }
+            Repair-CapsulenvPackageFileProjection `
+                -Path $source `
+                -Target $target `
+                -OwnershipLabel ("Capsulenv package '$($State.Name)' persist projection")
         }
     }
 }
@@ -675,7 +819,7 @@ function Repair-CapsulenvPackageProjections {
     [CmdletBinding()]
     param()
 
-    foreach ($state in @(Get-CapsulenvInstalledPackageStates)) {
+    foreach ($state in @(Get-CapsulenvInstalledPackageStates -Strict)) {
         Repair-CapsulenvPackageProjection -State $state
     }
 }
@@ -697,12 +841,22 @@ function Get-CapsulenvPackageEnvironmentPlan {
             if ($raw.Contains('$dir') -or $raw.Contains('$original_dir') -or $raw.Contains('$persist_dir')) {
                 $expanded = Expand-CapsulenvScoopShortcutValue -Value $raw -App $Installed
                 $candidate = [System.IO.Path]::GetFullPath($expanded)
-                $currentRoot = [System.IO.Path]::GetFullPath([string]$Installed.Current).TrimEnd([char[]]'\/')
-                if (
-                    -not [System.StringComparer]::OrdinalIgnoreCase.Equals($candidate.TrimEnd([char[]]'\/'), $currentRoot) -and
-                    -not $candidate.StartsWith($currentRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
-                ) {
-                    throw "env_add_path escapes the installed package root: $raw"
+                $ownedRoots = @(
+                    [System.IO.Path]::GetFullPath([string]$Installed.Current).TrimEnd([char[]]'\/'),
+                    [System.IO.Path]::GetFullPath([string]$Installed.Persist).TrimEnd([char[]]'\/')
+                )
+                $owned = $false
+                foreach ($ownedRoot in $ownedRoots) {
+                    if (
+                        [System.StringComparer]::OrdinalIgnoreCase.Equals($candidate.TrimEnd([char[]]'\/'), $ownedRoot) -or
+                        $candidate.StartsWith($ownedRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+                    ) {
+                        $owned = $true
+                        break
+                    }
+                }
+                if (-not $owned) {
+                    throw "env_add_path escapes the package-owned current/persist roots: $raw"
                 }
                 $pathEntries.Add($candidate)
             } else {

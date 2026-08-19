@@ -107,4 +107,58 @@ Describe 'Capsulenv package manifest planning' {
         { Get-CapsulenvPackageManifestPlan -Reference demo } | Should -Throw '*multiple non-main buckets*'
         (Get-CapsulenvPackageManifestPlan -Reference extras/demo).Bucket | Should -Be 'extras'
     }
+
+    It 'fails closed for unsafe host-facing names while supporting bounded shortcut subdirectories and icons' {
+        @{
+            version = 'CON'
+            url = 'https://example.invalid/demo.exe'
+            hash = ('a' * 64)
+            bin = @(,@('demo.exe', 'NUL'))
+            shortcuts = @(,@('demo.exe', 'Tools\Demo', '', 'demo.ico'))
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+
+        $plan = Get-CapsulenvPackageManifestPlan -Reference demo
+        $plan.Classification | Should -Be 'Unsupported'
+        ($plan.Reasons -join ' ') | Should -Match 'version cannot be represented'
+        ($plan.Reasons -join ' ') | Should -Match 'bin alias is reserved or invalid'
+        ($plan.Reasons -join ' ') | Should -Not -Match 'shortcut name|shortcut icon'
+    }
+
+    It 'fails closed for manifest semantics not implemented by PortableSafe' {
+        @{
+            version = '1.0.0'
+            url = 'https://example.invalid/demo.exe'
+            hash = ('a' * 64)
+            cookie = @{ session = 'secret' }
+            psmodule = @{ name = 'Demo' }
+            future_install_mode = 'host'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+
+        $plan = Get-CapsulenvPackageManifestPlan -Reference demo
+        $plan.Classification | Should -Be 'Unsupported'
+        ($plan.Reasons -join ' ') | Should -Match "does not implement Scoop 'cookie' semantics"
+        ($plan.Reasons -join ' ') | Should -Match "does not implement Scoop 'psmodule' semantics"
+        ($plan.Reasons -join ' ') | Should -Match 'Unsupported Scoop manifest property: future_install_mode'
+    }
+
+    It 'rejects invalid env_set shapes and extract_dir semantics for non-ZIP artifacts' {
+        @{
+            version = '1.0.0'
+            url = 'https://example.invalid/demo.exe'
+            hash = ('a' * 64)
+            extract_dir = 'payload'
+            env_set = @('DEMO=value')
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+
+        $plan = Get-CapsulenvPackageManifestPlan -Reference demo
+        $plan.Classification | Should -Be 'Unsupported'
+        ($plan.Reasons -join ' ') | Should -Match 'env_set must be a JSON object'
+        ($plan.Reasons -join ' ') | Should -Match 'extract_dir is only implemented for ZIP'
+    }
+
+    It 'rejects package reference components that could escape or alias Windows paths' {
+        { Get-CapsulenvPackageManifestPlan -Reference '../demo' } | Should -Throw '*Invalid package reference component*'
+        { Get-CapsulenvPackageManifestPlan -Reference 'CON' } | Should -Throw '*Invalid package reference component*'
+    }
+
 }

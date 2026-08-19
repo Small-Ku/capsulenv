@@ -48,6 +48,45 @@ function Get-CapsulenvPackageArchitecture {
     }
 }
 
+function Test-CapsulenvPortableFileNameComponent {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()][string]$Value,
+        [switch]$AllowEmpty
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return [bool]$AllowEmpty
+    }
+    if (
+        $Value -in @('.', '..') -or
+        $Value -match '[\\/:*?"<>|]' -or
+        $Value -match '[\x00-\x1f]' -or
+        $Value.EndsWith('.') -or
+        $Value.EndsWith(' ')
+    ) {
+        return $false
+    }
+    $baseName = @($Value -split '\.', 2)[0]
+    if ($baseName -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$') {
+        return $false
+    }
+    return $true
+}
+
+function Test-CapsulenvEnvironmentVariableName {
+    [CmdletBinding()]
+    param([AllowEmptyString()][string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+    if ($Value.Contains('=') -or $Value -match '[\x00-\x1f]') {
+        return $false
+    }
+    return $true
+}
+
 function Split-CapsulenvPackageReference {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Reference)
@@ -71,7 +110,7 @@ function Split-CapsulenvPackageReference {
         if ([string]::IsNullOrWhiteSpace([string]$part)) {
             continue
         }
-        if ([string]$part -match '[\\:*?"<>|]') {
+        if (-not (Test-CapsulenvPortableFileNameComponent -Value ([string]$part))) {
             throw "Invalid package reference component '$part'."
         }
     }
@@ -140,8 +179,20 @@ function Test-CapsulenvPackageRelativePath {
     if ([string]::IsNullOrWhiteSpace($Path)) {
         return [bool]$AllowEmpty
     }
-    if ([System.IO.Path]::IsPathRooted($Path) -or $Path -match '(^|[\\/])\.\.([\\/]|$)') {
+    if (
+        [System.IO.Path]::IsPathRooted($Path) -or
+        $Path -match '^[\\/]' -or
+        $Path -match '^[A-Za-z]:'
+    ) {
         return $false
+    }
+    foreach ($segment in @($Path -split '[\\/]')) {
+        if ([string]::IsNullOrEmpty($segment) -or $segment -eq '.') {
+            continue
+        }
+        if ($segment -eq '..' -or -not (Test-CapsulenvPortableFileNameComponent -Value $segment)) {
+            return $false
+        }
     }
     return $true
 }
@@ -174,8 +225,7 @@ function Get-CapsulenvPackageUrlDescriptor {
     if (
         [string]::IsNullOrWhiteSpace($fileName) -or
         [System.IO.Path]::IsPathRooted($fileName) -or
-        $fileName -match '[\\/]' -or
-        $fileName -in @('.', '..')
+        -not (Test-CapsulenvPortableFileNameComponent -Value $fileName)
     ) {
         throw "Package URL does not resolve to a safe local filename: $Url"
     }
@@ -283,6 +333,7 @@ function Get-CapsulenvPackageManifestPlan {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$Reference,
+        [ValidateSet('64bit', '32bit', 'arm64')]
         [string]$Architecture = (Get-CapsulenvPackageArchitecture)
     )
 
@@ -295,12 +346,64 @@ function Get-CapsulenvPackageManifestPlan {
 
     $reasons = New-Object System.Collections.Generic.List[string]
     $version = [string]$versionProperty.Value
-    if ($version -in @('.', '..') -or $version -match '[\\/:*?"<>|]') {
+    if (-not (Test-CapsulenvPortableFileNameComponent -Value $version)) {
         $reasons.Add("version cannot be represented as a portable package directory: $version")
     }
     $capabilities = New-Object System.Collections.Generic.List[string]
     $trustedScript = $false
     $externalInstaller = $false
+
+    # Scoop's root schema is intentionally closed. Mirror that boundary here so
+    # a newly introduced install-affecting manifest property cannot silently be
+    # ignored and still acquire PortableSafe classification. Metadata-only
+    # fields remain accepted even though Capsulenv does not execute them.
+    $knownRootProperties = @(
+        '$schema', '_comment', '##', 'architecture', 'autoupdate', 'bin',
+        'persist', 'checkver', 'cookie', 'depends', 'description',
+        'env_add_path', 'env_set', 'extract_dir', 'extract_to', 'hash',
+        'homepage', 'innosetup', 'installer', 'license', 'notes',
+        'post_install', 'post_uninstall', 'pre_install', 'pre_uninstall',
+        'psmodule', 'shortcuts', 'suggest', 'uninstaller', 'url', 'version'
+    )
+    foreach ($property in @($manifest.PSObject.Properties)) {
+        if ($knownRootProperties -notcontains [string]$property.Name) {
+            $reasons.Add("Unsupported Scoop manifest property: $($property.Name)")
+        }
+    }
+
+    $architectureMapRecord = Get-CapsulenvJsonPropertyRecord -Object $manifest -Name 'architecture'
+    if ($null -ne $architectureMapRecord -and $null -ne $architectureMapRecord.Value) {
+        foreach ($architectureProperty in @($architectureMapRecord.Value.PSObject.Properties)) {
+            if ([string]$architectureProperty.Name -notin @('32bit', '64bit', 'arm64')) {
+                $reasons.Add("Unsupported Scoop architecture key: $($architectureProperty.Name)")
+            }
+        }
+        $selectedArchitectureRecord = Get-CapsulenvJsonPropertyRecord -Object $architectureMapRecord.Value -Name $Architecture
+        if ($null -ne $selectedArchitectureRecord -and $null -ne $selectedArchitectureRecord.Value) {
+            $knownArchitectureProperties = @(
+                'bin', 'checkver', 'env_add_path', 'env_set', 'extract_dir',
+                'hash', 'installer', 'post_install', 'post_uninstall',
+                'pre_install', 'pre_uninstall', 'shortcuts', 'uninstaller', 'url'
+            )
+            foreach ($property in @($selectedArchitectureRecord.Value.PSObject.Properties)) {
+                if ($knownArchitectureProperties -notcontains [string]$property.Name) {
+                    $reasons.Add("Unsupported Scoop architecture manifest property: $($property.Name)")
+                }
+            }
+        }
+    }
+
+    foreach ($unsupportedPropertyName in @('cookie', 'psmodule')) {
+        $unsupportedProperty = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name $unsupportedPropertyName -Architecture $Architecture
+        if ($unsupportedProperty.Exists -and $null -ne $unsupportedProperty.Value) {
+            $reasons.Add("PortableSafe does not implement Scoop '$unsupportedPropertyName' semantics")
+        }
+    }
+    $innoSetupProperty = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'innosetup' -Architecture $Architecture
+    if ($innoSetupProperty.Exists -and [bool]$innoSetupProperty.Value) {
+        $externalInstaller = $true
+        $reasons.Add('innosetup requires external installer extraction semantics')
+    }
 
     foreach ($hookName in @('pre_install', 'post_install', 'pre_uninstall', 'post_uninstall')) {
         $hook = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name $hookName -Architecture $Architecture
@@ -396,6 +499,21 @@ function Get-CapsulenvPackageManifestPlan {
         }
     }
 
+    if ($extractDirValues.Count -gt 0) {
+        foreach ($download in $downloads.ToArray()) {
+            $extractDirValue = if ($extractDirValues.Count -eq 1) {
+                [string]$extractDirValues[0]
+            } elseif ([int]$download.Index -lt $extractDirValues.Count) {
+                [string]$extractDirValues[[int]$download.Index]
+            } else {
+                ''
+            }
+            if (-not [string]::IsNullOrWhiteSpace($extractDirValue) -and [string]$download.ArchiveKind -ne 'Zip') {
+                $reasons.Add("extract_dir is only implemented for ZIP artifacts in PortableSafe: $($download.FileName)")
+            }
+        }
+    }
+
     $binProperty = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'bin' -Architecture $Architecture
     $persistProperty = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'persist' -Architecture $Architecture
     $envPathProperty = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'env_add_path' -Architecture $Architecture
@@ -419,6 +537,21 @@ function Get-CapsulenvPackageManifestPlan {
         foreach ($path in @((ConvertTo-CapsulenvPackageValueArray -Value $field.Property.Value).Items)) {
             if (-not (Test-CapsulenvPackageRelativePath -Path ([string]$path))) {
                 $reasons.Add("$($field.Name) escapes the package root: $path")
+            }
+        }
+    }
+
+    if ($envSetProperty.Exists -and $null -ne $envSetProperty.Value) {
+        if ($envSetProperty.Value -is [string] -or $envSetProperty.Value -is [System.Array]) {
+            $reasons.Add('env_set must be a JSON object of process environment variables')
+        } else {
+            foreach ($property in @($envSetProperty.Value.PSObject.Properties)) {
+                if (-not (Test-CapsulenvEnvironmentVariableName -Value ([string]$property.Name))) {
+                    $reasons.Add("env_set contains an invalid environment variable name: $($property.Name)")
+                }
+                if ($null -ne $property.Value -and $property.Value -isnot [string] -and $property.Value -is [System.Collections.IEnumerable]) {
+                    $reasons.Add("env_set value must be scalar text: $($property.Name)")
+                }
             }
         }
     }
@@ -458,7 +591,10 @@ function Get-CapsulenvPackageManifestPlan {
             } else {
                 [System.IO.Path]::GetFileNameWithoutExtension([string]$parts[0])
             }
-            if ($alias -match '[\/]' -or $alias -in @('capsulenv', 'scoop')) {
+            if (
+                -not (Test-CapsulenvPortableFileNameComponent -Value $alias) -or
+                $alias -in @('capsulenv', 'scoop')
+            ) {
                 $reasons.Add("bin alias is reserved or invalid for a Capsulenv shim: $alias")
             }
         }
@@ -468,14 +604,26 @@ function Get-CapsulenvPackageManifestPlan {
         foreach ($shortcut in @($shortcutProperty.Value)) {
             $parts = @($shortcut)
             if ($parts.Count -lt 2 -or $parts.Count -gt 4) {
-                $reasons.Add('shortcut entries must contain target, name, optional arguments and optional working directory')
+                $reasons.Add('shortcut entries must contain target, name, optional arguments and optional custom icon')
                 continue
             }
             if (-not (Test-CapsulenvPackageRelativePath -Path ([string]$parts[0]))) {
                 $reasons.Add("shortcut target escapes the package root: $($parts[0])")
             }
-            if ($parts.Count -ge 4 -and -not [string]::IsNullOrWhiteSpace([string]$parts[3]) -and -not (Test-CapsulenvPackageRelativePath -Path ([string]$parts[3]))) {
-                $reasons.Add("shortcut working directory escapes the package root: $($parts[3])")
+            $shortcutName = [string]$parts[1]
+            if (
+                -not (Test-CapsulenvPackageRelativePath -Path $shortcutName) -or
+                $shortcutName.EndsWith('\') -or
+                $shortcutName.EndsWith('/')
+            ) {
+                $reasons.Add("shortcut name cannot be represented safely in Capsulenv host integration: $shortcutName")
+            }
+            if (
+                $parts.Count -ge 4 -and
+                -not [string]::IsNullOrWhiteSpace([string]$parts[3]) -and
+                -not (Test-CapsulenvPackageRelativePath -Path ([string]$parts[3]))
+            ) {
+                $reasons.Add("shortcut icon escapes the package root: $($parts[3])")
             }
         }
     }
