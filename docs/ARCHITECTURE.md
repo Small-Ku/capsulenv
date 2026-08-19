@@ -1,201 +1,245 @@
-# Architecture and ownership
+# Capsulenv architecture
 
-這份文件是 Capsulenv 目前 runtime ownership 與 isolation semantics 的權威說明。使用者操作流程放在 [`../README.md`](../README.md)；tool/cache 細節放在 [`TOOLS.md`](TOOLS.md)；build/deployment 放在 [`DEPLOYMENT.md`](DEPLOYMENT.md)。
+這份文件是 runtime ownership、安全邊界與 relocation semantics 的 canonical specification。使用方式見 [`../README.md`](../README.md)，deployment 見 [`DEPLOYMENT.md`](DEPLOYMENT.md)。
 
 ## Core ownership rule
 
-Capsulenv 是 orchestration/repair layer，不是第二個 application data manager。
+Capsulenv 不再把 Scoop CLI 當成自己的 runtime/package engine，也不 fork 或 monkey-patch Scoop。Package provisioning 與 runtime projection 是兩個獨立層：
 
-Scoop 是以下內容的 source of truth：app files、installed-version `manifest.json`／`install.json`、`persist` data、browser profiles、local/global shims、shortcuts，以及 manifest lifecycle scripts。Capsulenv 不新增平行的 `data/bitwarden`、browser profile tree 或另一份 PowerShell profile tree。
+```text
+Scoop buckets / manifests
+          |
+          v
+Capsulenv package planner
+          |
+    +-----+------------------+
+    |                        |
+    v                        v
+PortableSafe             non-PortableSafe
+Capsulenv executor       explicit upstream Scoop
+    |                        |
+    +-----------+------------+
+                v
+       installed runtime state
+                |
+     ProcessPlan / app resolver
+     shims / persist / HostIntegration
+```
 
-Capsulenv 自己只擁有四類狀態：
+因此有兩種不同 ownership domain：
 
-1. process/User environment integration 與其 reversible backup；
-2. relocation identity/fingerprint、link/workspace registry；
-3. 明確配置的 portable tool storage/project cache；
-4. 對已知 Scoop-persisted text/config 的窄範圍 repair metadata。
+- **Capsulenv-owned package**：由 PortableSafe executor 建立在 `packages/`、`package-persist/`、`shims/` 與 `.capsulenv/packages/`。Capsulenv可以完整描述並重建其 projection。
+- **Stock Scoop install**：由使用者直接執行 `scoop ...`，或 `capsulenv app install ... --allow-trusted` 顯式委派。Capsulenv 不改變其 lifecycle semantics，只把已有 installed manifest/current/persist 視為 legacy runtime input；host mutation 不屬 PortableSafe guarantee。
 
-因此「能由 owning tool 重建的 object」優先交回 Scoop、uv、Pixi 等 native lifecycle，而不是遞迴改寫 binary、shortcut、virtual environment 或 app data。
+不得重新引入 `scoop-capsulenv-*` source adapter、transformed Scoop libexec、`shortcut_folder` override、hook fingerprint sanitizer 或任何 `UseGateway` 類 dispatch switch。
+
+## Trust levels
+
+Trust level 與 ShellOnly/User session mode 正交：
+
+| Level | 能做什麼 | Host persistence |
+|---|---|---|
+| **Runtime** | launch、process-only environment、runtime resolution | 無 |
+| **PortableSafe** | bounded download/hash/extract、capsule files、persist projection、Capsulenv shim | 僅 capsule |
+| **HostIntegration** | Capsulenv 明確擁有的 Start Menu/default-browser/SSH integration | 顯式、host-scoped、可備份/還原 |
+| **TrustedExecution** | upstream Scoop hooks/installers/arbitrary third-party code | 不承諾可逆 |
+
+`User` 不會把 `TrustedScript` 自動變成 safe；`ShellOnly` 也不會嘗試「安全化」任意 PowerShell。跨越 TrustedExecution boundary 必須是使用者的明確 action。
 
 ## Runtime layout
 
+長期 capsule 主要 ownership：
+
 ```text
-capsulenv/
-├─ capsulenv.cmd                    thin launcher
-├─ modules/Capsulenv/               installed merged runtime module + runtime resources
-├─ config/                          default + local override
-├─ bin/                             capsule launch helpers / common tool bins
-├─ PowerShell/Modules/              private user modules
-├─ scoop/                           portable local Scoop root
-├─ scoop-global/                    optional portable global Scoop root
-├─ cache/                           rebuildable shared caches
-├─ tool-data/                       persistent toolchains/config/global tools
-├─ project-cache/                   backing store for explicit project links
-├─ workspace/                       recommended portable source workspace
-└─ .capsulenv/                      identity, relocation/user/link registries
+capsulenv.cmd
+config/
+modules/Capsulenv/
+packages/<app>/<version>/
+packages/<app>/current
+package-persist/<app>/
+shims/<alias>.cmd
+scoop/
+scoop-global/
+PowerShell/Modules/
+tool-data/
+cache/
+project-cache/
+workspace/
+.capsulenv/
 ```
 
-Development-only `src/`, `tests`, `.build/` and merge/build scripts are not required by the minimal installed runtime. Release-only installer/docs/`.capsulenv-runtime.json` are likewise staging artifacts rather than installed runtime dependencies. The stable launcher enters `modules/Capsulenv/runtime/Invoke-Capsulenv.ps1`; helper scripts consumed by the module live under that same module-owned `runtime/` directory. See [`DEVELOPMENT.md`](DEVELOPMENT.md).
+`packages/`、`package-persist/`、`shims/` 是 PortableSafe package domain。`scoop/` 則承載 stock Scoop core、buckets，以及使用者顯式 TrustedExecution/歷史 install；兩者不可混成一個「Scoop owns everything」模型。
 
-Relocation is a runtime invariant, not a deployment action. Copying/moving the whole capsule to another drive or host must remain bootable through the installed launcher/module package alone; first activation at the new location may rebuild host/path-sensitive Scoop links and metadata, but must not require installer/source files.
+`.capsulenv/packages/<app>.json` 是 Capsulenv-owned installed state，記錄 package/version/architecture/install root/current root/persist mappings/shims/capabilities。State path 以 capsule-relative reference 儲存，避免 drive relocation 後把舊 absolute path 當 authority。
 
-## Two integration modes
+## Package planner and PortableSafe subset
 
-Capsulenv has exactly two **session integration modes**: **ShellOnly** and **User**. Session mode is invocation-scoped, while persistent User ownership is a separate machine/user-scoped state. Neither is a global trust profile stored on the USB.
+Planner 在任何 package mutation 前解析 manifest、architecture 與 dependency DAG，並分類：
 
-A process started from an ordinary host terminal defaults to ShellOnly regardless of an existing User ownership ledger. `user-shell` and `install-user` are explicit takeover entrypoints; `user-shell` marks its child process tree with process-only `CAPSULENV_MODE=User`, so nested Capsulenv commands inherit User semantics. Persistent ownership is consulted only to decide whether the host is already integrated and which reversible backup/ledger is authoritative; it never silently promotes a later standalone `capsulenv.cmd` invocation to User.
+- `PortableSafe`
+- `TrustedScript`
+- `ExternalInstaller`
+- `Unsupported`
+
+Install plan 只有在**整個 dependency graph** 都是 `PortableSafe` 時才能由 safe executor 執行；否則結果是 `TrustedExecutionRequired`。
+
+第一版 PortableSafe subset 刻意限制在 declarative fields：
+
+```text
+url / hash
+architecture
+extract_dir / extract_to
+bin
+persist
+env_add_path
+env_set
+shortcuts
+depends
+```
+
+其語義由 Capsulenv 定義，不是「呼叫 Scoop 相同 helper」：
+
+- `bin` -> Capsulenv-owned relocation-safe shim
+- `persist` -> Capsulenv link reconciler
+- `env_add_path` / `env_set` -> process environment plan
+- `shortcuts` -> launcher-based HostIntegration declaration
+- `depends` -> planner DAG
+
+SHA-256、URL scheme、archive type、relative path、alias/shortcut name 都是 bounded validation。第一版 executor 只處理 `http`/`https`/`file`、SHA-256、ZIP 與 plain-file artifact；`extract_dir` 只在 ZIP 上有定義。`env_set` 必須是 JSON object。Shortcut name 可包含 bounded 子目錄，custom icon 也只能落在 package projection 內。
+
+Planner 對 Scoop schema 採 **schema-aware fail-closed**：已知純 metadata 欄位可以忽略，但目前未實作、會改變 install/download/runtime 語義的欄位（例如 `cookie`、`psmodule`）不會被悄悄丟掉；未知 root/selected-architecture property 也不能取得 `PortableSafe`。這讓 upstream manifest format 增加新 active semantics 時，Capsulenv 預設停下來而不是錯把它當 declarative no-op。
+
+`pre_install`、`post_install`、installer/uninstaller script 等 arbitrary code 永遠不是 PortableSafe。Capsulenv 不對 script 做 fingerprint allowlist、rewrite 或 partial sandbox；要執行就進 TrustedExecution。
+
+## Provisioning and runtime separation
+
+Runtime consumer 不應關心 package 當初由哪個 CLI 安裝，而是解析 installed app projection。Selector scopes：
+
+```text
+capsule/<app>   Capsulenv-owned PortableSafe package
+user/<app>      stock Scoop user root
+global/<app>    stock Scoop global root
+```
+
+不帶 scope 時，Capsulenv-owned package優先；user/global 同名仍要求顯式 scope。Browser、Bitwarden、sing-box、tool resolver 和 `app run` 應使用同一 installed-runtime abstraction，而不是各自 hard-code `scoop/apps/<name>/current`。
+
+PortableSafe install 仍會在 version tree 寫出 installed `manifest.json` / `install.json` compatibility metadata，讓現有 runtime manifest parser 可共用，而 `.capsulenv/packages/*.json` 保存 Capsulenv 自己的 ownership/state。State 同時保存 provider/reference、source manifest fingerprint 與 installed metadata fingerprints；runtime 每次讀取都驗證它仍指向同一 capsule-owned version/current/persist roots，metadata 漂移即 fail closed。這是 migration bridge，不代表 Scoop 重新取得 ownership。
+
+## Shims
+
+Capsulenv shims 位於 capsule `shims/`，並在 Capsulenv process PATH 中排在 Scoop shims 前。Shim 不嵌入 app 的 absolute install path，而是呼叫 capsule launcher：
+
+```text
+shims/git.cmd
+  -> ../capsulenv.cmd app exec capsule/git git -- ...
+  -> resolve current installed state
+  -> apply package ProcessPlan
+  -> execute target
+```
+
+因此 `E:\capenv -> F:\capenv` 不需要 `scoop reset *` 才修 Capsulenv-owned shims。Alias collision 必須有 ownership marker；不能覆寫不屬該 package 的 shim。
+
+## Stock Scoop boundary
+
+Capsule 仍 bootstrap upstream Scoop core/Main。PowerShell session 的 PATH 會讓真正的 upstream `apps\scoop\current\bin\scoop.ps1` 排在 Scoop shims 前，因此 `scoop` 直接命中 upstream dispatcher。只有 `cmd.exe` 因 `.ps1` 不在一般 executable extension resolution 中，才保留一個 Capsulenv-owned `scoop.cmd` trampoline；它只用自身 `%~dp0` 找到：
+
+```text
+../apps/scoop/current/bin/scoop.ps1
+```
+
+並直接執行 upstream dispatcher。Capsulenv 不建立 `scoop.ps1` wrapper；舊版留下且能以 Capsulenv marker 證明 ownership 的 PowerShell shim只在 bootstrap migration cleanup 中刪除。`scoop.cmd` 不能載入 Capsulenv runtime transform/policy，也不能根據 ShellOnly/User 改寫 Scoop semantics。
+
+`capsulenv app install <ref> --allow-trusted` 只做一件顯式 boundary crossing：警告後把 `install <ref>` 原樣交給 canonical upstream Scoop。直接 `scoop ...` 亦相同。這些操作可能建立 Scoop 自己的 shortcuts/environment/registry state，Capsulenv 不宣稱其 host mutation 可由 `restore-user` 完整回滾。
+
+## ShellOnly and User session modes
 
 ### ShellOnly
 
-ShellOnly is the default. Activation sets `CAPSULENV_ROOT`, `SCOOP`, `SCOOP_GLOBAL`, `SCOOP_CACHE`, tool variables, module paths and PATH only in the Capsulenv process tree. It does not adopt, rewrite or update a foreign `%USERPROFILE%\scoop` installation.
+每個新的 standalone invocation 預設 ShellOnly。`CAPSULENV_MODE=User` 只由 explicit User entrypoint/process inheritance 設定；persistent ledger 不能用來自動升格 session。
 
-PATH isolation removes only shim directories that can be attributed to another inherited/User/Machine Scoop root (including the conventional Windows Scoop roots), then prepends the capsule local/global shim directories. This prevents command fall-through into a host Scoop without replacing the rest of host PATH.
-
-ShellOnly is not a sandbox. A user can still explicitly run software that changes the host. The guarantee is narrower: Capsulenv's own activation/bootstrap/rehydrate/Bitwarden integration does not persistently take over host Scoop/User integration.
+ShellOnly environment 只寫 process scope，並優先使用 Capsulenv package shims與 configured portable tool paths。它不建立 Capsulenv Start Menu integration，也不因為 package manifest 有 environment/shortcut 欄位而寫 Windows User/Machine state。
 
 ### User
 
-User mode explicitly registers this capsule as the current Windows user's Scoop environment. Capsulenv snapshots every environment value it owns before changing it and stores the backup under:
+`user-shell` / `install-user` 只同步 Capsulenv 自己明確定義的 HostIntegration，例如 package launcher shortcuts、default-browser registration、Bitwarden/SSH integration。Backup/restore authority 位於 `.capsulenv/user-integrations/<machine-user-hash>/`。
+
+User mode不是「允許 Capsulenv 替 Scoop執行 arbitrary lifecycle」的開關。使用者若在 User shell 直接執行 upstream Scoop，那是獨立的 TrustedExecution decision。
+
+## Start Menu HostIntegration
+
+Capsulenv-owned shortcut namespace：
 
 ```text
-.capsulenv/user-integrations/<machine-user-hash>/
+Programs\Capsulenv Apps\<capsule-id-prefix>\PortableSafe\<package>\...
 ```
 
-The backup distinguishes "variable absent" from "variable present with value", so `restore-user` can restore the exact prior state for Capsulenv-owned variables/PATH entries. This scope includes Scoop roots/cache, tool-storage variables, `CAPSULENV_MODULE_ROOT`, `SSH_AUTH_SOCK`, configured custom variables, and the path variable selected by Scoop `use_isolated_path` when applicable. `PSModulePath` deliberately remains session-only.
+每個 `.lnk` 的 TargetPath 是 capsule `capsulenv.cmd`，Arguments 指向 `app run capsule/<package> "<shortcut>"`；shortcut不直接 target `E:\...\packages\...\exe`。Windows `.lnk` 仍保存 launcher absolute path，所以 relocation/User sync 會刪除並重建**整個 capsule-specific namespace**。
 
-The ledger is host-scoped. A reset-on-shutdown machine can erase its User environment while the USB keeps the previous ledger; a later `install-user`/`user-shell` snapshots the newly clean host state and takes ownership again. A ledger from another machine/user is never treated as proof that the current user is already integrated. Exiting `user-shell` does not implicitly restore the persistent takeover; `restore-user` remains the explicit reversible undo. This persistent state can therefore coexist with a later standalone ShellOnly session without changing that session's ownership rules.
+Capsulenv 永遠不能 override Scoop `shortcut_folder`，也不能寫入 foreign `Programs\Scoop Apps` namespace。Stock Scoop自行建立的 shortcuts 不屬 Capsulenv HostIntegration ownership。
 
-`restore-user` only reverses state Capsulenv actually captured or explicitly owns. It is not a generic undo mechanism for arbitrary Scoop manifest side effects such as package-specific registry entries or environment keys whose original state was never recorded. User-mode Scoop shortcut creation is a deliberate exception with explicit ownership: Capsulenv overrides Scoop's shortcut root to `Programs\Capsulenv Apps\<capsule-id-prefix>` (and the corresponding Common Start Menu root for portable global apps). `restore-user` removes only those capsule-specific directories. The host/foreign Scoop `Programs\Scoop Apps` namespace is never a Capsulenv-owned shortcut target.
+## Relocation projection repair
 
-Optional default-browser integration follows the same ownership rule. Its per-machine/user registration snapshot lives under that host integration state root, records capsule identity, host integration key, the exact `RegisteredApplications` value that existed before Capsulenv, and only the registry subtrees Capsulenv itself creates. A state file from another capsule or machine/user is rejected rather than used as delete authority.
+Rehydrate 不再把 Scoop reset 當 relocation engine。
 
-## Capsule identity and relocation context
+PortableSafe package repair可以重建：
 
-`.capsulenv/identity.json` provides a stable capsule identity independent of drive letter. Relocation state records the previous root/Scoop roots and is used to decide whether stale paths belong to this same capsule before mutation.
+- `packages/<app>/current`
+- package persist directory/file projection
+- Capsulenv shims
+- User mode 下的 Capsulenv-owned launcher shortcuts
 
-Managed references that live inside the capsule should prefer capsule-relative or `capsule://...` identity-based references. Host-scoped integration may also require the current machine/user fingerprint. This prevents a copied ledger or stale absolute path from becoming authority to overwrite unrelated host state.
+File persist repair只在 ownership 可證明時替換 projection：reparse/hardlink identity直接接受；若 relocation 將 hardlink copy 成 normal file，只在 source/target SHA-256 相同時重建，內容分歧即 fail closed。
 
-A relocation is committed only after all required reset/repair stages succeed. Failed strict repairs therefore do not save a new fingerprint that would erase evidence of the old root. Rehydration-state replacement uses a same-directory temporary file plus a real rollback path; PowerShell/.NET `File.Replace` is never called with an empty backup path.
+對既有 stock Scoop tree，Capsulenv保留一個**bounded legacy projection adapter**，但它不能載入 `scoop/apps/scoop/current/lib/*.ps1` 或呼叫 Scoop private helper。它只讀 installed `manifest.json` / `install.json`，並修復可證明的 `current` / `persist`：
 
-## Scoop bootstrap boundary
+- valid current -> 只有 target 是 app root 的直接、實體 version directory 才保留
+- stale current target 的 version leaf 在本地仍有 matching metadata -> 可修
+- 沒有 current evidence但只有一個 metadata-bearing version -> 可修
+- app root 外部/reparse version target、多個候選 version、normal `current` directory、diverged persisted file 等 ownership 不足 -> fail closed
 
-Before Scoop core is loaded for the first time, Capsulenv creates capsule-local `scoop/config.json`. This prevents Scoop from silently falling back to `%USERPROFILE%\.config\scoop\config.json`.
+最後一種情況要求使用者明確執行 upstream `scoop reset <app>`、reinstall 或 migrate；Capsulenv 不猜 active version。
 
-If Scoop core or Main is missing, bootstrap prefers Git and performs shallow single-branch clones; capsule Git is preferred, with inherited host Git accepted only as transport. If Git is unavailable or clone fails, configured archives are used as fallback. These repositories are live Scoop-owned runtime data, not Git submodules or Capsulenv source files.
+`capsulenv reset` 是 projection reconcile compatibility command，**不是 `scoop reset`**。舊 automatic lifecycle replay / `capsulenv hooks` 已移除。
 
-`SCOOP` and `SCOOP_GLOBAL` are always explicit in a Capsulenv session. This also prevents operations such as reset from accidentally discovering `%ProgramData%\scoop` as an unrelated global root.
+## PowerShell control plane and profile isolation
 
-## PowerShell bootstrap and profile isolation
+`capsulenv.cmd` 的 maintenance/control path 使用 Windows PowerShell-compatible runtime module；interactive shell 可以使用 capsule package提供的 PowerShell 7。這避免更新/repair `pwsh` package 時 control process 鎖住自己的 portable executable。
 
-`capsulenv.cmd` 的 **control plane** 固定使用 Windows PowerShell 5.1：先驗證 canonical `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`，再只接受同樣為 Desktop edition 5.1+ 的 `powershell.exe` PATH candidate。它不透過 capsule Scoop `pwsh` 啟動 control plane，因為 relocation/reset 本身可能正在重建該 app 的 `current` link 或 shim。Interactive/project shell 的 executable selection 是另一條 runtime path，可獨立使用 capsule-owned PowerShell 7。
-
-Control entry scripts 在任何一般 cmdlet/autoload 前先執行 `Initialize-CapsulenvControlHost.ps1`。該 bootstrap 嚴格限制為 PowerShell language + .NET：只把 control host 自己的 `$PSHOME/Modules` 放到 inherited `PSModulePath` 最前，不主動 import 或 probe 任何 built-in module。由 Capsulenv interactive shell 繼承回來的 portable/private module path 可以繼續存在，但不能排走 OS control host 的 built-in module roots。
-
-Capsulenv 自己的 `.psd1` config/module metadata 不依賴 `Import-PowerShellDataFile`。Private `Import-CapsulenvPowerShellDataFile` 直接使用 PowerShell parser，要求檔案只有一個頂層 `HashtableAst`，並以 `SafeGetValue()` 建構資料；command invocation、額外 statement 或其他 dynamic expression 都 fail closed。如此 control bootstrap 不再把某一個 Utility cmdlet 的存在當成 portable runtime 的前置條件。
-
-Entry points use process-scope `-ExecutionPolicy Bypass`; Capsulenv never calls `Set-ExecutionPolicy` or writes execution-policy registry values. Group Policy remains authoritative.
-
-PowerShell package ownership remains with Scoop. The portable private-module root defaults to `PowerShell/Modules/`; it is prepended to the **interactive/runtime session** `PSModulePath`, while its first entry is exposed as `CAPSULENV_MODULE_ROOT`. Control-host bootstrap does not change that ownership; it only establishes a deterministic built-in-module prefix before Capsulenv runtime code starts.
-
-ShellOnly starts its child PowerShell with `-NoProfile`, then explicitly dot-sources only capsule-owned Scoop `pwsh` `$PSHOME\profile.ps1` and `$PSHOME\Microsoft.PowerShell_profile.ps1`. It never treats a fallback host PowerShell executable's `$PSHOME` profile as capsule data. This prevents host CurrentUser profiles from running after Capsulenv has established isolation.
-
-User mode keeps PowerShell's normal profile chain because User mode intentionally integrates with that Windows user. Both modes redirect PSReadLine history to `tool-data/powershell/PSReadLine/ConsoleHost_history.txt` after profile initialization.
-
-## Relocation lifecycle
-
-Scoop native `reset` is not suitable as a ShellOnly primitive because it may create Start Menu shortcuts and manifest-defined User/Machine environment integration. Capsulenv therefore branches by mode.
-
-### ShellOnly Scoop command gateway
-
-The capsule-owned `scoop.ps1`/`scoop.cmd` shims do not point directly at Scoop core in ShellOnly. They enter a Capsulenv gateway. Read-only/package-metadata commands still delegate to upstream Scoop, while commands that can create host integration (`install`, `update`, `uninstall`, `reset`, and `shim`) execute a transformed copy of the exact upstream libexec implementation with a process-local policy layer. A libexec script is **not** a standalone Scoop entrypoint: before running the transformed copy, the gateway reads the installed `bin/scoop.ps1`, validates its `$subCommand` dispatcher boundary, and prepends that version's complete pre-dispatch bootstrap. This preserves Scoop's own core/config/bucket/command helper context (including helpers used before a libexec option parser) instead of assuming those functions leaked from the caller session. The gateway also verifies that the captured prefix loads `lib/core.ps1`; an unknown dispatcher/bootstrap layout fails closed. Only after that bootstrap has been prepended does Capsulenv inject its policy at the command-specific option-parser boundary. `import` is also intercepted because it invokes `scoop-install.ps1` internally; `install`, `download`, and `virustotal` have their automatic nested `scoop-update.ps1` calls routed back through the gateway. It never patches the Scoop checkout on disk.
-
-The ShellOnly policy shadows Scoop's `Set-EnvVar`, `Add-Path`, and `Remove-Path` so environment effects are process-only. Start Menu shortcut create/remove functions are no-ops. Capsule-owned app directories, installed manifests, `current` links, shims and `persist` remain Scoop-owned and continue to use upstream implementation. `scoop update` may recreate its own shim, so the gateway reasserts the capsule-owned shim after an intercepted command. The generated `scoop.ps1` and `scoop.cmd` keep their executable logic relocation-safe through `CAPSULENV_ROOT`, but also materialize Scoop-compatible first-line target metadata (`# <gateway>` / `@rem <gateway>`) for `scoop which` and other `Get-ShimTarget` consumers; activation or gateway reassertion refreshes that non-executable metadata after relocation. Capsulenv's internal Scoop calls resolve the canonical upstream executable directly where a controlled internal primitive must avoid recursively entering the public gateway.
-
-Arbitrary manifest lifecycle code is fail-closed. Before an install mutates app state, the policy preflights install-side `pre_install`, `post_install`, installer script and external-installer descriptors. Before uninstall/update removes old state, it separately preflights uninstall-side hooks. Approval is keyed by SHA-256 over the hook kind plus exact script/descriptor content in `Scoop.ShellOnlyLifecyclePolicy`; an upstream text change therefore becomes unreviewed automatically. `Allow` executes the exact reviewed code. `Skip` is available for reviewed optional hooks/cleanup (for example host registry teardown that ShellOnly never installed), but cannot bypass an actual installer script/external installer. The built-in policy contains narrowly reviewed fingerprints needed by the default Git, PowerShell Core and 7-Zip portable flows; local policy replacement may tighten or extend it after source review.
-
-User mode continues to use upstream Scoop lifecycle semantics because that mode explicitly delegates current-user integration to the capsule, but the same public gateway applies the capsule-specific Start Menu shortcut root after Scoop loads its shortcut library. ShellOnly and User policies are narrow ownership layers, not a Scoop fork and not a second package-manager implementation.
-
-### PowerShell control plane vs interactive shell
-
-Capsulenv deliberately separates PowerShell into two roles. `install.cmd`, `capsulenv.cmd`, and the generated `scoop.cmd` policy gateway use **Windows PowerShell 5.1** as the control-plane host. These entrypoints may rebuild Scoop `current` links, shims, shortcuts, environment entries and `persist`, including the capsule's own `pwsh` package; therefore the control process must not itself be launched through `pwsh.exe` or a Scoop pwsh shim. The batch launchers prefer `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, validate that it is Desktop PowerShell 5.x, and never fall back to portable PowerShell 7 for control-plane work.
-
-Interactive/project use remains PowerShell 7 when the capsule has Scoop `pwsh` installed. `shell`/`user-shell` select `apps\pwsh\current\pwsh.exe` (or an installed version directory while recovering an incomplete `current` link) only **after** activation/rehydration has completed. If portable pwsh is not installed yet, the current Windows PowerShell host remains the bootstrap shell. This split lets Capsulenv repair or upgrade pwsh without keeping the file/shim being replaced open, while preserving PowerShell 7 for normal work.
-
-### ShellOnly portable reset
-
-ShellOnly uses a capsule-local temporary Scoop command that rebuilds only app `current` links, local/global shims and `persist` links/permissions. It intentionally skips Start Menu shortcuts, manifest environment integration and lifecycle hook replay.
-
-During this reset Capsulenv shadows Scoop's internal path persistence helper with a process-only implementation. Rebuilding a shim must not cause upstream Scoop to persist the shim directory into User/Machine PATH merely because ShellOnly is repairing itself.
-
-The shared reset guard can still ignore only the reset process's own PID for callers that invoke the module directly from a portable app, but normal `capsulenv.cmd`/installer control paths no longer rely on that exception: they run under Windows PowerShell 5.1. Any independently running app still goes through Scoop's normal running-process guard.
-
-### User Scoop reset
-
-User mode keeps upstream Scoop reset semantics because the current Windows user has explicitly delegated current-user integration ownership to this capsule: `current`, shims, capsule-isolated Start Menu shortcuts, manifest environment entries and `persist` links are all rebuilt. Before shortcut creation, the User reset helper overrides Scoop's shortcut folder to `Programs\Capsulenv Apps\<capsule-id-prefix>` (or its Common Start Menu counterpart), so the normal Scoop shortcut implementation cannot collide with a host Scoop's `Scoop Apps` namespace. Capsulenv invokes those Scoop primitives through a temporary User-reset command under the Windows PowerShell control plane. An independently running app still goes through Scoop's normal running-process detection, but automatic rehydration treats that app reset as deferred rather than failing the whole batch: other installed apps continue to reset, the rehydration state is saved with `PendingScoopReset=true`, and the next activation retries until all deferred apps have exited. Explicit `capsulenv.cmd reset` remains strict. Genuine reset errors still fail the operation. Internal Scoop command output is rendered to the host separately from the numeric exit status, so messages such as shim creation cannot contaminate reset result handling. On drive relocation, persistent Capsulenv-managed User variables/PATH references are refreshed from the old capsule root to the new one. If `UserIntegration.DefaultBrowser` is configured, User synchronization also rewrites the owned browser registration from the current Scoop executable/profile paths, so a changed drive letter does not leave stale URL/file handlers.
-
-Converting an existing ShellOnly capsule with `install-user` does **not** automatically run `scoop reset *` only to materialize existing UI integration. New package installs then use normal User semantics; `capsulenv.cmd reset` is the explicit operation when existing apps should materialize their native shortcuts/environment. Actual relocation does require automatic reset because existing User integration contains stale absolute targets.
-
-### Manifest hook replay
-
-Lifecycle hooks are always read from each app's **installed version** metadata, never substituted with a potentially newer bucket manifest.
-
-Automatic replay is an allow-list in `Scoop.ReplayHooks`. `pre_install` is never automatically assumed safe or idempotent. ShellOnly rejects hook replay completely because arbitrary manifest code has no contract limiting writes to the capsule. User mode can explicitly replay approved hooks.
-
-### Persisted text repair
-
-Some persisted UTF text/JSON files contain absolute paths that the owning app does not repair itself. `Scoop.RelocationRepairs` is an exact allow-list of app-relative files. Repairs are bounded by path, format and maximum size; missing optional files are skipped, configured processes must be closed, JSON must parse before replacement, and the write is transactional.
-
-Capsulenv never recursively scans all of `persist` and never applies blind OldRoot -> NewRoot replacement to binaries. The built-in browser rules exist only for known Firefox/Firefox ESR/Zen/LibreWolf text/config files.
-
-## Shortcut-aware app launcher
-
-`capsulenv.cmd app list/run` exists so ShellOnly can launch apps whose Scoop manifest only defines `shortcuts` without creating Start Menu `.lnk` files.
-
-The launcher reads `manifest.json` and `install.json` under the installed app's `current` directory, selects architecture-specific shortcut metadata, expands Scoop shortcut variables such as `$dir`, `$original_dir` and `$persist_dir`, and starts the target directly. It does not read the latest bucket manifest and does not mutate Start Menu state.
-
-If the same app exists in both local and portable-global roots, scope must be explicit (`user/<app>` or `global/<app>`). If an installed manifest has multiple shortcuts, the shortcut name must be selected explicitly. The same selector grammar is reused by manifest-backed integrations rather than maintaining separate app-name registries.
-
-Executable resolution is also installed-version driven. `Resolve-CapsulenvScoopAppExecutable` reads architecture-specific `bin` and `shortcuts` from the selected installed manifest; an integration may constrain that metadata with a `BinName`, `ShortcutName`, or app-relative `ExecutablePath`. Persisted integration storage paths are resolved only below the same selected app's Scoop `persist` root. Runtime consumers that must match an app launcher exactly may instead resolve that persisted item through the installed manifest's `persist` source under `apps/<app>/current`; Scoop owns that source link and its target remains the same `persist` store. This distinction is important for processes that identify a running instance/profile by its command-line path. These are the common ownership primitives used by Gecko browsers, Bitwarden, sing-box, and Scoop-installed uv/Pixi relocation tools.
+ShellOnly 不自動載入 host CurrentUser PowerShell profile。私人 modules透過 capsule `PowerShell/Modules` 和 process `PSModulePath` 投影；`seed powershell` 是一次性 migration，不是 runtime依賴。
 
 ## Browser ownership
 
-Gecko browser profiles stay in the selected Scoop app's `persist`; Capsulenv never creates a second browser profile tree. Built-in definitions cover Firefox/Firefox ESR/Zen/LibreWolf, but they are configuration conveniences rather than runtime presets: `Browsers.<name>.App` is an installed Scoop app selector, while `ProfilePath`, `ProfileArgument` and optional executable hint describe the Gecko-specific contract. A custom-bucket or renamed compatible manifest can therefore add its own `Browsers` entry without changing browser code.
+Browser command 使用 unified installed app selector，從該 app 的 installed manifest/runtime projection 找 executable 和 persist-visible profile。`Browsers` config只描述 Gecko-specific profile path、arguments 與可選 default executable override，不再定義第二份 browser data store。
 
-`capsulenv.cmd browser <scoop-app>` binds the selected app's Scoop-persisted profile explicitly. The historical `firefox`/`zen`/`librewolf` commands are compatibility aliases only. ShellOnly also uses `-no-remote`, preventing the request from being handed to a foreign host browser process. `--host` is the sole opt-in path for borrowing the machine executable configured for that same browser definition; host resolution excludes both capsule Scoop roots and never falls back across browser definitions. The profile remains capsule-owned, so browser/profile format compatibility is deliberately left visible to Gecko rather than bypassed with downgrade flags. User mode may rely on normal Scoop integration, but the explicit Capsulenv launcher remains available.
-
-Browser persisted-file relocation uses only the configured `Scoop.RelocationRepairs` allow-list. User-mode manifest `post_install` replay may repair normal user profile registration; ShellOnly does not perform that host-user registration.
-
-
-`UserIntegration.DefaultBrowser` stores the installed Scoop app selector, not a browser preset name. It must resolve to exactly one `Browsers` definition. User mode registers a unique per-user Default Programs application under `HKCU\Software\RegisteredApplications`, `HKCU\Software\Clients\StartMenuInternet`, and Capsulenv-specific ProgIDs under `HKCU\Software\Classes`. The `Capabilities\ApplicationName` identity is kept identical to the named `RegisteredApplications` value so Windows can resolve the per-user `registeredAppUser` deep link reliably. Normal browser launch continues to prefer the installed manifest's public `bin`/shortcut target. A definition may additionally set `DefaultExecutablePath` when that public executable is a portable wrapper that cannot broker URL arguments into an already-running instance; only the Windows ProgID command then uses the explicit app-internal Gecko executable. The command passes the profile through the manifest-owned `current` persist source path rather than spelling the backing `scoop\persist` target, so launcher and delegation use one runtime profile identity while Scoop still owns the data store. URL handlers use Gecko's normal `-url` delegation form without `-osint`: Gecko deliberately rejects `-osint` whenever extra arguments such as `-profile <path>` are present, so a profile-pinned portable registration cannot legally use the installed-browser `-osint -url` command shape. The association itself is limited to `http`/`https`, and the shell target remains one quoted `%1` argument. Registration state schema 2 records the app selector; legacy schema-1 preset state remains readable so existing registrations can still be restored exactly.
-
-Capsulenv treats Windows default-association choice as user-owned state. It never writes/replays the protected association hash. For status/sync/restore ownership checks it asks Windows Shell for the **effective** ProgID through `IApplicationAssociationRegistration::QueryCurrentDefault(..., AL_EFFECTIVE)`, which is the same supported query used to determine what `ShellExecute` will launch. This deliberately avoids assuming that the legacy `UserChoice` registry key is authoritative: Windows 11 deployments may rotate association state through `UserChoiceLatest` while leaving the old key present. If the COM query is unavailable, Capsulenv uses a bounded read-only fallback that prefers `UserChoiceLatest\ProgId\ProgId` before classic `UserChoice\ProgId`; neither path is ever written.
-
-When the configured registration is not selected, User synchronization opens `ms-settings:defaultapps?registeredAppUser=...` so the final default choice remains in Windows Settings. Persistent integration synchronization runs both from explicit User takeover commands and from an ordinary interactive `capsulenv.cmd` activation when that host/user is already in User mode; a config edit therefore cannot remain merely validated without being applied. A tracked browser registration is still Capsulenv-owned persistent state even when `UserIntegration.DefaultBrowser` is later blank: User synchronization refreshes that already-owned ProgID in place, but does not reopen Default Apps or ask Windows to select it. This makes runtime upgrades repair obsolete command lines without turning an empty preference into a new default-browser request. `doctor` compares the tracked URL ProgID's actual `shell\open\command` with the command generated by the current runtime so stale deployed registrations are directly observable. `user-shell` skips the second synchronization after its preceding takeover step so it does not duplicate the prompt. Before `restore-user` deletes the registration, Capsulenv refuses if Windows still points `http`/`https`/HTML at those ProgIDs; the user selects another default first, then the exact prior `RegisteredApplications` value and owned registry trees can be restored without leaving dangling associations.
-
-## sing-box process ownership
-
-The sing-box integration is also manifest-selected: `SingBox.App` chooses the installed Scoop app, executable resolution uses its installed `bin`/shortcut metadata (or an explicit app-relative hint), and `ConfigPath`/`ConfigDirectory` resolve only under that app's Scoop `persist` root. Capsulenv does not provision VPN credentials, synthesize a Tailscale/sing-box topology, or copy configuration into a parallel store.
-
-Automatic connection is conditional rather than bootstrap. Activation proceeds only when the integration is enabled, the selected app is installed, and its persisted configuration is non-empty; it runs `sing-box check` before `run`, and an absent/empty configuration is a non-fatal skip. Process inspection treats an executable outside the selected Scoop app root as foreign and refuses to reuse/stop it. Thus a host-installed sing-box cannot be mistaken for the capsule network process merely because the process name matches.
-
-## Weasel seed ownership
-
-Weasel is intentionally not a Capsulenv-managed application. `seed weasel` is allowed only when machine-level Weasel installation registry evidence resolves to an installation containing both `WeaselServer.exe` and `WeaselDeployer.exe`; merely finding `%APPDATA%\Rime` or a loose executable is insufficient. The current user data directory is resolved from `HKCU\Software\Rime\Weasel\RimeUserDir` when present, otherwise the normal `%APPDATA%\Rime` location is used.
-
-Backup/restore treats the Rime user directory as a tree because dictionaries and generated state are not limited to YAML files. Capsulenv refuses to traverse reparse points, stops a running Weasel server before copying, and restarts it only if it had been running. Restore first snapshots the host tree under the machine/user-scoped `.capsulenv/user-integrations/<host-key>/weasel/restore-backups/`, swaps the portable tree into place, then invokes `WeaselDeployer.exe /deploy`. Failed deployment restores the pre-restore tree before returning an error.
+ShellOnly 不把 capsule request 隨意交給 foreign browser profile；`--host` 只允許同一 configured product 的 host executable 配 capsule profile。User default-browser registration 是 explicit HostIntegration，有精確 registry backup；Windows `UserChoice` hash 不由 Capsulenv偽造。
 
 ## Bitwarden SSH ownership
 
-Bitwarden app-data and vault state remain completely Scoop-persisted. `Bitwarden.App` selects the compatible installed Scoop app (including custom bucket names or explicit `user/`/`global/` scope), and `StatePath` is relative to that app's persist root. Bitwarden is intentionally excluded from generic OldRoot text replacement.
+Capsulenv 不複製/重建/重新序列化 Bitwarden vault/app state。Setting patch只修改 source-verified top-level keys，保存 exact previous bytes/value state並在寫入前驗證 JSON。App selector同樣可指向 `capsule/`、`user/`、`global/` runtime package。
 
-Capsulenv's SSH Agent integration changes only the known top-level Desktop setting keys required to enable the agent and remember-authorization policy. Before mutation it stops only an executable proven to live under the selected Scoop app root, records the previous literal/presence of each owned key, validates the JSON object, writes via a same-directory temporary file, and later restores/removes only those owned keys. It does not wholesale deserialize/reserialize or restore an old `data.json` over newer vault state. Reset before mutation carries the full app selector so a `global/foo` integration cannot accidentally reset a same-named user app.
+ShellOnly Git/OpenSSH 設定使用 process overlay且不更改 Windows `ssh-agent` service；User integration才可進入明確備份/還原流程。
 
-Mode behavior is asymmetric: ShellOnly sets `SSH_AUTH_SOCK` and Git OpenSSH configuration only for the process tree and never changes the Windows `ssh-agent` service. User mode may create reversible global Git configuration and, when elevated and explicitly requested, back up/change the Windows service state. `restore-user`/Bitwarden restore use those exact backups; service restoration still requires elevation.
+## sing-box process ownership
 
-A foreign host Bitwarden process is not borrowed or terminated. Explicit setup/start refuses instead of crossing the capsule ownership boundary. Automatic Bitwarden startup is disabled by default; if a user explicitly enables `StartOnEnter`, activation treats a foreign host Bitwarden as a non-fatal conflict, skips only the automatic capsule launch, and still enters the Capsulenv shell.
+Capsulenv只管理由 configured installed app selector啟動、可證明 executable/config 都位於 capsule-owned runtime/persist scope 的 sing-box process。它不生成未知 VPN設定，也不終止無法證明 ownership 的 foreign sing-box process。
+
+## Weasel seed ownership
+
+Weasel integration是 explicit seed/restore workflow：只對可確認的 machine-installed Weasel user-data tree做 cold copy，restore 前先建立 host rollback snapshot。它不是 portable package executor的一部分。
 
 ## Tool and project storage
 
-Tool-data/cache separation, package-manager environment mapping, project-cache hardlink/junction ownership, uv/Pixi native repair and workspace registration are intentionally specified only in [`TOOLS.md`](TOOLS.md). Do not duplicate those tables here or in README.
+Package ownership與 tool cache/project storage是不同 surface。`tool-data/`、`cache/`、`project-cache/`、uv/Pixi workspace repair 的 canonical semantics 見 [`TOOLS.md`](TOOLS.md)。Persisted-text relocation仍使用 bounded allow-list，禁止 recursive rewrite unknown app state。
 
-The architecture-level rule is simple: persistent tool state is not cache, shared caches may still have tool-specific linking semantics, and any object whose relocation semantics are owned by a tool should be repaired through that tool when possible.
+## Static architecture gates
+
+`Capsulenv.StaticAnalysis.ps1` 對以下 invariant fail closed：
+
+- runtime 不得出現 `module-runtime/scoop-capsulenv-*`
+- direct Scoop shim不得 gateway/policy/runtime-transform
+- runtime 不得 target `Programs\Scoop Apps`
+- 禁止任何 `shortcut_folder` override
+- session mode resolver不得依賴 persistent ownership command
+- control bootstrap/runtime command boundary保持 WinPS 5.1-compatible
+
+這些 gate需要 synthetic rejecting/accepting fixtures；不能為了 refactor方便降級成沒有 ownership意義的 string smoke test。

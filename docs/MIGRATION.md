@@ -19,7 +19,7 @@ capsulenv.cmd restore-user
 
 `enable-user` 目前仍保留 compatibility alias，但新文件與腳本應使用 `install-user`。
 
-不要把舊腳本「永遠 `scoop reset *`」的假設搬過來。現在 ShellOnly/User 的 reset 與 hook semantics 不同；若你曾依賴某個 manifest `pre_install`/`post_install` 在每次搬移都被執行，先審核它是否安全，再放入 `Scoop.ReplayHooks` 或於 User mode 明確執行 `capsulenv.cmd hooks ...`。詳見 [`ARCHITECTURE.md`](ARCHITECTURE.md#relocation-lifecycle)。
+不要把舊腳本「永遠 `scoop reset *`」或 relocation 時自動重放 `pre_install`/`post_install` 的假設搬過來。0.17 起 Capsulenv 不再執行 manifest hook replay；PortableSafe relocation 只修 Capsulenv-owned projection，legacy Scoop state 只做 bounded `current`/`persist` repair。需要任意 lifecycle code 時，必須由使用者明確執行 upstream Scoop。詳見 [`ARCHITECTURE.md`](ARCHITECTURE.md#relocation-projection-repair)。
 
 ## 從 v0.1.x 的平行 `data/` model 遷移
 
@@ -135,7 +135,7 @@ v0.15 把 browser、Bitwarden、sing-box，以及 Scoop-installed uv/Pixi 的 ex
 
 若 local config 曾覆寫 `Bitwarden.ExecutableCandidates`，改為 `Bitwarden.App`，並按需要指定 `ShortcutName`／`BinName`／`ExecutablePath`；persisted `data.json` 仍留在該 Scoop app 的 persist root，不要搬到 Capsulenv 自建資料夾。自訂 Gecko manifest 則加入一個 `Browsers` entry，至少指定 `App`、`ProfilePath`、`ProfileArgument`，interactive executable 可由 manifest 唯一 `bin` 自動解出或以 `BinName`／`ExecutablePath` 消歧。只有當 manifest 公開的是不適合 Windows running-instance URL delegation 的 portable wrapper 時，才另設 app-relative `DefaultExecutablePath`；profile storage 仍不另建副本。
 
-`Scoop.ReplayHooks`、`Scoop.RelocationRepairs` 與 reset 現在也接受 `user/<app>`／`global/<app>`。只有在同名 app 同時存在兩個 root 或 rule 本身必須精確限制 scope 時才需要加 prefix；無 scope 的既有設定仍保留原有語義。
+`Scoop.RelocationRepairs` 與 runtime selector 可使用 `user/<app>`／`global/<app>`。0.17 新增 `capsule/<app>` 給 Capsulenv-owned PortableSafe package；舊 `Scoop.ReplayHooks` 設定不再使用，可從 local config 移除。
 
 ## 從 v0.15.0–v0.15.5 source-only 更新遷移
 
@@ -230,6 +230,22 @@ X:\capsulenv-0.16.4\install.cmd E:\capenv
 這不會重裝 `scoop/apps`、persist、workspace 或其他 portable state；更新完成後原有 `scoop install ...` 等命令直接經新版 gateway 執行。
 
 
+## v0.17.0 package/runtime boundary
+
+0.17.0 把 0.14–0.16 的 Scoop gateway/policy/reset adapter 架構正式拆掉。升級後最重要的語義變更：
+
+- `scoop ...` 現在是**未修改的 upstream Scoop**；Capsulenv 不再 intercept、rewrite libexec、注入 ShellOnly lifecycle fingerprint policy 或 override `shortcut_folder`。
+- 安全 package path 改成 `capsulenv.cmd app plan <ref>` / `capsulenv.cmd app install <ref>`。只有整個 dependency graph 都屬 bounded declarative subset 才會進 `PortableSafe` executor。
+- `pre_install` / `post_install` / installer script 等會分類為 Trusted/unsupported；需要執行時使用 `--allow-trusted` 或直接 upstream `scoop ...`。這些 host mutation 不屬 Capsulenv PortableSafe/restore guarantee。
+- PortableSafe package 改存於 `packages/`、`package-persist/`、`shims/` 和 `.capsulenv/packages/`，runtime selector 新增 `capsule/<app>`。既有 stock Scoop install 仍可由 `user/<app>` / `global/<app>` 啟動。
+- PortableSafe planner 對 manifest schema fail closed：第一版只支援 SHA-256、`http/https/file`、ZIP/plain-file artifact 與已實作的 declarative fields。`cookie`、`psmodule` 或未知 active property 不會被當 no-op；manifest/installed metadata fingerprint 漂移也會要求明確 reinstall/update，而不是沿用舊 ownership state。
+- relocation 不再透過 Scoop private helpers。Capsulenv只重建自己的 package projection，並以 installed metadata bounded repair legacy Scoop `current`/`persist`。若 stale `current` 有多個 version candidate 等情況無法證明 active version，會 fail closed，這時才明確執行 upstream `scoop reset <app>` 或重新安裝/遷移。
+- 舊 `capsulenv hooks` 與 `Scoop.ReplayHooks` 已移除。`--skip-hooks` 只暫時保留為 `init/rehydrate` compatibility flag，沒有 lifecycle replay 可跳過。
+- User sync 會重建本 capsule 的 `Programs\Capsulenv Apps\<capsule-id>\PortableSafe` namespace，shortcut target 改為 `capsulenv.cmd app run capsule/<app> ...`。0.16 時 Capsulenv-owned namespace 中由 Scoop policy 產生的舊 shortcut 因此會被清掉；foreign `Programs\Scoop Apps` 仍不會被猜測或清理。
+
+升級不需要刪除 `scoop/` 或重裝既有 app。第一次 0.17 activation 會把 rehydration state 升到新的 projection-repair schema。若你有 local config，建議刪除已無效的 `Scoop.ReplayHooks` / lifecycle-policy override；未知 extra key不會取得執行權。當前 package/trust model 見 [`ARCHITECTURE.md`](ARCHITECTURE.md#package-planner-and-portablesafe-subset)。
+
+
 ## 升級後驗證
 
 完成任何跨代 migration 後建議：
@@ -243,8 +259,8 @@ capsulenv.cmd offline status
 
 若 capsule 剛換過 path/drive，再執行一次 `capsulenv.cmd rehydrate`。不要為了「清乾淨」而先手動刪 `.capsulenv/`：identity、上一個 relocation context、User backup 和 link registries 正是新版用來安全判斷 ownership 的證據。
 
-## ShellOnly Scoop host-state cleanup (0.14.1)
+## Historical ShellOnly Scoop host-state cleanup (0.14.1–0.16.x)
 
-Older Capsulenv builds exposed Scoop's raw shim in ShellOnly. A direct `scoop install/update/reset/shim` could therefore let upstream Scoop persist capsule paths into the Windows User PATH and create `Scoop Apps` Start Menu shortcuts. 0.14.1 routes those commands through the ShellOnly Scoop gateway, but it does **not** blindly delete historical host state during upgrade because Capsulenv cannot prove that every existing shortcut or user variable was created by the old bug.
+0.14.1–0.16.x 曾以 Capsulenv Scoop gateway 阻擋/改寫 ShellOnly mutation；**0.17 已移除此架構**。若更早版本曾讓 upstream Scoop 把 capsule path 寫進 Windows User PATH 或 `Programs\Scoop Apps`，升級仍不能盲目刪除，因為 Capsulenv 無法證明 foreign Scoop 與舊 capsule shortcut/variable 的 ownership。
 
-After upgrading, inspect User PATH for entries under the current capsule root and remove only entries that actually point into this capsule. Likewise remove only Start Menu `.lnk` files whose resolved target is under the capsule. Existing `scoop/apps`, `scoop/persist`, shims and installed manifests do not need to be deleted or reinstalled. See the ShellOnly Scoop command gateway section in [`ARCHITECTURE.md`](ARCHITECTURE.md#shellonly-scoop-command-gateway) for the new behavior.
+只移除你能確認 target/path 落在此 capsule 的 historical host state；主機 Scoop 自己擁有的內容應由主機 Scoop 修復。既有 `scoop/apps`、`scoop/persist`、installed manifests 不需要因 0.17 migration 刪除。之後若你直接執行 `scoop ...`，它就是 upstream TrustedExecution，而不是 ShellOnly-safe command；安全 package install 請改用 `capsulenv.cmd app install`。

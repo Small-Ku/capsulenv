@@ -2,13 +2,14 @@
 
 ## Non-negotiable ownership invariants
 
-- Scoop is the single source of truth for application files, installed manifests, `persist` data, browser profiles, shims, shortcuts and manifest lifecycle scripts. Never add a parallel Capsulenv app-data/profile store.
+- Scoop buckets/manifests are an external package metadata ecosystem, not Capsulenv's safety/runtime engine. Direct `scoop ...` must retain unmodified upstream semantics; never reintroduce source rewriting, transformed libexec, lifecycle fingerprint policy, private Scoop helper overrides or a Scoop fork.
+- PortableSafe package ownership belongs to Capsulenv under `packages/`, `package-persist/`, `shims/` and `.capsulenv/packages/`. The planner must classify the complete dependency graph before mutation and accept only the bounded declarative subset; arbitrary scripts/installers are TrustedExecution, not something to sanitize.
+- Provisioning and runtime are separate. Runtime consumers resolve unified installed app selectors (`capsule/`, `user/`, `global/`) and installed metadata/projections rather than hard-coding how the app was provisioned.
 - ShellOnly is the default. Capsulenv activation/bootstrap/rehydrate may change process state but must not adopt or persistently rewrite a foreign host/user Scoop installation.
 - A fresh Capsulenv invocation defaults to ShellOnly even when persistent User ownership exists. Only explicit User entrypoints/process inheritance select User session semantics; the host-scoped ledger is restore authority, not session-mode selection.
-- User-mode Scoop shortcuts must use a capsule-specific Start Menu namespace and must never share or overwrite a foreign Scoop `Programs\Scoop Apps` namespace.
-- User integration must be explicit, host-scoped and reversible from an exact backup under `.capsulenv/user-integrations/<machine-user-hash>/`. Never treat mode as a capsule-global trust profile.
-- Relocation repair must use the owning tool whenever possible. ShellOnly Scoop repair may rebuild only capsule-owned `current`/shim/persist links; User mode may use native `scoop reset`.
-- Lifecycle replay must read each installed version's `manifest.json` and `install.json`, never substitute the latest bucket manifest. Arbitrary `pre_install` replay is never safe-by-default.
+- User HostIntegration is explicit, host-scoped and reversible where Capsulenv claims ownership. PortableSafe Start Menu shortcuts must use the capsule-specific `Programs\Capsulenv Apps\<capsule-id>\PortableSafe` namespace and target the Capsulenv launcher; never target or override upstream Scoop's `Programs\Scoop Apps` / `shortcut_folder`.
+- Legacy Scoop relocation compatibility may repair only `current`/`persist` projections for which active-version and ownership evidence can be proven from installed state. It must never load Scoop implementation `lib/*.ps1`; ambiguous versions, normal directories or diverged files fail closed and require explicit upstream Scoop repair.
+- File projection repair may replace a copied normal file only when identity/content evidence proves it is the same projection; diverged data must not be overwritten.
 - Persisted-file path repair is an explicit bounded allow-list. Do not recursively rewrite `persist`, binaries or unknown app state.
 - Never copy, reserialize or own Bitwarden vault/app state. Bitwarden setting integration may patch only source-verified top-level keys, preserve unrelated JSON bytes, validate before replacement and keep exact per-key restore state.
 - Keep every persistent/machine-wide integration change attributable, backed up and reversible where Capsulenv claims reversibility. If the original state cannot be proven, do not invent a generic undo operation.
