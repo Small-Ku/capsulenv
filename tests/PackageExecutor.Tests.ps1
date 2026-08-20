@@ -11,7 +11,7 @@ Describe 'Capsulenv PortableSafe package executor' {
     }
 
     BeforeEach {
-        $script:Capsule = Join-Path $TestDrive 'capsule'
+        $script:Capsule = Join-Path $TestDrive ('capsule-' + [Guid]::NewGuid().ToString('N'))
         foreach ($directory in @('config', 'scoop/buckets/main/bucket')) {
             [void](New-Item -ItemType Directory -Path (Join-Path $script:Capsule $directory) -Force)
         }
@@ -36,7 +36,7 @@ Describe 'Capsulenv PortableSafe package executor' {
             $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
             $manifest = @{
                 version = '1.0.0'
-                url = ([Uri]$artifact).AbsoluteUri
+                url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
                 hash = $hash
                 bin = ($name + '.cmd')
             }
@@ -55,7 +55,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
         @{
             version = '2.0.0'
-            url = ([Uri]$artifact).AbsoluteUri
+            url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
             hash = $hash
             bin = @(,@('demo.cmd', 'demo'))
             env_add_path = @('.')
@@ -96,7 +96,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
         @{
             version = '1.0.0'
-            url = ([Uri]$artifact).AbsoluteUri
+            url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
             hash = $hash
             bin = 'demo-owned.cmd'
         } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
@@ -119,7 +119,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         $hashV1 = (Get-FileHash -LiteralPath $artifactV1 -Algorithm SHA256).Hash.ToLowerInvariant()
         @{
             version = '1.0.0'
-            url = ([Uri]$artifactV1).AbsoluteUri
+            url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifactV1))).AbsoluteUri
             hash = $hashV1
             bin = @(,@('demo-v1.cmd', 'old-demo'))
         } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
@@ -131,7 +131,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         $hashV2 = (Get-FileHash -LiteralPath $artifactV2 -Algorithm SHA256).Hash.ToLowerInvariant()
         @{
             version = '2.0.0'
-            url = ([Uri]$artifactV2).AbsoluteUri
+            url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifactV2))).AbsoluteUri
             hash = $hashV2
             bin = @(,@('demo-v2.cmd', 'new-demo'))
         } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
@@ -197,7 +197,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
         @{
             version = '1.0.0'
-            url = ([Uri]$artifact).AbsoluteUri
+            url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
             hash = $hash
             bin = 'drift.cmd'
         } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/drift.json') -Encoding UTF8
@@ -218,7 +218,7 @@ Describe 'Capsulenv PortableSafe package executor' {
             $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
             @{
                 version = '1.0.0'
-                url = ([Uri]$artifact).AbsoluteUri
+                url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
                 hash = $hash
                 bin = ("$bucket-demo.cmd")
             } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $script:Capsule "scoop/buckets/$bucket/bucket/demo.json") -Encoding UTF8

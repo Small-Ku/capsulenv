@@ -1,7 +1,18 @@
 Describe 'Capsulenv package manifest planning' {
+    BeforeAll {
+        $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        Import-Module $script:Build.ModulePath -Force
+        $script:Module = @(Get-Module Capsulenv)[-1]
+    }
+
+    AfterAll {
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+    }
+
     BeforeEach {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        $script:Capsule = Join-Path $TestDrive 'capsule'
+        $script:Capsule = Join-Path $TestDrive ('capsule-' + [Guid]::NewGuid().ToString('N'))
         foreach ($directory in @(
             'config',
             'scoop/buckets/main/bucket',
@@ -12,7 +23,11 @@ Describe 'Capsulenv package manifest planning' {
         Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $script:Capsule 'config/capsulenv.psd1')
         $env:CAPSULENV_ROOT = $script:Capsule
         $env:PROCESSOR_ARCHITECTURE = 'AMD64'
-        [void](Initialize-CapsulenvContext -Root $script:Capsule)
+        & $script:Module {
+            param($CapsuleRoot)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            [void](Get-CapsulenvConfiguration -Refresh)
+        } $script:Capsule
     }
 
     AfterEach {

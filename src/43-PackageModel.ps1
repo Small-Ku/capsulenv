@@ -197,6 +197,15 @@ function Test-CapsulenvPackageRelativePath {
     return $true
 }
 
+function Get-CapsulenvPackagePathLeaf {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $segments = @($Path -split '[\\/]')
+    if ($segments.Count -eq 0) { return '' }
+    return [string]$segments[-1]
+}
+
 function Get-CapsulenvPackageUrlDescriptor {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Url)
@@ -429,8 +438,8 @@ function Get-CapsulenvPackageManifestPlan {
 
     $urlProperty = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'url' -Architecture $Architecture
     $hashProperty = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'hash' -Architecture $Architecture
-    $urlValues = if ($urlProperty.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $urlProperty.Value).Items } else { @() }
-    $hashValues = if ($hashProperty.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $hashProperty.Value).Items } else { @() }
+    $urlValues = @(if ($urlProperty.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $urlProperty.Value).Items } else { @() })
+    $hashValues = @(if ($hashProperty.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $hashProperty.Value).Items } else { @() })
     if ($urlValues.Count -eq 0) {
         $reasons.Add('url is missing for the selected architecture')
     }
@@ -478,8 +487,8 @@ function Get-CapsulenvPackageManifestPlan {
 
     $extractDir = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'extract_dir' -Architecture $Architecture
     $extractTo = Get-CapsulenvPackageManifestPropertyRecord -Manifest $manifest -Name 'extract_to' -Architecture $Architecture
-    $extractDirValues = if ($extractDir.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $extractDir.Value).Items } else { @() }
-    $extractToValues = if ($extractTo.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $extractTo.Value).Items } else { @() }
+    $extractDirValues = @(if ($extractDir.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $extractDir.Value).Items } else { @() })
+    $extractToValues = @(if ($extractTo.Exists) { (ConvertTo-CapsulenvPackageValueArray -Value $extractTo.Value).Items } else { @() })
     foreach ($path in @($extractDirValues)) {
         if (-not (Test-CapsulenvPackageRelativePath -Path ([string]$path))) {
             $reasons.Add("extract_dir escapes the package root: $path")
@@ -557,9 +566,9 @@ function Get-CapsulenvPackageManifestPlan {
     }
 
     if ($persistProperty.Exists -and $null -ne $persistProperty.Value) {
-        $persistItems = if ($persistProperty.Value -is [string]) { @([string]$persistProperty.Value) } else { @($persistProperty.Value) }
+        $persistItems = @(if ($persistProperty.Value -is [string]) { [string]$persistProperty.Value } else { @($persistProperty.Value) })
         foreach ($item in $persistItems) {
-            $parts = if ($item -is [string]) { @([string]$item) } else { @($item) }
+            $parts = @(if ($item -is [string]) { [string]$item } else { @($item) })
             if ($parts.Count -lt 1 -or $parts.Count -gt 2) {
                 $reasons.Add('persist entries must be a path or [source, target] tuple')
                 continue
@@ -573,9 +582,9 @@ function Get-CapsulenvPackageManifestPlan {
     }
 
     if ($binProperty.Exists -and $null -ne $binProperty.Value) {
-        $binItems = if ($binProperty.Value -is [string]) { @([string]$binProperty.Value) } else { @($binProperty.Value) }
+        $binItems = @(if ($binProperty.Value -is [string]) { [string]$binProperty.Value } else { @($binProperty.Value) })
         foreach ($item in $binItems) {
-            $parts = if ($item -is [string]) { @([string]$item) } else { @($item) }
+            $parts = @(if ($item -is [string]) { [string]$item } else { @($item) })
             if ($parts.Count -lt 1 -or $parts.Count -gt 3) {
                 $reasons.Add('bin entries must be a path or [path, alias, args] tuple')
                 continue
@@ -589,7 +598,7 @@ function Get-CapsulenvPackageManifestPlan {
             $alias = if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace([string]$parts[1])) {
                 [string]$parts[1]
             } else {
-                [System.IO.Path]::GetFileNameWithoutExtension([string]$parts[0])
+                [System.IO.Path]::GetFileNameWithoutExtension((Get-CapsulenvPackagePathLeaf -Path ([string]$parts[0])))
             }
             if (
                 -not (Test-CapsulenvPortableFileNameComponent -Value $alias) -or

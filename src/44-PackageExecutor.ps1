@@ -506,10 +506,10 @@ function Get-CapsulenvPackagePersistDefinitions {
     param([Parameter(Mandatory = $true)]$Plan)
 
     if ($null -eq $Plan.Persist) { return @() }
-    $items = if ($Plan.Persist -is [string]) { @([string]$Plan.Persist) } else { @($Plan.Persist) }
+    $items = @(if ($Plan.Persist -is [string]) { [string]$Plan.Persist } else { @($Plan.Persist) })
     return @(
         foreach ($item in $items) {
-            $parts = if ($item -is [string]) { @([string]$item) } else { @($item) }
+            $parts = @(if ($item -is [string]) { [string]$item } else { @($item) })
             $source = [string]$parts[0]
             $target = if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace([string]$parts[1])) {
                 [string]$parts[1]
