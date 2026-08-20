@@ -28,7 +28,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:LegacyProjectionSource | Should -Match 'Cannot prove the active version'
         $script:LegacyProjectionSource | Should -Match 'Refusing to replace a normal directory'
         $script:LegacyProjectionSource | Should -Match 'Repair-CapsulenvPackageFileProjection'
-        $script:LegacyProjectionSource | Should -Not -Match 'apps\scoop\current\lib'
+        $script:LegacyProjectionSource | Should -Not -Match ([regex]::Escape('apps\scoop\current\lib'))
         $script:LegacyProjectionSource | Should -Not -Match 'shortcut_folder'
         $script:ScoopSource | Should -Match 'Repair-CapsulenvInstalledAppProjections'
         $script:ScoopSource | Should -Not -Match 'Invoke-CapsulenvPortableScoopReset|Invoke-CapsulenvUserScoopReset'

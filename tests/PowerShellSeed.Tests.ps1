@@ -205,7 +205,7 @@ Describe 'Capsulenv PowerShell and seed ownership' {
 
             $hostScoop = [pscustomobject]@{ Root = $hostRoot; GlobalRoot = $hostGlobalRoot; Command = 'unused' }
             Mock Initialize-CapsulenvScoopBootstrap { [pscustomobject]@{ Status = 'Mocked' } } -ModuleName Capsulenv
-            Mock Reset-CapsulenvScoop { $true } -ModuleName Capsulenv
+            Mock Repair-CapsulenvInstalledAppProjections { $true } -ModuleName Capsulenv
             Mock Invoke-CapsulenvScoopCommand { throw 'Native Scoop import/install must not run during ShellOnly snapshot apply.' } -ModuleName Capsulenv
 
             $snapshot = & $script:Module {
@@ -218,7 +218,7 @@ Describe 'Capsulenv PowerShell and seed ownership' {
             (Get-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/apps/git/1.0/git.exe') -Raw) | Should -Match 'snapshot'
             (Get-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/persist/git/settings.json') -Raw) | Should -Match 'portable-state'
             Test-Path -LiteralPath (Join-Path $temporaryRoot 'scoop/buckets/main/bucket/git.json') | Should -BeTrue
-            Should -Invoke Reset-CapsulenvScoop -ModuleName Capsulenv -Times 1 -Exactly
+            Should -Invoke Repair-CapsulenvInstalledAppProjections -ModuleName Capsulenv -Times 1 -Exactly
             Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {

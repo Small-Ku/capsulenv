@@ -314,7 +314,7 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
                 [void](Get-CapsulenvConfiguration -Refresh)
             } $temporaryRoot
 
-            { Get-CapsulenvScoopAppShortcuts -App demo } | Should -Throw '*both user and global roots*'
+            { Get-CapsulenvScoopAppShortcuts -App demo } | Should -Throw '*both user and global*roots*'
             @(Get-CapsulenvScoopAppShortcuts -App user/demo).Count | Should -Be 1
             @(Get-CapsulenvScoopAppShortcuts -App global/demo).Count | Should -Be 1
         } finally {
