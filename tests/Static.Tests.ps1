@@ -899,6 +899,12 @@ Describe 'Capsulenv static and relocation' {
             Assert-CapsulenvTest `
                 -Condition $invokeSource.Contains('Import-Module $modulePath -Force -DisableNameChecking') `
                 -Message 'Runtime launcher must suppress unapproved-verb warnings from its internal Capsulenv import.'
+            Assert-CapsulenvTest `
+                -Condition (-not [regex]::IsMatch($invokeSource, '(?m)^\s*\$[^=]+?=\s*Invoke-Capsulenv\b')) `
+                -Message 'Runtime launcher must stream Invoke-Capsulenv output directly; assigning dispatcher output buffers interactive/native stdout until process exit.'
+            Assert-CapsulenvTest `
+                -Condition ($invokeSource.Contains('$global:LASTEXITCODE') -or $invokeSource.Contains('Get-Variable -Name LASTEXITCODE')) `
+                -Message 'Runtime launcher must preserve app-exec exit status without capturing the dispatcher success stream.'
             foreach ($requiredInstallerBehavior in @(
                 'rollbackRecords',
                 'Copy-CapsulenvInstallFile',

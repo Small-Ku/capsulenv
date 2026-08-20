@@ -190,6 +190,37 @@ Describe 'Capsulenv PortableSafe package executor' {
         (Get-Content -LiteralPath $target -Raw).Trim() | Should -Be 'target'
     }
 
+    It 'streams package executable stdout without mixing the exit code into the success stream' {
+        $hostExecutable = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $previousLastExitCode = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+        Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProcessPlan {
+            [pscustomobject]@{
+                FilePath = $hostExecutable
+                PathEntries = @()
+                Variables = [ordered]@{}
+            }
+        } -ModuleName Capsulenv
+
+        try {
+            $output = & $script:Module {
+                Invoke-CapsulenvPackageExecutable `
+                    -App 'capsule/demo' `
+                    -BinName 'demo' `
+                    -Arguments @('-NoLogo', '-NoProfile', '-Command', '[Console]::Out.WriteLine(''capsulenv-stream-marker''); exit 7')
+            }
+
+            @($output) | Should -Be @('capsulenv-stream-marker')
+            $global:LASTEXITCODE | Should -Be 7
+        } finally {
+            if ($null -eq $previousLastExitCode) {
+                Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+            } else {
+                $global:LASTEXITCODE = $previousLastExitCode.Value
+            }
+        }
+    }
+
 
     It 'detects installed manifest drift before resolving a PortableSafe runtime target' {
         $artifact = Join-Path $TestDrive 'drift.cmd'

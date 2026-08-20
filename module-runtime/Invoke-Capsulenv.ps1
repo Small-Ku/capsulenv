@@ -64,13 +64,26 @@ if ($canCompileModule) {
 }
 
 Import-Module $modulePath -Force -DisableNameChecking
-$result = Invoke-Capsulenv @CapsulenvArguments
-if (
+$isPackageExec = (
     $CapsulenvArguments.Count -ge 2 -and
     [string]$CapsulenvArguments[0] -eq 'app' -and
-    [string]$CapsulenvArguments[1] -eq 'exec' -and
-    $result -is [int]
-) {
-    exit [int]$result
+    [string]$CapsulenvArguments[1] -eq 'exec'
+)
+
+# Do not assign or otherwise capture Invoke-Capsulenv's success stream here.
+# Interactive child shells and package executables inherit this host's console;
+# putting the dispatcher in an assignment pipeline buffers their stdout until
+# they exit, which makes an interactive shell appear to hang after activation.
+Invoke-Capsulenv @CapsulenvArguments
+$invokeSucceeded = $?
+
+if ($isPackageExec) {
+    $lastExitCode = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+    if ($null -ne $lastExitCode -and $null -ne $lastExitCode.Value) {
+        exit [int]$lastExitCode.Value
+    }
+    if ($invokeSucceeded) {
+        exit 0
+    }
+    exit 1
 }
-$result

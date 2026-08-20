@@ -939,7 +939,10 @@ function Invoke-CapsulenvPackageExecutable {
     Clear-CapsulenvLastExitCode
     & $plan.FilePath @Arguments
     $succeeded = $?
-    return Get-CapsulenvLastExitCode -Succeeded $succeeded
+    # Keep native/program output on the success stream. The runtime entrypoint
+    # reads LASTEXITCODE after dispatch so package shims can preserve the child
+    # process exit status without capturing/buffering stdout.
+    $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvPackageInstallPlan, Install-CapsulenvPortablePackage, Repair-CapsulenvPackageProjections
