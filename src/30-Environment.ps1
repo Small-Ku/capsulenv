@@ -868,19 +868,10 @@ function Invoke-CapsulenvChildShell {
         -ShellPath $shellPath `
         -IntegrationMode $IntegrationMode `
         -Command $Command
-    $childShell = [string]$launchPlan.ShellPath
-    $childArguments = @($launchPlan.Arguments)
-
     if ([string]::IsNullOrWhiteSpace($Command)) {
         Write-CapsulenvMessage -Level Success -Message "capsulenv active at $env:CAPSULENV_ROOT"
-        & $childShell @childArguments
-        return
     }
-
-    Clear-CapsulenvLastExitCode
-    & $childShell @childArguments
-    $succeeded = $?
-    $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
+    Invoke-CapsulenvProcessPlan -Plan $launchPlan
 }
 
 function Invoke-CapsulenvExternalCommand {
@@ -892,10 +883,8 @@ function Invoke-CapsulenvExternalCommand {
 
     [void](Set-CapsulenvSessionEnvironment)
     Initialize-CapsulenvIntegrations
-    Clear-CapsulenvLastExitCode
-    & $Command @Arguments
-    $succeeded = $?
-    $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
+    $plan = New-CapsulenvProcessPlan -Executable $Command -Arguments $Arguments
+    Invoke-CapsulenvProcessPlan -Plan $plan
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Set-CapsulenvSessionEnvironment, Get-CapsulenvInstallMode, Set-CapsulenvInstallMode, Install-CapsulenvUserEnvironment, Enter-CapsulenvUserShell, Enable-CapsulenvUserEnvironment, Restore-CapsulenvUserEnvironment

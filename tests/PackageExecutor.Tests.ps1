@@ -195,11 +195,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         $previousLastExitCode = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Get-CapsulenvPackageProcessPlan {
-            [pscustomobject]@{
-                FilePath = $hostExecutable
-                PathEntries = @()
-                Variables = [ordered]@{}
-            }
+            New-CapsulenvProcessPlan -Executable $hostExecutable
         } -ModuleName Capsulenv
 
         try {

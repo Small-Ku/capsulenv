@@ -152,16 +152,12 @@ function Get-CapsulenvPowerShellChildLaunchPlan {
         $arguments.Add($startup)
     }
 
-    return [pscustomobject]@{
-        ShellPath = [System.IO.Path]::GetFullPath($ShellPath)
-        IntegrationMode = $IntegrationMode
-        Arguments = $arguments.ToArray()
-        PortableProfiles = if ($IntegrationMode -eq 'ShellOnly') {
-            @(Get-CapsulenvPortablePowerShellProfilePaths -ShellPath $ShellPath)
-        } else {
-            @()
-        }
-    }
+    $portableProfiles = if ($IntegrationMode -eq 'ShellOnly') { @(Get-CapsulenvPortablePowerShellProfilePaths -ShellPath $ShellPath) } else { @() }
+    $plan = New-CapsulenvProcessPlan -Executable ([System.IO.Path]::GetFullPath($ShellPath)) -Arguments $arguments.ToArray()
+    $plan | Add-Member -NotePropertyName ShellPath -NotePropertyValue $plan.Executable
+    $plan | Add-Member -NotePropertyName IntegrationMode -NotePropertyValue $IntegrationMode
+    $plan | Add-Member -NotePropertyName PortableProfiles -NotePropertyValue $portableProfiles
+    return $plan
 }
 
 function Get-CapsulenvPowerShellPersistRoot {

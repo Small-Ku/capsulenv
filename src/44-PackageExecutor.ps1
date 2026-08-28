@@ -914,13 +914,12 @@ function Get-CapsulenvPackageProcessPlan {
         throw "Capsulenv package '$($installed.Name)' does not expose exactly one bin named '$BinName'."
     }
     $environment = Get-CapsulenvPackageEnvironmentPlan -Installed $installed
-    return [pscustomobject]@{
-        App = [string]$installed.Selector
-        BinName = $BinName
-        FilePath = [string]$matches[0].Target
-        PathEntries = @($environment.PathEntries)
-        Variables = $environment.Variables
-    }
+    $plan = New-CapsulenvProcessPlan -Executable ([string]$matches[0].Target) -Environment $environment.Variables -PathEntries @($environment.PathEntries) -Metadata ([ordered]@{ App=[string]$installed.Selector; BinName=$BinName })
+    $plan | Add-Member -NotePropertyName App -NotePropertyValue ([string]$installed.Selector)
+    $plan | Add-Member -NotePropertyName BinName -NotePropertyValue $BinName
+    $plan | Add-Member -NotePropertyName FilePath -NotePropertyValue $plan.Executable
+    $plan | Add-Member -NotePropertyName Variables -NotePropertyValue $plan.Environment
+    return $plan
 }
 
 function Invoke-CapsulenvPackageExecutable {
@@ -933,22 +932,8 @@ function Invoke-CapsulenvPackageExecutable {
 
     [void](Set-CapsulenvSessionEnvironment)
     $plan = Get-CapsulenvPackageProcessPlan -App $App -BinName $BinName
-    foreach ($name in $plan.Variables.Keys) {
-        [Environment]::SetEnvironmentVariable([string]$name, [string]$plan.Variables[$name], 'Process')
-    }
-    if ($plan.PathEntries.Count -gt 0) {
-        $env:PATH = Merge-CapsulenvPath -ExistingPath $env:PATH -Prepend @($plan.PathEntries)
-    }
-    if (-not (Test-Path -LiteralPath $plan.FilePath -PathType Leaf)) {
-        throw "Capsulenv package executable is missing: $($plan.FilePath)"
-    }
-    Clear-CapsulenvLastExitCode
-    & $plan.FilePath @Arguments
-    $succeeded = $?
-    # Keep native/program output on the success stream. The runtime entrypoint
-    # reads LASTEXITCODE after dispatch so package shims can preserve the child
-    # process exit status without capturing/buffering stdout.
-    $global:LASTEXITCODE = Get-CapsulenvLastExitCode -Succeeded $succeeded
+    $plan.Arguments = [string[]]@($Arguments)
+    Invoke-CapsulenvProcessPlan -Plan $plan
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvPackageInstallPlan, Install-CapsulenvPortablePackage, Repair-CapsulenvPackageProjections

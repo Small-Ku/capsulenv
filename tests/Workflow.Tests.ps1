@@ -175,7 +175,7 @@ Describe 'Capsulenv portable workflow contracts' {
         Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
         Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
         Mock Get-CapsulenvPowerShellChildLaunchPlan {
-            [pscustomobject]@{ ShellPath = 'Write-Output'; Arguments = @('capsulenv-child') }
+            New-CapsulenvProcessPlan -Executable 'Write-Output' -Arguments @('capsulenv-child')
         } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
