@@ -38,8 +38,19 @@ Describe 'Capsulenv app command trust boundary' {
         } -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { 0 } -ModuleName Capsulenv
 
-        { & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('install', 'demo') } } |
-            Should -Throw '*--allow-trusted*'
+        $errorRecord = $null
+        try {
+            & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('install', 'demo') }
+        } catch {
+            $errorRecord = $_
+        }
+        $errorRecord | Should -Not -BeNullOrEmpty
+        $errorRecord.FullyQualifiedErrorId | Should -Be 'Capsulenv.Package.TrustedExecutionRequired'
+        $remediation = & $script:Module {
+            param($ErrorRecord)
+            Get-CapsulenvDiagnosticRemediation -ErrorRecord $ErrorRecord
+        } $errorRecord
+        ($remediation -join ' ') | Should -Match '--allow-trusted'
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
     }
 

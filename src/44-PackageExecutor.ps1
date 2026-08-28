@@ -829,7 +829,13 @@ function Get-CapsulenvPackageEnvironmentPlan {
     param([Parameter(Mandatory = $true)]$Installed)
 
     if ([string]$Installed.Scope -ne 'Capsule') {
-        throw "Package process environment is reserved for Capsulenv-owned PortableSafe packages: $($Installed.Selector)"
+        throw (New-CapsulenvDiagnosticErrorRecord `
+            -Id 'Capsulenv.Package.PortableSafeRequired' `
+            -Message "Package process environment is reserved for Capsulenv-owned PortableSafe packages: $($Installed.Selector)" `
+            -Category ([System.Management.Automation.ErrorCategory]::PermissionDenied) `
+            -TargetObject $Installed `
+            -Context ([ordered]@{ Selector = [string]$Installed.Selector; Scope = [string]$Installed.Scope }) `
+            -Remediation @('Review the package plan and use explicit TrustedExecution only when you accept upstream lifecycle semantics.'))
     }
     $pathProperty = Get-CapsulenvInstalledManifestPropertyRecord -App $Installed -Name 'env_add_path'
     $setProperty = Get-CapsulenvInstalledManifestPropertyRecord -App $Installed -Name 'env_set'

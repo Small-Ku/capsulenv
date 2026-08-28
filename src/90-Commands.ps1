@@ -564,7 +564,16 @@ function Invoke-CapsulenvAppCommand {
                 $blocked = @($plan.BlockedPackages | ForEach-Object {
                     '{0} [{1}] {2}' -f $_.Reference, $_.Classification, (@($_.Reasons) -join '; ')
                 }) -join [Environment]::NewLine
-                throw "Package requires semantics outside PortableSafe. Review the plan, then use --allow-trusted to delegate the requested package to unmodified upstream Scoop:`n$blocked"
+                throw (New-CapsulenvDiagnosticErrorRecord `
+                    -Id 'Capsulenv.Package.TrustedExecutionRequired' `
+                    -Message "Package requires semantics outside PortableSafe. Review the plan before using TrustedExecution.`n$blocked" `
+                    -Category ([System.Management.Automation.ErrorCategory]::PermissionDenied) `
+                    -TargetObject $reference `
+                    -Context ([ordered]@{ Reference = $reference; BlockedPackages = @($plan.BlockedPackages) }) `
+                    -Remediation @(
+                        "Review `capsulenv.cmd app plan $reference`.",
+                        'Use --allow-trusted only if upstream Scoop lifecycle execution is acceptable.'
+                    ))
             }
 
             [void](Set-CapsulenvSessionEnvironment)

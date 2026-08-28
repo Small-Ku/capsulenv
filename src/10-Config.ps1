@@ -547,7 +547,13 @@ function Import-CapsulenvConfiguration {
 
     $context = Get-CapsulenvContext
     if (-not (Test-Path -LiteralPath $context.ConfigPath -PathType Leaf)) {
-        throw "Missing capsulenv configuration: $($context.ConfigPath)"
+        throw (New-CapsulenvDiagnosticErrorRecord `
+            -Id 'Capsulenv.Config.Missing' `
+            -Message "Missing capsulenv configuration: $($context.ConfigPath)" `
+            -Category ([System.Management.Automation.ErrorCategory]::ObjectNotFound) `
+            -TargetObject $context.ConfigPath `
+            -Context ([ordered]@{ ConfigPath = $context.ConfigPath }) `
+            -Remediation @('Restore config/capsulenv.psd1 or deploy a complete runtime bundle.'))
     }
 
     $configuration = Import-CapsulenvPowerShellDataFile -LiteralPath $context.ConfigPath
