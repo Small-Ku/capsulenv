@@ -75,3 +75,78 @@ Describe 'Capsulenv desired-state resource claims' {
         $record.FullyQualifiedErrorId | Should -Be 'Capsulenv.DesiredState.ResourceUriInvalid'
     }
 }
+
+Describe 'Capsulenv desired-state parallel execution' {
+    BeforeAll {
+        $script:Root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+        $script:Build=& (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
+    }
+    AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
+
+    It 'treats ancestor and descendant write/read claims as conflicting resources' {
+        $waves = & $script:Module {
+            $writer=New-CapsulenvDesiredStateNode -Id writer -WriteResources @('capsule:///tool-data') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $reader=New-CapsulenvDesiredStateNode -Id reader -ReadResources @('capsule:///tool-data/python/cache') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader)
+            [pscustomobject]@{ Waves=@($plan.ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }); Conflicts=@($plan.ResourceConflicts) }
+        }
+        $waves.Waves.Count | Should -Be 2
+        $waves.Conflicts | Should -HaveCount 1
+        $waves.Conflicts[0].Kind | Should -Be 'ReadWrite'
+        $waves.Conflicts[0].OrderedByDependency | Should -BeFalse
+    }
+
+    It 'requires parallel-safe nodes to declare claims' {
+        $record = & $script:Module {
+            try {
+                $node=New-CapsulenvDesiredStateNode -Id unsafe -ParallelSafe -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+                Get-CapsulenvDesiredStatePlan -Nodes @($node) | Out-Null
+            } catch { $_ }
+        }
+        $record.FullyQualifiedErrorId | Should -Be 'Capsulenv.DesiredState.ParallelClaimsRequired'
+    }
+
+    It 'keeps process-scoped mutations out of parallel worker runspaces' {
+        $record = & $script:Module {
+            try {
+                $node=New-CapsulenvDesiredStateNode -Id process -ParallelSafe -WriteResources @('process:///environment') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+                Get-CapsulenvDesiredStatePlan -Nodes @($node) | Out-Null
+            } catch { $_ }
+        }
+        $record.FullyQualifiedErrorId | Should -Be 'Capsulenv.DesiredState.ParallelProcessResource'
+    }
+
+    It 'runs claim-safe peers concurrently and publishes their outputs before the next dependency wave' {
+        $result = & $script:Module {
+            $barrier=[System.Threading.Barrier]::new(2)
+            try {
+                $a=New-CapsulenvDesiredStateNode -Id a -ParallelSafe -WriteResources @('capsule:///cache/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if(-not $c.Barrier.SignalAndWait(5000)){throw 'a did not overlap'};'A'} -Verify {param($c,$d,$o)$o -eq 'A'}
+                $b=New-CapsulenvDesiredStateNode -Id b -ParallelSafe -WriteResources @('capsule:///cache/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if(-not $c.Barrier.SignalAndWait(5000)){throw 'b did not overlap'};'B'} -Verify {param($c,$d,$o)$o -eq 'B'}
+                $c=New-CapsulenvDesiredStateNode -Id c -DependsOn @('a','b') -ReadResources @('capsule:///cache/a','capsule:///cache/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) ([string]$c.Outputs['a']) + ([string]$c.Outputs['b'])} -Verify {param($c,$d,$o)$o -eq 'AB'}
+                $ctx=@{Barrier=$barrier};$plan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b,$c) -Context $ctx
+                $runs=@(Invoke-CapsulenvDesiredStatePlan -Plan $plan -Context $ctx -ExecutionMode Auto -ThrottleLimit 2)
+                [pscustomobject]@{ Outputs=@($runs.Output); Waves=@($plan.ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }) }
+            } finally { $barrier.Dispose() }
+        }
+        $result.Waves[0] | Should -Be 'a,b'
+        $result.Outputs[-1] | Should -Be 'AB'
+    }
+}
+
+Describe 'Capsulenv desired-state module worker boundary' {
+    BeforeAll {
+        $script:Root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+        $script:Build=& (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
+    }
+    AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
+    It 'preserves Capsulenv private command resolution inside parallel worker runspaces' {
+        $result = & $script:Module {
+            $a=New-CapsulenvDesiredStateNode -Id a -ParallelSafe -ReadResources @('capsule:///config/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) Get-CapsulenvInstallMode} -Verify {param($c,$d,$o) $o -in @('ShellOnly','User')}
+            $b=New-CapsulenvDesiredStateNode -Id b -ParallelSafe -ReadResources @('capsule:///config/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) Get-CapsulenvInstallMode} -Verify {param($c,$d,$o) $o -in @('ShellOnly','User')}
+            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b)
+            @(Invoke-CapsulenvDesiredStatePlan -Plan $plan -ExecutionMode Parallel -ThrottleLimit 2).Output
+        }
+        @($result).Count | Should -Be 2
+        @($result | Where-Object { $_ -notin @('ShellOnly','User') }).Count | Should -Be 0
+    }
+}

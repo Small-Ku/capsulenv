@@ -248,14 +248,14 @@ function Get-CapsulenvScoopRehydratePlan {
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) [bool](Repair-CapsulenvInstalledAppProjections -IntegrationMode $c.IntegrationMode -DeferRunningApps:($c.IntegrationMode -eq 'User')) } `
             -Verify { param($c,$d,$o) $null -ne $o },
-        New-CapsulenvDesiredStateNode -Id 'persist-relocation' `
+        New-CapsulenvDesiredStateNode -Id 'persist-relocation' -ParallelSafe `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///scoop/persist') `
             -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipPersistRepairs)-and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvPersistRelocationRepair -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true },
-        New-CapsulenvDesiredStateNode -Id 'project-cache-links' `
+        New-CapsulenvDesiredStateNode -Id 'project-cache-links' -ParallelSafe `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///project-cache/registry') `
             -WriteResources @('capsule:///project-cache','host:///project-cache-links') `
@@ -329,6 +329,23 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.PersistStore' -Area 'S
     $path = Join-Path (Get-CapsulenvScoopRoot) 'persist'
     $exists = Test-Path -LiteralPath $path -PathType Container
     New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.PersistStore' -Name 'Scoop persist store' -Area 'Scoop' -Status $(if($exists){'Healthy'}else{'Advisory'}) -Importance Optional -Summary $path -Detail $path -Data ([ordered]@{ Path=$path; Exists=$exists })
+}
+
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.DesiredState.RehydrateOwnership' -Area 'DesiredState' -Name 'Rehydrate resource ownership' -Importance Optional -Handler {
+    $rehydrate = Get-CapsulenvScoopRehydratePlan
+    $plan = $rehydrate.Plan
+    $unorderedWriters = @($plan.OwnershipDiagnostics.UnorderedWriteWrite)
+    $parallelNodeIds = @($plan.ExecutionWaves | ForEach-Object { @($_.ParallelNodeIds) } | Select-Object -Unique)
+    $status = if ($unorderedWriters.Count -eq 0) { 'Healthy' } else { 'Advisory' }
+    New-CapsulenvDoctorResult `
+        -Id 'Capsulenv.Doctor.DesiredState.RehydrateOwnership' `
+        -Name 'Rehydrate resource ownership' `
+        -Area 'DesiredState' `
+        -Status $status `
+        -Importance Optional `
+        -Summary ("{0} claim(s), {1} execution wave(s), {2} parallel-safe node(s), {3} unordered competing writer pair(s)" -f @($plan.ResourceClaims).Count, @($plan.ExecutionWaves).Count, $parallelNodeIds.Count, $unorderedWriters.Count) `
+        -Data ([ordered]@{ Claims=@($plan.ResourceClaims); Conflicts=@($plan.ResourceConflicts); ParallelNodeIds=$parallelNodeIds; UnorderedWriteWrite=$unorderedWriters }) `
+        -Remediation $(if($unorderedWriters.Count -eq 0){@()}else{@('Add an explicit dependency between competing writers, or narrow their write-resource claims before enabling parallel execution.')})
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Reset-CapsulenvScoop, Get-CapsulenvScoopRehydratePlan, Invoke-CapsulenvScoopRehydrate, Test-CapsulenvScoopRehydrationRequired
