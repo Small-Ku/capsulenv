@@ -418,4 +418,9 @@ function Get-CapsulenvManagedProjectCacheLinks {
     return @(Read-CapsulenvProjectCacheRegistry)
 }
 
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.ProjectCache.Registry' -Area 'ProjectCache' -Name 'Managed project cache registry' -Importance Optional -Handler {
+    $links = @(Get-CapsulenvManagedProjectCacheLinks)
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.ProjectCache.Registry' -Name 'Managed project cache registry' -Area 'ProjectCache' -Status Healthy -Importance Optional -Summary ("{0} registered link(s)" -f $links.Count) -Data $links
+}
+
 ##MOD_EXEC## Export-ModuleMember -Function Repair-CapsulenvProjectCacheLinks, Get-CapsulenvManagedProjectCacheLinks

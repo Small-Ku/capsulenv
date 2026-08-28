@@ -395,4 +395,11 @@ function Get-CapsulenvToolWorkspaces {
     return $results.ToArray()
 }
 
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.ToolWorkspace.Registry' -Area 'ToolWorkspace' -Name 'Tool workspace registry' -Importance Optional -Handler {
+    $workspaces = @(Get-CapsulenvToolWorkspaces)
+    $invalid = @($workspaces | Where-Object { $_.Status -ne 'Ready' })
+    $status = if ($invalid.Count -eq 0) { 'Healthy' } else { 'Advisory' }
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.ToolWorkspace.Registry' -Name 'Tool workspace registry' -Area 'ToolWorkspace' -Status $status -Importance Optional -Summary ("{0} registered workspace(s); {1} unavailable" -f $workspaces.Count, $invalid.Count) -Data $workspaces
+}
+
 ##MOD_EXEC## Export-ModuleMember -Function Register-CapsulenvToolWorkspace, Unregister-CapsulenvToolWorkspace, Get-CapsulenvToolWorkspaces

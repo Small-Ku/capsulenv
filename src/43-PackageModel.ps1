@@ -679,4 +679,15 @@ function Get-CapsulenvPackageManifestPlan {
     }
 }
 
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Package.OwnershipRoots' -Area 'Packages' -Name 'PortableSafe package ownership roots' -Handler {
+    $capsuleRoot = [System.IO.Path]::GetFullPath((Get-CapsulenvContext).Root).TrimEnd('\', '/')
+    $roots = @((Get-CapsulenvPackageRoot), (Get-CapsulenvPackagePersistRoot), (Get-CapsulenvPackageCacheRoot), (Get-CapsulenvPackageStateRoot), (Get-CapsulenvPackageShimRoot))
+    $invalid = @($roots | Where-Object {
+        $candidate = [System.IO.Path]::GetFullPath([string]$_).TrimEnd('\', '/')
+        -not ($candidate.Equals($capsuleRoot, [System.StringComparison]::OrdinalIgnoreCase) -or $candidate.StartsWith($capsuleRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase))
+    })
+    $status = if ($invalid.Count -eq 0) { 'Healthy' } else { 'Failed' }
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Package.OwnershipRoots' -Name 'PortableSafe package ownership roots' -Area 'Packages' -Status $status -Summary ("{0} ownership root(s); {1} outside capsule" -f $roots.Count, $invalid.Count) -Data ([ordered]@{ Roots=$roots; Invalid=$invalid }) -Remediation @('Keep PortableSafe package state beneath the capsule root.')
+}
+
 ##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvPackageManifestPlan

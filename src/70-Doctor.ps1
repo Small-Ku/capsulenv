@@ -1,40 +1,17 @@
-function New-CapsulenvCheckResult {
-    param(
-        [string]$Name,
-        [bool]$Passed,
-        [string]$Detail,
-        [ValidateSet('Required', 'Optional')][string]$Importance = 'Required'
-    )
-
-    [pscustomobject]@{
-        Name = $Name
-        Passed = $Passed
-        Importance = $Importance
-        Detail = $Detail
-    }
-}
-
 function Write-CapsulenvDoctorReport {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object[]]$Results)
 
-    $summary = @($Results | Select-Object `
-        Name, `
-        @{ Name = 'Status'; Expression = { if ($_.Passed) { 'PASS' } elseif ($_.Importance -eq 'Required') { 'FAIL' } else { 'WARN' } } }, `
-        Importance)
-    $summary | Format-Table -AutoSize | Out-Host
-
-    $attention = @($Results | Where-Object { -not $_.Passed })
-    if ($attention.Count -eq 0) {
-        return
-    }
-
+    $Results | Select-Object Name, Area, Status, Importance | Format-Table -AutoSize | Out-Host
+    $attention = @($Results | Where-Object { $_.Status -in @('Advisory', 'Unavailable', 'Failed') })
+    if ($attention.Count -eq 0) { return }
     Write-Host ''
     Write-Host 'Details for checks requiring attention:'
     foreach ($result in $attention) {
-        $status = if ($result.Importance -eq 'Required') { 'FAIL' } else { 'WARN' }
-        Write-Host ('[{0}] {1}' -f $status, $result.Name)
-        Write-Host ('  {0}' -f $result.Detail)
+        Write-Host ('[{0}] {1}' -f $result.Status.ToUpperInvariant(), $result.Name)
+        $detail = if (-not [string]::IsNullOrWhiteSpace([string]$result.Detail)) { $result.Detail } else { $result.Summary }
+        if (-not [string]::IsNullOrWhiteSpace([string]$detail)) { Write-Host ('  {0}' -f $detail) }
+        foreach ($step in @($result.Remediation)) { Write-Host ('  remediation: {0}' -f $step) }
     }
 }
 
@@ -444,10 +421,14 @@ function Invoke-CapsulenvDoctor {
         $results.Add((New-CapsulenvCheckResult -Name 'Scoop version drift' -Passed $false -Importance Optional -Detail $_.Exception.Message))
     }
 
+    foreach ($registeredResult in @(Invoke-CapsulenvDoctorChecks)) {
+        $results.Add($registeredResult)
+    }
+
     Write-CapsulenvDoctorReport -Results $results.ToArray()
-    $requiredFailures = @($results | Where-Object { -not $_.Passed -and $_.Importance -eq 'Required' })
+    $requiredFailures = @($results | Where-Object { $_.Importance -eq 'Required' -and $_.Status -in @('Unavailable', 'Failed') })
     if ($requiredFailures.Count -gt 0) {
-        throw "capsulenv doctor found $($requiredFailures.Count) required failure(s)."
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Doctor.RequiredChecksFailed' -Message "capsulenv doctor found $($requiredFailures.Count) required failure(s)." -Context ([ordered]@{ CheckIds = @($requiredFailures.Id) }) -Remediation @('Review failed doctor checks and their remediation before retrying.'))
     }
     return $results.ToArray()
 }
