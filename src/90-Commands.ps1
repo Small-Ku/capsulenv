@@ -15,7 +15,7 @@ Getting started
 
 Daily commands
   capsulenv.cmd run <command> [arguments...]
-  capsulenv.cmd app plan <app|bucket/app>
+  capsulenv.cmd app plan <app|bucket/app> [--json]
   capsulenv.cmd app install <app|bucket/app> [--allow-trusted]
   capsulenv.cmd app list [app]
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
@@ -42,7 +42,7 @@ Topics: app, browser, user, eject, seed, cache, tools, repair, offline, bitwarde
         'app' {
 @'
 app commands
-  capsulenv.cmd app plan <app|bucket/app>
+  capsulenv.cmd app plan <app|bucket/app> [--json]
       Resolve dependencies and classify manifest semantics without changing the
       capsule. PortableSafe plans contain only the bounded declarative subset.
 
@@ -535,10 +535,19 @@ function Invoke-CapsulenvAppCommand {
     $remaining = @($Arguments | Select-Object -Skip 1)
     switch ($action) {
         'plan' {
-            if ($remaining.Count -ne 1) {
-                throw 'Usage: app plan <app|bucket/app>'
+            $json = $remaining -contains '--json'
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -ne '--json' })
+            $references = @($remaining | Where-Object { $_ -notlike '--*' })
+            if ($unknownFlags.Count -gt 0 -or $references.Count -ne 1) {
+                throw 'Usage: app plan <app|bucket/app> [--json]'
             }
-            $plan = Get-CapsulenvPackageInstallPlan -Reference ([string]$remaining[0])
+            $plan = Get-CapsulenvPackageInstallPlan -Reference ([string]$references[0])
+            if ($json) {
+                ConvertTo-CapsulenvPackageInstallPlanContract -Plan $plan |
+                    ConvertTo-Json -Depth 8 |
+                    Write-Output
+                break
+            }
             $plan.Packages |
                 Select-Object Reference, Version, Architecture, Classification,
                     @{ Name = 'Capabilities'; Expression = { @($_.Capabilities) -join ',' } },

@@ -82,6 +82,7 @@ function Get-CapsulenvRuntimeContext {
         Capabilities = [pscustomobject][ordered]@{
             SessionModes = @('ShellOnly', 'User')
             PackageProviders = @('PortableSafe', 'Scoop')
+            PackagePlanSchemaVersion = 1
             TrustModes = @('PortableSafe', 'TrustedExecution')
         }
     }

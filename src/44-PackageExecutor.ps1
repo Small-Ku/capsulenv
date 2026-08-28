@@ -218,6 +218,46 @@ function Get-CapsulenvPackageInstallPlan {
     }
 }
 
+function ConvertTo-CapsulenvPackageInstallPlanContract {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Plan)
+
+    $packageContracts = @(
+        foreach ($package in @($Plan.Packages)) {
+            [pscustomobject][ordered]@{
+                Reference = [string]$package.Reference
+                Version = [string]$package.Version
+                Architecture = [string]$package.Architecture
+                Classification = [string]$package.Classification
+                Capabilities = @($package.Capabilities | ForEach-Object { [string]$_ })
+                Reasons = @($package.Reasons | ForEach-Object { [string]$_ })
+                Dependencies = @($package.Dependencies | ForEach-Object { [string]$_ })
+            }
+        }
+    )
+    $blockedReferences = @(
+        foreach ($package in @($Plan.BlockedPackages)) {
+            [string]$package.Reference
+        }
+    )
+
+    return [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        Reference = [string]$Plan.Reference
+        Classification = [string]$Plan.Classification
+        PortableSafe = ([string]$Plan.Classification -eq 'PortableSafe')
+        Packages = $packageContracts
+        BlockedPackages = $blockedReferences
+    }
+}
+
+function Get-CapsulenvPackageInstallPlanContract {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Reference)
+
+    return ConvertTo-CapsulenvPackageInstallPlanContract -Plan (Get-CapsulenvPackageInstallPlan -Reference $Reference)
+}
+
 function Get-CapsulenvFileSha256 {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Path)

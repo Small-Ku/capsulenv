@@ -43,6 +43,7 @@ Describe 'Capsulenv portable workflow contracts' {
                 $runtimeContext.Storage.ProjectCacheRoot | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'project-cache')))
                 @($runtimeContext.Capabilities.PackageProviders) | Should -Contain 'PortableSafe'
                 @($runtimeContext.Capabilities.PackageProviders) | Should -Contain 'Scoop'
+                $runtimeContext.Capabilities.PackagePlanSchemaVersion | Should -Be 1
 
                 Set-CapsulenvInstallMode -Mode User -ManagedPathEntries $plan.PathEntries
                 $modePath = Get-CapsulenvInstallModeStatePath

@@ -11,6 +11,38 @@ Describe 'Capsulenv app command trust boundary' {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
+    It 'emits a bounded machine-readable package plan without source manifest internals' {
+        Mock Get-CapsulenvPackageInstallPlan {
+            [pscustomobject]@{
+                SchemaVersion = 1
+                Reference = 'main/demo'
+                Classification = 'PortableSafe'
+                Packages = @([pscustomobject]@{
+                    Reference = 'main/demo'
+                    Version = '1.2.3'
+                    Architecture = '64bit'
+                    Classification = 'PortableSafe'
+                    Capabilities = @('Bin', 'Persist')
+                    Reasons = @()
+                    Dependencies = @('helper')
+                    SourceManifest = [pscustomobject]@{ secret = 'must-not-cross-contract' }
+                })
+                BlockedPackages = @()
+            }
+        } -ModuleName Capsulenv
+
+        $json = & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('plan', 'demo', '--json') }
+        $contract = $json | ConvertFrom-Json
+        $contract.SchemaVersion | Should -Be 1
+        $contract.Reference | Should -Be 'main/demo'
+        $contract.Classification | Should -Be 'PortableSafe'
+        $contract.PortableSafe | Should -BeTrue
+        $contract.Packages | Should -HaveCount 1
+        $contract.Packages[0].Capabilities | Should -Contain 'Persist'
+        $contract.Packages[0].PSObject.Properties.Name | Should -Not -Contain 'SourceManifest'
+        $json | Should -Not -Match 'must-not-cross-contract'
+    }
+
     It 'uses the Capsulenv executor for PortableSafe plans without invoking Scoop' {
         Mock Get-CapsulenvPackageInstallPlan {
             [pscustomobject]@{ Classification = 'PortableSafe'; Packages = @(); BlockedPackages = @() }
