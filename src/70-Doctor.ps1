@@ -23,30 +23,10 @@ function Invoke-CapsulenvDoctor {
     $results = New-Object System.Collections.Generic.List[object]
     $results.Add((New-CapsulenvCheckResult -Name 'Windows host' -Passed (Test-CapsulenvWindows) -Detail 'capsulenv targets Windows 10/11.'))
 
+    # Scoop health checks are registered by the Scoop subsystem. These roots are
+    # still needed here for the legacy install-mode ownership check below.
     $scoopRoot = Get-CapsulenvScoopRoot
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Portable Scoop root' `
-        -Passed (Test-Path -LiteralPath $scoopRoot -PathType Container) `
-        -Detail $scoopRoot))
-
     $scoopGlobalRoot = Get-CapsulenvScoopGlobalRoot
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Portable Scoop global root' `
-        -Passed (-not [string]::IsNullOrWhiteSpace($scoopGlobalRoot)) `
-        -Detail $scoopGlobalRoot))
-
-    $scoopExecutable = Get-CapsulenvScoopExecutable
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Scoop command' `
-        -Passed ($null -ne $scoopExecutable) `
-        -Detail $(if ($scoopExecutable) { $scoopExecutable } else { 'Not found; bootstrap will install it on first session' })))
-
-    $portableScoopConfig = Join-Path $scoopRoot 'config.json'
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Portable Scoop config' `
-        -Passed (Test-Path -LiteralPath $portableScoopConfig -PathType Leaf) `
-        -Importance Optional `
-        -Detail $portableScoopConfig))
 
     $installMode = Get-CapsulenvInstallMode
     $modePassed = $true
@@ -139,69 +119,6 @@ function Invoke-CapsulenvDoctor {
         -Passed ($projectProfiles.Count -gt 0) `
         -Importance Optional `
         -Detail $(if ($projectProfiles.Count -gt 0) { $projectProfiles -join ', ' } else { 'No profiles configured' })))
-
-    try {
-        $managedProjectLinks = @(Get-CapsulenvManagedProjectCacheLinks)
-        $managedProjectLinksPassed = $true
-        $managedProjectLinksDetail = "{0} registered link(s)" -f $managedProjectLinks.Count
-    } catch {
-        $managedProjectLinksPassed = $false
-        $managedProjectLinksDetail = $_.Exception.Message
-    }
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Managed project cache registry' `
-        -Passed $managedProjectLinksPassed `
-        -Importance Optional `
-        -Detail $managedProjectLinksDetail))
-
-    try {
-        $toolWorkspaces = @(Get-CapsulenvToolWorkspaces)
-        $invalidToolWorkspaces = @($toolWorkspaces | Where-Object { $_.Status -ne 'Ready' })
-        $toolWorkspacesPassed = ($invalidToolWorkspaces.Count -eq 0)
-        $toolWorkspacesDetail = "{0} registered workspace(s); {1} unavailable" -f $toolWorkspaces.Count, $invalidToolWorkspaces.Count
-    } catch {
-        $toolWorkspacesPassed = $false
-        $toolWorkspacesDetail = $_.Exception.Message
-    }
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Tool workspace registry' `
-        -Passed $toolWorkspacesPassed `
-        -Importance Optional `
-        -Detail $toolWorkspacesDetail))
-
-    $persistRoot = Join-Path $scoopRoot 'persist'
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Scoop persist store' `
-        -Passed (Test-Path -LiteralPath $persistRoot -PathType Container) `
-        -Importance Optional `
-        -Detail $persistRoot))
-
-    $rehydrationRequired = Test-CapsulenvScoopRehydrationRequired
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Relocation rehydration' `
-        -Passed (-not $rehydrationRequired) `
-        -Importance Optional `
-        -Detail $(if ($rehydrationRequired) { 'Required before normal use' } else { 'Current root and host match the last successful run' })))
-
-    $relocationContext = Get-CapsulenvRelocationContext
-    $configuredRepairFiles = [int](
-        @($configuration.Scoop.RelocationRepairs.Keys | ForEach-Object {
-            @($configuration.Scoop.RelocationRepairs[$_]).Count
-        } | Measure-Object -Sum).Sum
-    )
-    $repairDetail = if ($relocationContext.HasPathChanges) {
-        $moves = @($relocationContext.PathMappings | ForEach-Object {
-            '{0}: {1} -> {2}' -f $_.Name, $_.OldPath, $_.NewPath
-        })
-        "Pending (source=$($relocationContext.PreviousSource)); $configuredRepairFiles allow-listed file rule(s); $($moves -join '; ')"
-    } else {
-        "$configuredRepairFiles allow-listed file rule(s); no pending path relocation"
-    }
-    $results.Add((New-CapsulenvCheckResult `
-        -Name 'Persist path repair' `
-        -Passed (-not $relocationContext.HasPathChanges) `
-        -Importance Optional `
-        -Detail $repairDetail))
 
     if ($configuration.Bitwarden.Enabled) {
         $bitwarden = $null

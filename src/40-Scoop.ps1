@@ -39,7 +39,7 @@ function Invoke-CapsulenvScoopCommand {
 
     $scoop = Get-CapsulenvScoopExecutable
     if (-not $scoop) {
-        throw 'Scoop is not installed in the configured portable root.'
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Scoop.NotInstalled' -Message '[[CapsulenvText:Scoop.NotInstalled.Message]]' -TargetObject (Get-CapsulenvScoopRoot) -Remediation @('[[CapsulenvText:Scoop.NotInstalled.Remediation]]'))
     }
 
     Clear-CapsulenvLastExitCode
@@ -50,7 +50,7 @@ function Invoke-CapsulenvScoopCommand {
     }
     $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
     if ($exitCode -ne 0 -and -not $AllowFailure) {
-        throw "scoop $($Arguments -join ' ') failed with exit code $exitCode"
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Scoop.CommandFailed' -Message ('[[CapsulenvText:Scoop.CommandFailed.Message]]' -f $exitCode) -TargetObject $scoop -Context ([ordered]@{ ExitCode=$exitCode }))
     }
     return $exitCode
 }
@@ -303,6 +303,32 @@ function Invoke-CapsulenvScoopRehydrate {
     if ($null -ne $state -and [bool]$state.ProjectionRepairComplete) { Write-CapsulenvMessage -Level Success -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode." }
     else { Write-CapsulenvMessage -Level Warning -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode with a deferred legacy app projection; it will be retried automatically." }
     return $results
+}
+
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Root' -Area 'Scoop' -Name 'Portable Scoop root' -Handler {
+    $root = Get-CapsulenvScoopRoot
+    $exists = Test-Path -LiteralPath $root -PathType Container
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.Root' -Name 'Portable Scoop root' -Area 'Scoop' -Status $(if($exists){'Healthy'}else{'Failed'}) -Summary $root -Detail $root -Data ([ordered]@{ Path=$root; Exists=$exists }) -Remediation $(if($exists){@()}else{@('Bootstrap the capsule to create the configured portable Scoop root.')})
+}
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' -Area 'Scoop' -Name 'Portable Scoop global root' -Handler {
+    $root = Get-CapsulenvScoopGlobalRoot
+    $valid = -not [string]::IsNullOrWhiteSpace([string]$root)
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' -Name 'Portable Scoop global root' -Area 'Scoop' -Status $(if($valid){'Healthy'}else{'Failed'}) -Summary $root -Detail $root -Data ([ordered]@{ Path=$root })
+}
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Command' -Area 'Scoop' -Name 'Scoop command' -Handler {
+    $executable = Get-CapsulenvScoopExecutable
+    $available = $null -ne $executable
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.Command' -Name 'Scoop command' -Area 'Scoop' -Status $(if($available){'Healthy'}else{'Unavailable'}) -Summary $(if($available){[string]$executable}else{'Not found; bootstrap will install it on first session'}) -Detail $(if($available){[string]$executable}else{'Not found; bootstrap will install it on first session'}) -Data ([ordered]@{ Executable=$executable }) -Remediation $(if($available){@()}else{@('Bootstrap the capsule before running explicit TrustedExecution Scoop commands.')})
+}
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Config' -Area 'Scoop' -Name 'Portable Scoop config' -Importance Optional -Handler {
+    $path = Join-Path (Get-CapsulenvScoopRoot) 'config.json'
+    $exists = Test-Path -LiteralPath $path -PathType Leaf
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.Config' -Name 'Portable Scoop config' -Area 'Scoop' -Status $(if($exists){'Healthy'}else{'Advisory'}) -Importance Optional -Summary $path -Detail $path -Data ([ordered]@{ Path=$path; Exists=$exists })
+}
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.PersistStore' -Area 'Scoop' -Name 'Scoop persist store' -Importance Optional -Handler {
+    $path = Join-Path (Get-CapsulenvScoopRoot) 'persist'
+    $exists = Test-Path -LiteralPath $path -PathType Container
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.PersistStore' -Name 'Scoop persist store' -Area 'Scoop' -Status $(if($exists){'Healthy'}else{'Advisory'}) -Importance Optional -Summary $path -Detail $path -Data ([ordered]@{ Path=$path; Exists=$exists })
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Reset-CapsulenvScoop, Get-CapsulenvScoopRehydratePlan, Invoke-CapsulenvScoopRehydrate, Test-CapsulenvScoopRehydrationRequired

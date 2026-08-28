@@ -3,7 +3,7 @@ function ConvertTo-CapsulenvLauncherArgument {
     param([Parameter(Mandatory = $true)][string]$Value)
 
     if ($Value.Contains('"')) {
-        throw "Launcher argument contains an unsupported quote: $Value"
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.HostIntegration.LauncherArgumentUnsupported' -Message '[[CapsulenvText:HostIntegration.LauncherArgumentUnsupported.Message]]' -TargetObject $Value -Remediation @('[[CapsulenvText:HostIntegration.LauncherArgumentUnsupported.Remediation]]'))
     }
     return '"' + $Value + '"'
 }
@@ -48,7 +48,7 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
 
     $launcher = Join-Path (Get-CapsulenvContext).Root 'capsulenv.cmd'
     if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-        throw "Capsulenv launcher is missing; Start Menu integration cannot be created: $launcher"
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.HostIntegration.LauncherMissing' -Message ('[[CapsulenvText:HostIntegration.LauncherMissing.Message]]' -f $launcher) -TargetObject $launcher -Remediation @('Rebuild or reinstall the capsule launcher before synchronizing User-mode Start Menu integration.'))
     }
     [void](New-Item -ItemType Directory -Path $ownedRoot -Force)
     $shell = New-Object -ComObject WScript.Shell
@@ -88,6 +88,19 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
             [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
         }
     }
+}
+
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.HostIntegration.PackageLauncher' -Area 'HostIntegration' -Name 'PortableSafe package launcher integration' -Importance Optional -Handler {
+    if (-not (Test-CapsulenvWindows)) {
+        return New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.HostIntegration.PackageLauncher' -Name 'PortableSafe package launcher integration' -Area 'HostIntegration' -Status Skipped -Importance Optional -Summary 'Windows-only host integration is not applicable on this host.'
+    }
+    if (-not (Test-CapsulenvCurrentUserIntegrationOwnership)) {
+        return New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.HostIntegration.PackageLauncher' -Name 'PortableSafe package launcher integration' -Area 'HostIntegration' -Status Skipped -Importance Optional -Summary 'This capsule does not currently own persistent User integration on this host.'
+    }
+    $launcher = Join-Path (Get-CapsulenvContext).Root 'capsulenv.cmd'
+    $launcherExists = Test-Path -LiteralPath $launcher -PathType Leaf
+    $shortcutRoot = Get-CapsulenvUserStartMenuShortcutRoot
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.HostIntegration.PackageLauncher' -Name 'PortableSafe package launcher integration' -Area 'HostIntegration' -Status $(if($launcherExists){'Healthy'}else{'Advisory'}) -Importance Optional -Summary $(if($launcherExists){"Launcher=$launcher; StartMenu=$shortcutRoot"}else{"Capsulenv launcher is missing: $launcher"}) -Detail $(if($launcherExists){"Launcher=$launcher; StartMenu=$shortcutRoot"}else{"Capsulenv launcher is missing: $launcher"}) -Data ([ordered]@{ Launcher=$launcher; LauncherExists=$launcherExists; StartMenuRoot=$shortcutRoot }) -Remediation $(if($launcherExists){@()}else{@('Rebuild or reinstall the capsule launcher before synchronizing User-mode Start Menu integration.')})
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Sync-CapsulenvPackageStartMenuShortcuts

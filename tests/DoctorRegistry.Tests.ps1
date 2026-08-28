@@ -9,9 +9,20 @@ Describe 'Capsulenv doctor registry' {
     AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
 
     It 'runs subsystem registered checks as object-first results' {
-        $results = @(& $script:Module { Invoke-CapsulenvDoctorChecks -Ids @('Capsulenv.Doctor.ProjectCache.Registry','Capsulenv.Doctor.ToolWorkspace.Registry','Capsulenv.Doctor.Package.OwnershipRoots') })
-        $results.Count | Should -Be 3
+        $results = @(& $script:Module { Invoke-CapsulenvDoctorChecks -Ids @(
+            'Capsulenv.Doctor.ProjectCache.Registry',
+            'Capsulenv.Doctor.ToolWorkspace.Registry',
+            'Capsulenv.Doctor.Package.OwnershipRoots',
+            'Capsulenv.Doctor.Scoop.Root',
+            'Capsulenv.Doctor.Scoop.Command',
+            'Capsulenv.Doctor.Relocation.Rehydration',
+            'Capsulenv.Doctor.Relocation.PersistRepair',
+            'Capsulenv.Doctor.HostIntegration.PackageLauncher'
+        ) })
+        $results.Count | Should -Be 8
         @($results.Id) | Should -Contain 'Capsulenv.Doctor.Package.OwnershipRoots'
+        @($results.Id) | Should -Contain 'Capsulenv.Doctor.Relocation.PersistRepair'
+        @($results.Id) | Should -Contain 'Capsulenv.Doctor.HostIntegration.PackageLauncher'
         @($results.Status | Where-Object { $_ -notin @('Healthy','Advisory','Unavailable','Failed','Skipped') }).Count | Should -Be 0
     }
 

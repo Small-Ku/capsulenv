@@ -241,16 +241,16 @@ function Get-CapsulenvLastRelocationContext {
 
     $saved = Get-CapsulenvSavedRehydrationState
     if ($null -eq $saved) {
-        throw 'No completed capsulenv relocation is recorded.'
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.NoCompletedState' -Message '[[CapsulenvText:Relocation.NoCompleted.Message]]' -Remediation @('Run a successful rehydrate after relocation before requesting the last relocation context.'))
     }
     $lastProperty = $saved.PSObject.Properties['LastRelocation']
     if ($null -eq $lastProperty -or $null -eq $lastProperty.Value) {
-        throw 'No completed capsulenv relocation is recorded.'
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.NoCompletedState' -Message '[[CapsulenvText:Relocation.NoCompleted.Message]]' -Remediation @('Run a successful rehydrate after relocation before requesting the last relocation context.'))
     }
     $previousProperty = $lastProperty.Value.PSObject.Properties['Previous']
     $currentProperty = $lastProperty.Value.PSObject.Properties['Current']
     if ($null -eq $previousProperty -or $null -eq $currentProperty) {
-        throw 'The recorded relocation context is incomplete.'
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.StateIncomplete' -Message '[[CapsulenvText:Relocation.Incomplete.Message]]' -Remediation @('Run rehydrate to replace the incomplete relocation state with a verified state record.'))
     }
     return New-CapsulenvRelocationContext `
         -Previous $previousProperty.Value `
@@ -320,6 +320,11 @@ function Convert-CapsulenvRelocatedText {
         ReplacementCount = $replacementCount
         Changed = ($replacementCount -gt 0)
     }
+}
+
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Relocation.Rehydration' -Area 'Relocation' -Name 'Relocation rehydration' -Importance Optional -Handler {
+    $required = Test-CapsulenvScoopRehydrationRequired
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Relocation.Rehydration' -Name 'Relocation rehydration' -Area 'Relocation' -Status $(if($required){'Advisory'}else{'Healthy'}) -Importance Optional -Summary $(if($required){'Required before normal use'}else{'Current root and host match the last successful run'}) -Data ([ordered]@{ Required=$required }) -Remediation $(if($required){@('Run capsulenv rehydrate before relying on relocated package projections or host integration.')}else{@()})
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvRelocationContext

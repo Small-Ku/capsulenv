@@ -28,7 +28,7 @@ function Read-CapsulenvRelocationTextFile {
     try {
         $text = $encoding.GetString($bytes, $preambleLength, $bytes.Length - $preambleLength)
     } catch {
-        throw "Persist repair only accepts valid UTF text files: $Path"
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.InvalidText' -Message ('[[CapsulenvText:PersistRelocation.InvalidText.Message]]' -f $Path) -TargetObject $Path -Cause $_)
     }
 
     return [pscustomobject]@{
@@ -74,10 +74,10 @@ function Assert-CapsulenvRelocationRuleFile {
             try {
                 [void]($Text | ConvertFrom-Json)
             } catch {
-                throw "Persist relocation JSON validation failed for $Path`: $($_.Exception.Message)"
+                throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.InvalidJson' -Message ('[[CapsulenvText:PersistRelocation.InvalidJson.Message]]' -f $Path) -TargetObject $Path -Cause $_ -Remediation @('Repair the JSON file before retrying relocation.'))
             }
         }
-        default { throw "Unsupported persist relocation format '$Format' for $Path" }
+        default { throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.UnsupportedFormat' -Message ('[[CapsulenvText:PersistRelocation.UnsupportedFormat.Message]]' -f $Format, $Path) -TargetObject $Path -Context ([ordered]@{ Format=$Format })) }
     }
 }
 
@@ -121,13 +121,13 @@ function Resolve-CapsulenvPersistRepairPath {
     )
 
     if ([System.IO.Path]::IsPathRooted($RelativePath)) {
-        throw "Persist repair paths must be relative: $RelativePath"
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.PathMustBeRelative' -Message ('[[CapsulenvText:PersistRelocation.PathMustBeRelative.Message]]' -f $RelativePath) -TargetObject $RelativePath)
     }
     $root = [System.IO.Path]::GetFullPath($PersistRoot).TrimEnd('\', '/')
     $candidate = [System.IO.Path]::GetFullPath((Join-Path $root $RelativePath))
     $prefix = $root + [System.IO.Path]::DirectorySeparatorChar
     if (-not $candidate.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Persist repair path escapes its app store: $RelativePath"
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.PathEscapesStore' -Message ('[[CapsulenvText:PersistRelocation.PathEscapesStore.Message]]' -f $RelativePath) -TargetObject $RelativePath -Context ([ordered]@{ PersistRoot=$root }))
     }
     return $candidate
 }
@@ -155,7 +155,7 @@ function Get-CapsulenvPersistRelocationPlan {
     $plannedPaths = @{}
     foreach ($app in $selectedApps) {
         if (-not $repairs.ContainsKey($app)) {
-            throw "No persist relocation repair is configured for Scoop app '$app'."
+            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.RepairNotConfigured' -Message ('[[CapsulenvText:PersistRelocation.RepairNotConfigured.Message]]' -f $app) -TargetObject $app)
         }
         $persistRoots = @(Get-CapsulenvPersistRootsForApp -App $app)
         if ($persistRoots.Count -eq 0) {
@@ -173,18 +173,18 @@ function Get-CapsulenvPersistRelocationPlan {
                 $path = Resolve-CapsulenvPersistRepairPath -PersistRoot $persistRoot -RelativePath $relativePath
                 if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
                     if ($required) {
-                        throw "Required persist relocation file is missing: $path"
+                        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.RequiredFileMissing' -Message ('[[CapsulenvText:PersistRelocation.RequiredFileMissing.Message]]' -f $path) -TargetObject $path -Context ([ordered]@{ App=$app; RelativePath=$relativePath }))
                     }
                     continue
                 }
                 $length = (Get-Item -LiteralPath $path).Length
                 if ($length -gt $maxBytes) {
-                    throw "Persist relocation file exceeds its MaxBytes limit ($maxBytes): $path"
+                    throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.FileTooLarge' -Message ('[[CapsulenvText:PersistRelocation.FileTooLarge.Message]]' -f $maxBytes, $path) -TargetObject $path -Context ([ordered]@{ MaxBytes=$maxBytes; ActualBytes=$length; App=$app }))
                 }
 
                 $pathKey = $path.ToLowerInvariant()
                 if ($plannedPaths.ContainsKey($pathKey)) {
-                    throw "Duplicate persist relocation rule resolves to the same file: $path"
+                    throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.DuplicateTarget' -Message ('[[CapsulenvText:PersistRelocation.DuplicateTarget.Message]]' -f $path) -TargetObject $path -Context ([ordered]@{ App=$app; RelativePath=$relativePath }))
                 }
                 $plannedPaths[$pathKey] = $true
 
@@ -229,7 +229,7 @@ function Assert-CapsulenvPersistRepairProcessesStopped {
     )
     foreach ($name in $names) {
         if (Get-Process -Name $name -ErrorAction SilentlyContinue) {
-            throw "Close '$name' before repairing its Scoop-persisted configuration."
+            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.ProcessRunning' -Message ('[[CapsulenvText:PersistRelocation.ProcessRunning.Message]]' -f $name) -TargetObject $name -Remediation @("Close '$name' and retry the relocation repair."))
         }
     }
 }
@@ -294,7 +294,7 @@ function Invoke-CapsulenvPersistRelocationRepair {
 
             $currentBytes = [System.IO.File]::ReadAllBytes($item.Path)
             if (-not (Test-CapsulenvByteArrayEqual -Left $currentBytes -Right ([byte[]]$item.OriginalBytes))) {
-                throw "Persist relocation file changed after validation; refusing to overwrite it: $($item.Path)"
+                throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Relocation.Persist.ChangedAfterValidation' -Message ('[[CapsulenvText:PersistRelocation.ChangedAfterValidation.Message]]' -f $item.Path) -TargetObject $item.Path -Remediation @('Retry after the owning application has stopped changing the file.'))
             }
             [System.IO.File]::WriteAllBytes($tempPath, [byte[]]$item.NewBytes)
             [System.IO.File]::Replace($tempPath, $item.Path, $rollbackPath, $true)
@@ -304,6 +304,7 @@ function Invoke-CapsulenvPersistRelocationRepair {
     } catch {
         $originalError = $_
         $rollbackFailures = New-Object System.Collections.Generic.List[string]
+        $rollbackFailurePaths = New-Object System.Collections.Generic.List[string]
         for ($index = $prepared.Count - 1; $index -ge 0; $index--) {
             $entry = $prepared[$index]
             if (-not (Test-Path -LiteralPath $entry.RollbackPath -PathType Leaf)) {
@@ -312,13 +313,18 @@ function Invoke-CapsulenvPersistRelocationRepair {
             try {
                 [System.IO.File]::Copy($entry.RollbackPath, $entry.Path, $true)
             } catch {
+                $rollbackFailurePaths.Add([string]$entry.Path)
                 $rollbackFailures.Add("$($entry.Path): $($_.Exception.Message)")
             }
         }
         if ($rollbackFailures.Count -gt 0) {
             $preserveRollbackFiles = $true
-            throw ("Persist relocation failed: {0}. Rollback also failed; recovery files were preserved: {1}" -f `
-                $originalError.Exception.Message, ($rollbackFailures.ToArray() -join '; '))
+            throw (New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.Relocation.Persist.RollbackFailed' `
+                -Message '[[CapsulenvText:PersistRelocation.RollbackFailed.Message]]' `
+                -Cause $originalError `
+                -Context ([ordered]@{ RollbackFailureCount=$rollbackFailures.Count; Paths=$rollbackFailurePaths.ToArray() }) `
+                -Remediation @('Inspect the preserved .capsulenv-relocation-*.rollback files before retrying.'))
         }
         throw $originalError
     } finally {
@@ -334,6 +340,15 @@ function Invoke-CapsulenvPersistRelocationRepair {
 
     Write-CapsulenvMessage -Level Success -Message ("Repaired {0} Scoop-persisted configuration file(s) for the new capsule location." -f $plan.Count)
     return [pscustomobject]@{ FilesChanged = $plan.Count; Replacements = $totalReplacements; DryRun = $false }
+}
+
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Relocation.PersistRepair' -Area 'Relocation' -Name 'Persist path repair' -Importance Optional -Handler {
+    $configuration = Get-CapsulenvConfiguration
+    $context = Get-CapsulenvRelocationContext
+    $configuredRepairFiles = [int](@($configuration.Scoop.RelocationRepairs.Keys | ForEach-Object { @($configuration.Scoop.RelocationRepairs[$_]).Count } | Measure-Object -Sum).Sum)
+    $moves = @($context.PathMappings | ForEach-Object { '{0}: {1} -> {2}' -f $_.Name, $_.OldPath, $_.NewPath })
+    $detail = if ($context.HasPathChanges) { "Pending (source=$($context.PreviousSource)); $configuredRepairFiles allow-listed file rule(s); $($moves -join '; ')" } else { "$configuredRepairFiles allow-listed file rule(s); no pending path relocation" }
+    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Relocation.PersistRepair' -Name 'Persist path repair' -Area 'Relocation' -Status $(if($context.HasPathChanges){'Advisory'}else{'Healthy'}) -Importance Optional -Summary $detail -Detail $detail -Data ([ordered]@{ ConfiguredRepairFiles=$configuredRepairFiles; HasPathChanges=[bool]$context.HasPathChanges; Mappings=@($context.PathMappings) }) -Remediation $(if($context.HasPathChanges){@('Run capsulenv rehydrate to apply allow-listed persist relocation repairs.')}else{@()})
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Invoke-CapsulenvPersistRelocationRepair

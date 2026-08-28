@@ -21,6 +21,26 @@
     "Process.ExecutableRequired.Hint": "Provide an executable when the owning subsystem creates the process plan.",
     "Process.PlanExecutableMissing": "The process plan does not specify an executable.",
     "Process.ExecutableNotFound": "The planned executable does not exist: {0}",
-    "Process.InvocationFailed": "Process invocation failed: {0}"
+    "Process.InvocationFailed": "Process invocation failed: {0}",
+    "Scoop.NotInstalled.Message": "Scoop is not installed in the configured portable root.",
+    "Scoop.NotInstalled.Remediation": "Bootstrap the capsule or install Scoop into the configured portable root before trusted Scoop execution.",
+    "Scoop.CommandFailed.Message": "Scoop command failed with exit code {0}.",
+    "HostIntegration.LauncherArgumentUnsupported.Message": "Launcher argument contains an unsupported quote.",
+    "HostIntegration.LauncherArgumentUnsupported.Remediation": "Use a package or shortcut name that does not contain a double quote.",
+    "HostIntegration.LauncherMissing.Message": "Capsulenv launcher is missing; Start Menu integration cannot be created: {0}",
+    "PersistRelocation.InvalidText.Message": "Persist repair only accepts valid UTF text files: {0}",
+    "PersistRelocation.InvalidJson.Message": "Persist relocation JSON validation failed for {0}.",
+    "PersistRelocation.UnsupportedFormat.Message": "Unsupported persist relocation format '{0}' for {1}.",
+    "PersistRelocation.PathMustBeRelative.Message": "Persist repair paths must be relative: {0}",
+    "PersistRelocation.PathEscapesStore.Message": "Persist repair path escapes its app store: {0}",
+    "PersistRelocation.RepairNotConfigured.Message": "No persist relocation repair is configured for Scoop app '{0}'.",
+    "PersistRelocation.RequiredFileMissing.Message": "Required persist relocation file is missing: {0}",
+    "PersistRelocation.FileTooLarge.Message": "Persist relocation file exceeds its MaxBytes limit ({0}): {1}",
+    "PersistRelocation.DuplicateTarget.Message": "Duplicate persist relocation rule resolves to the same file: {0}",
+    "PersistRelocation.ProcessRunning.Message": "Close '{0}' before repairing its Scoop-persisted configuration.",
+    "PersistRelocation.ChangedAfterValidation.Message": "Persist relocation file changed after validation; refusing to overwrite it: {0}",
+    "PersistRelocation.RollbackFailed.Message": "Persist relocation failed and rollback also failed; recovery files were preserved.",
+    "Relocation.NoCompleted.Message": "No completed capsulenv relocation is recorded.",
+    "Relocation.Incomplete.Message": "The recorded relocation context is incomplete."
   }
 }
