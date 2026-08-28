@@ -22,6 +22,7 @@ Daily commands
   capsulenv.cmd user-shell [--force]
   capsulenv.cmd status
   capsulenv.cmd version
+  capsulenv.cmd context [--json]
   capsulenv.cmd eject [--force]
   capsulenv.cmd doctor
 
@@ -748,6 +749,17 @@ function Invoke-Capsulenv {
         'version' {
             if ($remaining.Count -gt 0) { throw 'Usage: version' }
             Get-CapsulenvRuntimeVersion | Write-Output
+        }
+        'context' {
+            if ($remaining.Count -gt 1 -or ($remaining.Count -eq 1 -and [string]$remaining[0] -ne '--json')) {
+                throw 'Usage: context [--json]'
+            }
+            $runtimeContext = Get-CapsulenvRuntimeContext
+            if ($remaining -contains '--json') {
+                $runtimeContext | ConvertTo-Json -Depth 6 | Write-Output
+            } else {
+                $runtimeContext | Format-List
+            }
         }
         'doctor' { Invoke-CapsulenvDoctor | Out-Null }
         'seed' { Invoke-CapsulenvSeedCommand -Arguments $remaining }

@@ -17,6 +17,9 @@ function Get-CapsulenvEnvironmentPlan {
         SCOOP_CACHE = (Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Cache) -AllowMissing)
         CAPSULENV_ID = (Get-CapsulenvIdentity)
         CAPSULENV_SCRATCH = (Get-CapsulenvScratchPath)
+        CAPSULENV_TOOL_DATA_ROOT = (Resolve-CapsulenvPath -Path 'tool-data' -AllowMissing)
+        CAPSULENV_CACHE_ROOT = (Resolve-CapsulenvPath -Path 'cache' -AllowMissing)
+        CAPSULENV_PROJECT_CACHE_ROOT = (Resolve-CapsulenvPath -Path 'project-cache' -AllowMissing)
     }
 
     if ($configuration.Bitwarden.Enabled -and $configuration.Bitwarden.SetSshAuthSock) {

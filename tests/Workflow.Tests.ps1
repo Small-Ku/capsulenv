@@ -31,6 +31,18 @@ Describe 'Capsulenv portable workflow contracts' {
                 $plan.Variables.UV_CONFIG_FILE | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data/uv/uv.toml')))
                 $plan.Variables.NPM_CONFIG_USERCONFIG | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data/npm/npmrc')))
                 $plan.Variables.CAPSULENV_SCRATCH.StartsWith($CapsuleRoot, [System.StringComparison]::OrdinalIgnoreCase) | Should -BeFalse
+                $plan.Variables.CAPSULENV_TOOL_DATA_ROOT | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data')))
+                $plan.Variables.CAPSULENV_CACHE_ROOT | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'cache')))
+                $plan.Variables.CAPSULENV_PROJECT_CACHE_ROOT | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'project-cache')))
+                $runtimeContext = Get-CapsulenvRuntimeContext
+                $runtimeContext.SchemaVersion | Should -Be 1
+                $runtimeContext.Id | Should -Be (Get-CapsulenvIdentity)
+                $runtimeContext.Root | Should -Be ([System.IO.Path]::GetFullPath($CapsuleRoot))
+                $runtimeContext.Storage.DataRoot | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data')))
+                $runtimeContext.Storage.CacheRoot | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'cache')))
+                $runtimeContext.Storage.ProjectCacheRoot | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'project-cache')))
+                @($runtimeContext.Capabilities.PackageProviders) | Should -Contain 'PortableSafe'
+                @($runtimeContext.Capabilities.PackageProviders) | Should -Contain 'Scoop'
 
                 Set-CapsulenvInstallMode -Mode User -ManagedPathEntries $plan.PathEntries
                 $modePath = Get-CapsulenvInstallModeStatePath

@@ -39,6 +39,50 @@ function Get-CapsulenvContext {
     return $script:CapsulenvContext
 }
 
+function Get-CapsulenvRuntimeContext {
+    [CmdletBinding()]
+    param()
+
+    $context = Get-CapsulenvContext
+    $configuration = Get-CapsulenvConfiguration
+    $moduleRoots = @(
+        foreach ($entry in @($configuration.Environment.ModulePath)) {
+            Resolve-CapsulenvPath -Path ([string]$entry) -AllowMissing
+        }
+    )
+    $currentPowerShell = $null
+    try {
+        $currentPowerShell = [string](Get-Process -Id $PID).Path
+    } catch {
+        $currentPowerShell = $null
+    }
+
+    return [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        Version = Get-CapsulenvRuntimeVersion
+        Id = Get-CapsulenvIdentity
+        Root = $context.Root
+        Mode = Get-CapsulenvInstallMode
+        ModuleRoots = $moduleRoots
+        Storage = [pscustomobject][ordered]@{
+            DataRoot = Resolve-CapsulenvPath -Path 'tool-data' -AllowMissing
+            CacheRoot = Resolve-CapsulenvPath -Path 'cache' -AllowMissing
+            ProjectCacheRoot = Resolve-CapsulenvPath -Path 'project-cache' -AllowMissing
+            ScratchRoot = Get-CapsulenvScratchPath
+        }
+        Runtime = [pscustomobject][ordered]@{
+            PowerShell = $currentPowerShell
+            PowerShellVersion = [string]$PSVersionTable.PSVersion
+            PSEdition = [string]$PSVersionTable.PSEdition
+        }
+        Capabilities = [pscustomobject][ordered]@{
+            SessionModes = @('ShellOnly', 'User')
+            PackageProviders = @('PortableSafe', 'Scoop')
+            TrustModes = @('PortableSafe', 'TrustedExecution')
+        }
+    }
+}
+
 function Get-CapsulenvModuleRuntimePath {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -125,3 +169,5 @@ function Get-CapsulenvLastExitCode {
     }
     return $FailureCode
 }
+
+##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvRuntimeContext

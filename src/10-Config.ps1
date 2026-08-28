@@ -500,7 +500,11 @@ function Assert-CapsulenvConfiguration {
         }
     }
 
-    $reserved = @('CAPSULENV_ROOT', 'CAPSULENV_ID', 'CAPSULENV_SCRATCH', 'CAPSULENV_MODE', 'SCOOP', 'SCOOP_GLOBAL', 'SCOOP_CACHE', 'SSH_AUTH_SOCK', 'PATH')
+    $reserved = @(
+        'CAPSULENV_ROOT', 'CAPSULENV_ID', 'CAPSULENV_SCRATCH', 'CAPSULENV_MODE',
+        'CAPSULENV_TOOL_DATA_ROOT', 'CAPSULENV_CACHE_ROOT', 'CAPSULENV_PROJECT_CACHE_ROOT',
+        'SCOOP', 'SCOOP_GLOBAL', 'SCOOP_CACHE', 'SSH_AUTH_SOCK', 'PATH'
+    )
     foreach ($name in @($Configuration.Environment.PathVariables.Keys) + @($Configuration.Environment.Variables.Keys)) {
         if ($reserved -contains [string]$name) {
             throw "Environment variable is managed by a dedicated capsulenv setting and cannot be overridden here: $name"
