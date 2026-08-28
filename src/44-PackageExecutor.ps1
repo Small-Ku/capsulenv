@@ -218,6 +218,26 @@ function Get-CapsulenvPackageInstallPlan {
     }
 }
 
+function Get-CapsulenvPackagePlanExecutableAliases {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Package)
+
+    $aliases = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $Package.Bin) { return @() }
+    $items = @(if ($Package.Bin -is [string]) { [string]$Package.Bin } else { @($Package.Bin) })
+    foreach ($item in $items) {
+        $parts = @(if ($item -is [string]) { [string]$item } else { @($item) })
+        if ($parts.Count -lt 1) { continue }
+        $alias = if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace([string]$parts[1])) {
+            [string]$parts[1]
+        } else {
+            [System.IO.Path]::GetFileNameWithoutExtension((Get-CapsulenvPackagePathLeaf -Path ([string]$parts[0])))
+        }
+        if (-not [string]::IsNullOrWhiteSpace($alias) -and -not $aliases.Contains($alias)) { $aliases.Add($alias) }
+    }
+    return [string[]]$aliases.ToArray()
+}
+
 function ConvertTo-CapsulenvPackageInstallPlanContract {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Plan)
@@ -230,6 +250,7 @@ function ConvertTo-CapsulenvPackageInstallPlanContract {
                 Architecture = [string]$package.Architecture
                 Classification = [string]$package.Classification
                 Capabilities = @($package.Capabilities | ForEach-Object { [string]$_ })
+                Executables = @(Get-CapsulenvPackagePlanExecutableAliases -Package $package)
                 Reasons = @($package.Reasons | ForEach-Object { [string]$_ })
                 Dependencies = @($package.Dependencies | ForEach-Object { [string]$_ })
             }
@@ -242,10 +263,11 @@ function ConvertTo-CapsulenvPackageInstallPlanContract {
     )
 
     return [pscustomobject][ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = 2
         Reference = [string]$Plan.Reference
         Classification = [string]$Plan.Classification
         PortableSafe = ([string]$Plan.Classification -eq 'PortableSafe')
+        Executables = @($packageContracts | ForEach-Object { @($_.Executables) } | ForEach-Object { [string]$_ } | Sort-Object -Unique)
         Packages = $packageContracts
         BlockedPackages = $blockedReferences
     }

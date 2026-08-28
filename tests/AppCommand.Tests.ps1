@@ -23,6 +23,7 @@ Describe 'Capsulenv app command trust boundary' {
                     Architecture = '64bit'
                     Classification = 'PortableSafe'
                     Capabilities = @('Bin', 'Persist')
+                    Bin = @(@('bin\demo.exe','demo'))
                     Reasons = @()
                     Dependencies = @('helper')
                     SourceManifest = [pscustomobject]@{ secret = 'must-not-cross-contract' }
@@ -33,12 +34,14 @@ Describe 'Capsulenv app command trust boundary' {
 
         $json = & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('plan', 'demo', '--json') }
         $contract = $json | ConvertFrom-Json
-        $contract.SchemaVersion | Should -Be 1
+        $contract.SchemaVersion | Should -Be 2
         $contract.Reference | Should -Be 'main/demo'
         $contract.Classification | Should -Be 'PortableSafe'
         $contract.PortableSafe | Should -BeTrue
         $contract.Packages | Should -HaveCount 1
         $contract.Packages[0].Capabilities | Should -Contain 'Persist'
+        $contract.Executables | Should -Contain 'demo'
+        $contract.Packages[0].Executables | Should -Contain 'demo'
         $contract.Packages[0].PSObject.Properties.Name | Should -Not -Contain 'SourceManifest'
         $json | Should -Not -Match 'must-not-cross-contract'
     }
