@@ -1,0 +1,26 @@
+{
+  "language": "en-US",
+  "strings": {
+    "Context.RootMissing.Message": "CAPSULENV_ROOT is not set and no root path was supplied.",
+    "Context.RootMissing.Remediation": "Set CAPSULENV_ROOT or pass -Root explicitly.",
+    "Doctor.DuplicateCheck": "Duplicate Capsulenv doctor check id: {0}",
+    "Doctor.UnknownCheck": "Unknown Capsulenv doctor check id: {0}",
+    "Doctor.NoResult": "Check returned no result.",
+    "Doctor.InvalidResult": "Doctor check '{0}' returned an invalid result without Id.",
+    "DesiredState.NodeIdEmpty": "Desired-state node id cannot be empty.",
+    "DesiredState.DuplicateNode": "Duplicate desired-state node id: {0}",
+    "DesiredState.MissingDependency": "Desired-state node '{0}' depends on missing node '{1}'.",
+    "DesiredState.DependencyCycle": "Desired-state graph contains a dependency cycle: {0}",
+    "DesiredState.BlockedByDependency": "Blocked by dependency: {0}",
+    "DesiredState.NoPlanDecision": "Desired-state node '{0}' returned no plan decision.",
+    "DesiredState.UnsupportedOperation": "Desired-state node '{0}' returned unsupported operation '{1}'.",
+    "DesiredState.PlanBlocked": "Desired-state plan is blocked by {0} node(s).",
+    "DesiredState.VerifyFailed": "Desired-state verification failed: {0}",
+    "DesiredState.ApplyFailed": "Desired-state apply failed: {0}",
+    "Process.ExecutableRequired": "A process plan requires a non-empty executable.",
+    "Process.ExecutableRequired.Hint": "Provide an executable when the owning subsystem creates the process plan.",
+    "Process.PlanExecutableMissing": "The process plan does not specify an executable.",
+    "Process.ExecutableNotFound": "The planned executable does not exist: {0}",
+    "Process.InvocationFailed": "Process invocation failed: {0}"
+  }
+}

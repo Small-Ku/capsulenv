@@ -127,6 +127,22 @@ if ($externalJsonViolations.Count -gt 0) {
     throw "Capsulenv external-data access analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
+$mandatoryBindingViolations = @(Get-CapsulenvMandatoryParameterBindingViolations -Paths $runtimePaths)
+if ($mandatoryBindingViolations.Count -gt 0) {
+    $detail = $mandatoryBindingViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv mandatory-parameter binding analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$loopArrayAppendViolations = @(Get-CapsulenvLoopArrayAppendViolations -Paths $runtimePaths)
+if ($loopArrayAppendViolations.Count -gt 0) {
+    $detail = $loopArrayAppendViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv loop-array performance analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
 if ($diagnostics.Count -gt 0) {
     $detail = $diagnostics | ForEach-Object {
         '{0}:{1}:{2} [{3}] {4}' -f $_.ScriptPath, $_.Line, $_.Column, $_.RuleName, $_.Message
@@ -145,4 +161,6 @@ if ($diagnostics.Count -gt 0) {
     SessionModeBoundaryViolations = $sessionModeViolations.Count
     StockScoopBoundaryViolations = $stockScoopBoundaryViolations.Count
     ExternalJsonUnsafeMemberAccess = $externalJsonViolations.Count
+    MandatoryParameterBindingViolations = $mandatoryBindingViolations.Count
+    LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }

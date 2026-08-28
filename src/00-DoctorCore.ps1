@@ -39,7 +39,7 @@ function Register-CapsulenvDoctorCheck {
         [ValidateSet('Required', 'Optional')][string]$Importance = 'Required',
         [Parameter(Mandatory = $true)][scriptblock]$Handler
     )
-    if ($script:CapsulenvDoctorCheckRegistry.Contains($Id)) { throw "Duplicate Capsulenv doctor check id: $Id" }
+    if ($script:CapsulenvDoctorCheckRegistry.Contains($Id)) { throw ('[[CapsulenvText:Doctor.DuplicateCheck]]' -f $Id) }
     $script:CapsulenvDoctorCheckRegistry[$Id] = [pscustomobject][ordered]@{ Id=$Id; Area=$Area; Name=$Name; Importance=$Importance; Handler=$Handler }
 }
 
@@ -48,16 +48,16 @@ function Invoke-CapsulenvDoctorChecks {
     param([string[]]$Ids = @())
     $selectedIds = if (@($Ids).Count -eq 0) { @($script:CapsulenvDoctorCheckRegistry.Keys) } else { @($Ids) }
     foreach ($id in $selectedIds) {
-        if (-not $script:CapsulenvDoctorCheckRegistry.Contains($id)) { throw "Unknown Capsulenv doctor check id: $id" }
+        if (-not $script:CapsulenvDoctorCheckRegistry.Contains($id)) { throw ('[[CapsulenvText:Doctor.UnknownCheck]]' -f $id) }
         $definition = $script:CapsulenvDoctorCheckRegistry[$id]
         try {
             $result = & $definition.Handler
             if ($null -eq $result) {
-                New-CapsulenvDoctorResult -Id $definition.Id -Name $definition.Name -Area $definition.Area -Status Skipped -Importance $definition.Importance -Summary 'Check returned no result.'
+                New-CapsulenvDoctorResult -Id $definition.Id -Name $definition.Name -Area $definition.Area -Status Skipped -Importance $definition.Importance -Summary '[[CapsulenvText:Doctor.NoResult]]'
                 continue
             }
             foreach ($item in @($result)) {
-                if ($null -eq $item.PSObject.Properties['Id']) { throw "Doctor check '$id' returned an invalid result without Id." }
+                if ($null -eq $item.PSObject.Properties['Id']) { throw ('[[CapsulenvText:Doctor.InvalidResult]]' -f $id) }
                 $item
             }
         } catch {

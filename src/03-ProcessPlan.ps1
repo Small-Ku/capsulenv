@@ -10,7 +10,7 @@ function New-CapsulenvProcessPlan {
         [AllowNull()][System.Collections.IDictionary]$Metadata = $null
     )
     if ([string]::IsNullOrWhiteSpace($Executable)) {
-        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message 'A process plan requires a non-empty executable.' -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) -TargetObject $Executable -Hints @('Provide an executable when the owning subsystem creates the process plan.'))
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message '[[CapsulenvText:Process.ExecutableRequired]]' -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) -TargetObject $Executable -Hints @('[[CapsulenvText:Process.ExecutableRequired.Hint]]'))
     }
     $environmentCopy=[ordered]@{}; if($null -ne $Environment){foreach($key in $Environment.Keys){$environmentCopy[[string]$key]=[string]$Environment[$key]}}
     $metadataCopy=[ordered]@{}; if($null -ne $Metadata){foreach($key in $Metadata.Keys){$metadataCopy[[string]$key]=$Metadata[$key]}}
@@ -26,8 +26,8 @@ function Invoke-CapsulenvProcessPlan {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Plan)
     $executable=[string]$Plan.Executable
-    if([string]::IsNullOrWhiteSpace($executable)){throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message 'The process plan does not specify an executable.' -Category ([System.Management.Automation.ErrorCategory]::InvalidData) -TargetObject $Plan)}
-    if([System.IO.Path]::IsPathRooted($executable) -and -not(Test-Path -LiteralPath $executable -PathType Leaf)){throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message "The planned executable does not exist: $executable" -Category ([System.Management.Automation.ErrorCategory]::ObjectNotFound) -TargetObject $executable -Context ([ordered]@{Executable=$executable}))}
+    if([string]::IsNullOrWhiteSpace($executable)){throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message '[[CapsulenvText:Process.PlanExecutableMissing]]' -Category ([System.Management.Automation.ErrorCategory]::InvalidData) -TargetObject $Plan)}
+    if([System.IO.Path]::IsPathRooted($executable) -and -not(Test-Path -LiteralPath $executable -PathType Leaf)){throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message ('[[CapsulenvText:Process.ExecutableNotFound]]' -f $executable) -Category ([System.Management.Automation.ErrorCategory]::ObjectNotFound) -TargetObject $executable -Context ([ordered]@{Executable=$executable}))}
     $saved=@{}; foreach($name in $Plan.Environment.Keys){$exists=Test-Path -LiteralPath ('Env:'+ [string]$name); $saved[[string]$name]=[pscustomobject]@{Exists=$exists;Value=if($exists){[Environment]::GetEnvironmentVariable([string]$name,'Process')}else{$null}}}
     $savedPathExists=Test-Path -LiteralPath Env:PATH; $savedPath=if($savedPathExists){[Environment]::GetEnvironmentVariable('PATH','Process')}else{$null}; $pushed=$false
     try {
@@ -44,7 +44,7 @@ function Invoke-CapsulenvProcessPlan {
         $succeeded=$?
         $global:LASTEXITCODE=Get-CapsulenvLastExitCode -Succeeded $succeeded
     } catch {
-        throw (ConvertTo-CapsulenvDiagnosticErrorRecord -ErrorRecord $_ -Id 'Capsulenv.Process.InvocationFailed' -Message "Process invocation failed: $executable" -TargetObject $executable -Context ([ordered]@{Executable=$executable;ExecutionMode=[string]$Plan.ExecutionMode;WorkingDirectory=[string]$Plan.WorkingDirectory}))
+        throw (ConvertTo-CapsulenvDiagnosticErrorRecord -ErrorRecord $_ -Id 'Capsulenv.Process.InvocationFailed' -Message ('[[CapsulenvText:Process.InvocationFailed]]' -f $executable) -TargetObject $executable -Context ([ordered]@{Executable=$executable;ExecutionMode=[string]$Plan.ExecutionMode;WorkingDirectory=[string]$Plan.WorkingDirectory}))
     } finally {
         if($pushed){Pop-Location}
         if($savedPathExists){[Environment]::SetEnvironmentVariable('PATH',[string]$savedPath,'Process')}else{Remove-Item -LiteralPath Env:PATH -ErrorAction SilentlyContinue}

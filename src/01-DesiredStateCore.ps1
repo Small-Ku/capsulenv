@@ -16,13 +16,13 @@ function Resolve-CapsulenvDesiredStateOrder {
     $byId = @{}
     foreach ($node in $Nodes) {
         $id = [string]$node.Id
-        if ([string]::IsNullOrWhiteSpace($id)) { throw 'Desired-state node id cannot be empty.' }
-        if ($byId.ContainsKey($id)) { throw "Duplicate desired-state node id: $id" }
+        if ([string]::IsNullOrWhiteSpace($id)) { throw '[[CapsulenvText:DesiredState.NodeIdEmpty]]' }
+        if ($byId.ContainsKey($id)) { throw ('[[CapsulenvText:DesiredState.DuplicateNode]]' -f $id) }
         $byId[$id] = $node
     }
     foreach ($node in $Nodes) {
         foreach ($dependency in @($node.DependsOn)) {
-            if (-not $byId.ContainsKey([string]$dependency)) { throw "Desired-state node '$($node.Id)' depends on missing node '$dependency'." }
+            if (-not $byId.ContainsKey([string]$dependency)) { throw ('[[CapsulenvText:DesiredState.MissingDependency]]' -f $node.Id, $dependency) }
         }
     }
     $remaining = New-Object System.Collections.Generic.List[object]
@@ -36,7 +36,7 @@ function Resolve-CapsulenvDesiredStateOrder {
             foreach ($dependency in @($remaining[$index].DependsOn)) { if (-not $resolved.ContainsKey([string]$dependency)) { $ready = $false; break } }
             if ($ready) { $selectedIndex = $index; break }
         }
-        if ($selectedIndex -lt 0) { throw "Desired-state graph contains a dependency cycle: $(@($remaining.Id) -join ', ')" }
+        if ($selectedIndex -lt 0) { throw ('[[CapsulenvText:DesiredState.DependencyCycle]]' -f (@($remaining.Id) -join ', ')) }
         $selected = $remaining[$selectedIndex]
         $ordered.Add($selected); $resolved[[string]$selected.Id] = $true; $remaining.RemoveAt($selectedIndex)
     }
@@ -52,12 +52,12 @@ function Get-CapsulenvDesiredStatePlan {
     foreach ($node in $ordered) {
         $blockedBy = @($node.DependsOn | Where-Object { $decisions.Contains([string]$_) -and -not [bool]$decisions[[string]$_].CanApply })
         if ($blockedBy.Count -gt 0) {
-            $decision = [pscustomobject][ordered]@{ Id=$node.Id; Node=$node; Operation='Blocked'; CanApply=$false; Reason=("Blocked by dependency: {0}" -f ($blockedBy -join ', ')); Current=$null; Desired=$null }
+            $decision = [pscustomobject][ordered]@{ Id=$node.Id; Node=$node; Operation='Blocked'; CanApply=$false; Reason=('[[CapsulenvText:DesiredState.BlockedByDependency]]' -f ($blockedBy -join ', ')); Current=$null; Desired=$null }
         } else {
             $raw = & $node.Plan $Context
-            if ($null -eq $raw) { throw "Desired-state node '$($node.Id)' returned no plan decision." }
+            if ($null -eq $raw) { throw ('[[CapsulenvText:DesiredState.NoPlanDecision]]' -f $node.Id) }
             $operation = [string]$raw.Operation
-            if ($operation -notin @('NoOp','Apply','Blocked')) { throw "Desired-state node '$($node.Id)' returned unsupported operation '$operation'." }
+            if ($operation -notin @('NoOp','Apply','Blocked')) { throw ('[[CapsulenvText:DesiredState.UnsupportedOperation]]' -f $node.Id, $operation) }
             $canApply = if ($null -ne $raw.PSObject.Properties['CanApply']) { [bool]$raw.CanApply } else { $operation -ne 'Blocked' }
             $decision = [pscustomobject][ordered]@{
                 Id=$node.Id; Node=$node; Operation=$operation; CanApply=$canApply
@@ -79,7 +79,7 @@ function Invoke-CapsulenvDesiredStatePlan {
     if (-not $Context.ContainsKey('Outputs')) { $Context['Outputs'] = @{} }
     $blocked = @($Plan.Nodes | Where-Object { -not $_.CanApply })
     if ($blocked.Count -gt 0) {
-        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.Blocked' -Message "Desired-state plan is blocked by $($blocked.Count) node(s)." -Context ([ordered]@{ NodeIds=@($blocked.Id) }))
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.Blocked' -Message ('[[CapsulenvText:DesiredState.PlanBlocked]]' -f $blocked.Count) -Context ([ordered]@{ NodeIds=@($blocked.Id) }))
     }
     $results = New-Object System.Collections.Generic.List[object]
     foreach ($decision in @($Plan.Nodes)) {
@@ -91,10 +91,10 @@ function Invoke-CapsulenvDesiredStatePlan {
             $output = & $decision.Node.Apply $Context $decision
             $Context.Outputs[[string]$decision.Id] = $output
             $verified = [bool](& $decision.Node.Verify $Context $decision $output)
-            if (-not $verified) { throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.VerifyFailed' -Message "Desired-state verification failed: $($decision.Id)" -TargetObject $decision.Id) }
+            if (-not $verified) { throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.VerifyFailed' -Message ('[[CapsulenvText:DesiredState.VerifyFailed]]' -f $decision.Id) -TargetObject $decision.Id) }
             $results.Add([pscustomobject][ordered]@{ Id=$decision.Id; Operation='Apply'; Applied=$true; Verified=$true; Output=$output })
         } catch {
-            throw (ConvertTo-CapsulenvDiagnosticErrorRecord -ErrorRecord $_ -Id 'Capsulenv.DesiredState.ApplyFailed' -Message "Desired-state apply failed: $($decision.Id)" -TargetObject $decision.Id -Context ([ordered]@{ NodeId=$decision.Id }))
+            throw (ConvertTo-CapsulenvDiagnosticErrorRecord -ErrorRecord $_ -Id 'Capsulenv.DesiredState.ApplyFailed' -Message ('[[CapsulenvText:DesiredState.ApplyFailed]]' -f $decision.Id) -TargetObject $decision.Id -Context ([ordered]@{ NodeId=$decision.Id }))
         }
     }
     return $results.ToArray()

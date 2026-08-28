@@ -12,8 +12,10 @@ module-runtime/*.ps1               module-owned entrypoint/helper resource sourc
 scripts/Build-Capsulenv.ps1       produce redistributable release bundle
 scripts/Install-Capsulenv.ps1     transactional runtime installer/updater
 scripts/Analyze-Capsulenv.ps1     Windows PowerShell compatibility + architecture analysis
-scripts/Capsulenv.StaticAnalysis.ps1 testable custom AST ownership rules
+scripts/Capsulenv.StaticAnalysis.ps1 testable custom AST ownership/performance rules
 scripts/Test-Capsulenv.ps1        single analysis + Pester test entrypoint
+build/CapsulenvTextResource.ps1   build-time text catalog expansion
+build/i18n/*.json                 UTF-8 source text catalogs
 PSScriptAnalyzerSettings.psd1      checked-in WinPS 5.1 analyzer policy
 tests/*.Tests.ps1                 Pester coverage
 config/capsulenv.psd1             default runtime configuration
@@ -27,6 +29,8 @@ A development checkout may build/merge the module on entry. `Merge-ModuleScripts
 Add module implementation to the appropriately ordered `src/*.ps1` file instead of putting environment logic in `capsulenv.cmd`. The batch file must remain a thin bootstrap launcher.
 
 Public functions/aliases are exported through the module merger. Mark export statements with the existing `##MOD_EXEC## Export-ModuleMember` convention so deterministic merge and generated manifest behavior remain consistent.
+
+User-visible source strings that use the `[[CapsulenvText:<key>]]` token belong in `build/i18n/<language>.json`. `Merge-ModuleScripts.ps1 -Language <language>` expands each complete quoted token to a PowerShell string literal while building the merged module and module-owned runtime scripts. Generated/deployed runtime therefore has no catalog lookup or catalog-file dependency. Unknown keys and tokens embedded inside a larger string fail the build.
 
 Module sources must remain compatible with Windows PowerShell 5.1. Avoid PowerShell 7-only language/runtime features unless there is a guarded compatibility path. Be especially careful around StrictMode, native `$LASTEXITCODE`, generic collection enumeration and encoding behavior shared by 5.1/7.x.
 
@@ -63,7 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
 
 The entrypoint runs static analysis before Pester. `PSScriptAnalyzerSettings.psd1` enables `PSUseCompatibleSyntax` for PowerShell 5.1 and `PSUseCompatibleCommands` against a Windows PowerShell 5.1 compatibility profile over runtime/module/build scripts. Development-only analyzer/Pester drivers are excluded from that runtime command profile because their tooling APIs intentionally target the supplied modern development toolchain. A compatibility diagnostic is a test failure, not a warning.
 
-`Capsulenv.StaticAnalysis.ps1` adds fail-closed AST/source architecture gates for invariants that ordinary PSScriptAnalyzer cannot express. The current gates require the control bootstrap to remain command-free, forbid runtime `Import-PowerShellDataFile`, reject every `module-runtime/scoop-capsulenv-*` source adapter, prevent runtime code from targeting upstream Scoop's `Programs\Scoop Apps` namespace, reject every Scoop `shortcut_folder` override, require the public Scoop shim to dispatch directly to the installed upstream `bin/scoop.ps1`, require `Get-CapsulenvInstallMode` to stay command-free and select User only from process-scoped `CAPSULENV_MODE`, and reject direct member access on declared untrusted external JSON record variables such as uv's `$item`. When adding another external JSON ingestion boundary, register its record variable(s) in the analyzer rather than relying on StrictMode/runtime failures.
+`Capsulenv.StaticAnalysis.ps1` adds fail-closed AST/source architecture gates for invariants that ordinary PSScriptAnalyzer cannot express. The current gates require the control bootstrap to remain command-free, forbid runtime `Import-PowerShellDataFile`, reject every `module-runtime/scoop-capsulenv-*` source adapter, prevent runtime code from targeting upstream Scoop's `Programs\Scoop Apps` namespace, reject every Scoop `shortcut_folder` override, require the public Scoop shim to dispatch directly to the installed upstream `bin/scoop.ps1`, require `Get-CapsulenvInstallMode` to stay command-free and select User only from process-scoped `CAPSULENV_MODE`, and reject direct member access on declared untrusted external JSON record variables such as uv's `$item`. It also rejects statically provable explicit null/empty arguments to mandatory local-function parameters unless the matching `Allow*` attribute is present, and rejects `+=` on a variable known to be a PowerShell array while inside a loop. When adding another external JSON ingestion boundary, register its record variable(s) in the analyzer rather than relying on StrictMode/runtime failures.
 
 The custom rules are themselves tested with synthetic negative and positive fixtures in `tests/ArchitectureAnalysis.Tests.ps1`: each ownership/dependency rule must demonstrate that a representative forbidden implementation fails static analysis and its approved form passes. Pester then covers planner classification, PortableSafe executor/state/shims, real `app install` trust dispatch, bounded legacy Scoop projection repair, source/module parsing, control-host isolation, runtime build/install preservation, fresh-session ShellOnly defaults versus persistent User ownership, Capsulenv-owned User Start Menu integration, installed-runtime selector/executable semantics, external uv JSON/StrictMode tolerance, tool storage/relocation, browser/default-browser ownership, sing-box process/config ownership, Bitwarden scoped mutation and host-scoped integration state.
 

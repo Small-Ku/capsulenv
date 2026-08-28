@@ -140,4 +140,48 @@ set "UPSTREAM=%~dp0..\apps\scoop\current\bin\scoop.ps1"
         @(Get-CapsulenvStockScoopBoundaryViolations -Path $fixture).Count | Should -Be 0
     }
 
+    It 'rejects explicit null passed to a mandatory local function parameter without AllowNull' {
+        $fixture = New-CapsulenvStaticFixture -Name 'mandatory-null.ps1' -Source @'
+function Invoke-Target {
+    param([Parameter(Mandatory = $true)][string]$Name)
+}
+Invoke-Target -Name $null
+'@
+        $violations = @(Get-CapsulenvMandatoryParameterBindingViolations -Paths @($fixture))
+        $violations.Count | Should -Be 1
+        $violations[0].Rule | Should -Be 'MandatoryParameterExplicitEmptyValue'
+    }
+
+    It 'accepts explicit null when the mandatory local function parameter allows null' {
+        $fixture = New-CapsulenvStaticFixture -Name 'mandatory-null-allowed.ps1' -Source @'
+function Invoke-Target {
+    param([AllowNull()][Parameter(Mandatory = $true)][string]$Name)
+}
+Invoke-Target -Name $null
+'@
+        @(Get-CapsulenvMandatoryParameterBindingViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
+    It 'rejects PowerShell array += inside a loop when the variable is known to be an array' {
+        $fixture = New-CapsulenvStaticFixture -Name 'loop-array-append.ps1' -Source @'
+$items = @()
+foreach ($item in 1..3) {
+    $items += $item
+}
+'@
+        $violations = @(Get-CapsulenvLoopArrayAppendViolations -Paths @($fixture))
+        $violations.Count | Should -Be 1
+        $violations[0].Rule | Should -Be 'LoopArrayAppend'
+    }
+
+    It 'accepts List[T].Add inside a loop' {
+        $fixture = New-CapsulenvStaticFixture -Name 'loop-list-add.ps1' -Source @'
+$items = New-Object System.Collections.Generic.List[object]
+foreach ($item in 1..3) {
+    $items.Add($item)
+}
+'@
+        @(Get-CapsulenvLoopArrayAppendViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
 }

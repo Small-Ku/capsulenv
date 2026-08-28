@@ -15,9 +15,9 @@ function Initialize-CapsulenvContext {
     if ([string]::IsNullOrWhiteSpace($Root)) {
         throw (New-CapsulenvDiagnosticErrorRecord `
             -Id 'Capsulenv.Context.RootMissing' `
-            -Message 'CAPSULENV_ROOT is not set and no root path was supplied.' `
+            -Message '[[CapsulenvText:Context.RootMissing.Message]]' `
             -Category ([System.Management.Automation.ErrorCategory]::ObjectNotFound) `
-            -Remediation @('Set CAPSULENV_ROOT or pass -Root explicitly.'))
+            -Remediation @('[[CapsulenvText:Context.RootMissing.Remediation]]'))
     }
 
     $resolvedRoot = [System.IO.Path]::GetFullPath($Root)

@@ -288,3 +288,146 @@ function Get-CapsulenvStockScoopBoundaryViolations {
     }
     return $violations.ToArray()
 }
+
+function Get-CapsulenvMandatoryParameterBindingViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
+
+    $functionContracts = @{}
+    $asts = @{}
+    foreach ($path in $Paths) {
+        $fullPath = [System.IO.Path]::GetFullPath($path)
+        $ast = Get-CapsulenvStaticAst -Path $fullPath
+        $asts[$fullPath] = $ast
+        foreach ($functionAst in @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))) {
+            $parameters = @{}
+            $parameterAsts = New-Object System.Collections.Generic.List[object]
+            foreach ($parameterAst in @($functionAst.Parameters)) { if ($null -ne $parameterAst) { $parameterAsts.Add($parameterAst) } }
+            if ($null -ne $functionAst.Body.ParamBlock) {
+                foreach ($parameterAst in @($functionAst.Body.ParamBlock.Parameters)) { $parameterAsts.Add($parameterAst) }
+            }
+            foreach ($parameterAst in $parameterAsts) {
+                $mandatory = $false
+                $allowNull = $false
+                $allowEmptyString = $false
+                $allowEmptyCollection = $false
+                foreach ($attribute in @($parameterAst.Attributes)) {
+                    $typeName = [string]$attribute.TypeName.FullName
+                    if ($typeName -eq 'Parameter') {
+                        foreach ($namedArgument in @($attribute.NamedArguments)) {
+                            if ([string]$namedArgument.ArgumentName -eq 'Mandatory') {
+                                $value = $namedArgument.Argument.SafeGetValue()
+                                if ($null -eq $value -or [bool]$value) { $mandatory = $true }
+                            }
+                        }
+                    } elseif ($typeName -eq 'AllowNull') {
+                        $allowNull = $true
+                    } elseif ($typeName -eq 'AllowEmptyString') {
+                        $allowEmptyString = $true
+                    } elseif ($typeName -eq 'AllowEmptyCollection') {
+                        $allowEmptyCollection = $true
+                    }
+                }
+                if ($mandatory) {
+                    $parameters[[string]$parameterAst.Name.VariablePath.UserPath] = [pscustomobject]@{
+                        AllowNull = $allowNull
+                        AllowEmptyString = $allowEmptyString
+                        AllowEmptyCollection = $allowEmptyCollection
+                    }
+                }
+            }
+            if ($parameters.Count -gt 0) {
+                $functionContracts[[string]$functionAst.Name] = $parameters
+            }
+        }
+    }
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    foreach ($path in $asts.Keys) {
+        $ast = $asts[$path]
+        foreach ($commandAst in @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))) {
+            $commandName = $commandAst.GetCommandName()
+            if ([string]::IsNullOrWhiteSpace($commandName) -or -not $functionContracts.ContainsKey($commandName)) { continue }
+            $contracts = $functionContracts[$commandName]
+            $elements = @($commandAst.CommandElements)
+            for ($index = 1; $index -lt $elements.Count; $index++) {
+                $parameterElement = $elements[$index]
+                if ($parameterElement -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
+                $parameterName = [string]$parameterElement.ParameterName
+                if (-not $contracts.ContainsKey($parameterName)) { continue }
+                if ($index + 1 -ge $elements.Count -or $elements[$index + 1] -is [System.Management.Automation.Language.CommandParameterAst]) { continue }
+                $valueAst = $elements[$index + 1]
+                $kind = $null
+                if ($valueAst -is [System.Management.Automation.Language.VariableExpressionAst] -and [string]$valueAst.VariablePath.UserPath -eq 'null') {
+                    $kind = 'Null'
+                } elseif (($valueAst -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $valueAst -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) -and [string]$valueAst.Value -eq '') {
+                    $kind = 'EmptyString'
+                } elseif ($valueAst -is [System.Management.Automation.Language.ArrayExpressionAst] -and @($valueAst.SubExpression.Statements).Count -eq 0) {
+                    $kind = 'EmptyCollection'
+                }
+                if ($null -eq $kind) { continue }
+                $contract = $contracts[$parameterName]
+                $allowed = ($kind -eq 'Null' -and $contract.AllowNull) -or
+                    ($kind -eq 'EmptyString' -and $contract.AllowEmptyString) -or
+                    ($kind -eq 'EmptyCollection' -and $contract.AllowEmptyCollection)
+                if ($allowed) { continue }
+                $violations.Add([pscustomobject]@{
+                    Rule = 'MandatoryParameterExplicitEmptyValue'
+                    Path = $path
+                    Line = [int]$valueAst.Extent.StartLineNumber
+                    Column = [int]$valueAst.Extent.StartColumnNumber
+                    Detail = "local function '$commandName' mandatory parameter '-$parameterName' receives explicit $kind without the matching Allow attribute"
+                })
+            }
+        }
+    }
+    return $violations.ToArray()
+}
+
+function Get-CapsulenvLoopArrayAppendViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    foreach ($path in $Paths) {
+        $fullPath = [System.IO.Path]::GetFullPath($path)
+        $ast = Get-CapsulenvStaticAst -Path $fullPath
+        $arrayVariables = @{}
+        foreach ($assignment in @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true))) {
+            if ($assignment.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
+            if ([string]$assignment.Operator -ne 'Equals') { continue }
+            $right = $assignment.Right
+            if ($right -is [System.Management.Automation.Language.CommandExpressionAst]) { $right = $right.Expression }
+            $knownArray = $right -is [System.Management.Automation.Language.ArrayExpressionAst] -or
+                $right -is [System.Management.Automation.Language.ArrayLiteralAst]
+            if ($knownArray) { $arrayVariables[[string]$assignment.Left.VariablePath.UserPath] = $true }
+        }
+        foreach ($assignment in @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true))) {
+            if ([string]$assignment.Operator -ne 'PlusEquals' -or $assignment.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
+            $variableName = [string]$assignment.Left.VariablePath.UserPath
+            if (-not $arrayVariables.ContainsKey($variableName)) { continue }
+            $insideLoop = $false
+            $parent = $assignment.Parent
+            while ($null -ne $parent) {
+                if ($parent -is [System.Management.Automation.Language.ForEachStatementAst] -or
+                    $parent -is [System.Management.Automation.Language.ForStatementAst] -or
+                    $parent -is [System.Management.Automation.Language.WhileStatementAst] -or
+                    $parent -is [System.Management.Automation.Language.DoWhileStatementAst] -or
+                    $parent -is [System.Management.Automation.Language.DoUntilStatementAst]) {
+                    $insideLoop = $true
+                    break
+                }
+                $parent = $parent.Parent
+            }
+            if (-not $insideLoop) { continue }
+            $violations.Add([pscustomobject]@{
+                Rule = 'LoopArrayAppend'
+                Path = $fullPath
+                Line = [int]$assignment.Extent.StartLineNumber
+                Column = [int]$assignment.Extent.StartColumnNumber
+                Detail = "PowerShell array '$variableName' uses += inside a loop; use a List[T], ArrayList, or pipeline collection instead"
+            })
+        }
+    }
+    return $violations.ToArray()
+}
