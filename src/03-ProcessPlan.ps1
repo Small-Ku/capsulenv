@@ -29,7 +29,7 @@ function Invoke-CapsulenvProcessPlan {
     if([string]::IsNullOrWhiteSpace($executable)){throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message 'The process plan does not specify an executable.' -Category ([System.Management.Automation.ErrorCategory]::InvalidData) -TargetObject $Plan)}
     if([System.IO.Path]::IsPathRooted($executable) -and -not(Test-Path -LiteralPath $executable -PathType Leaf)){throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Process.ExecutableMissing' -Message "The planned executable does not exist: $executable" -Category ([System.Management.Automation.ErrorCategory]::ObjectNotFound) -TargetObject $executable -Context ([ordered]@{Executable=$executable}))}
     $saved=@{}; foreach($name in $Plan.Environment.Keys){$exists=Test-Path -LiteralPath ('Env:'+ [string]$name); $saved[[string]$name]=[pscustomobject]@{Exists=$exists;Value=if($exists){[Environment]::GetEnvironmentVariable([string]$name,'Process')}else{$null}}}
-    $savedPath=$env:PATH; $pushed=$false
+    $savedPathExists=Test-Path -LiteralPath Env:PATH; $savedPath=if($savedPathExists){[Environment]::GetEnvironmentVariable('PATH','Process')}else{$null}; $pushed=$false
     try {
         foreach($name in $Plan.Environment.Keys){[Environment]::SetEnvironmentVariable([string]$name,[string]$Plan.Environment[$name],'Process')}
         if(@($Plan.PathEntries).Count -gt 0){$env:PATH=Merge-CapsulenvPath -ExistingPath $env:PATH -Prepend @($Plan.PathEntries)}
@@ -47,7 +47,7 @@ function Invoke-CapsulenvProcessPlan {
         throw (ConvertTo-CapsulenvDiagnosticErrorRecord -ErrorRecord $_ -Id 'Capsulenv.Process.InvocationFailed' -Message "Process invocation failed: $executable" -TargetObject $executable -Context ([ordered]@{Executable=$executable;ExecutionMode=[string]$Plan.ExecutionMode;WorkingDirectory=[string]$Plan.WorkingDirectory}))
     } finally {
         if($pushed){Pop-Location}
-        $env:PATH=$savedPath
-        foreach($name in $saved.Keys){$entry=$saved[$name]; [Environment]::SetEnvironmentVariable([string]$name, $(if($entry.Exists){[string]$entry.Value}else{$null}), 'Process')}
+        if($savedPathExists){[Environment]::SetEnvironmentVariable('PATH',[string]$savedPath,'Process')}else{Remove-Item -LiteralPath Env:PATH -ErrorAction SilentlyContinue}
+        foreach($name in $saved.Keys){$entry=$saved[$name]; if($entry.Exists){[Environment]::SetEnvironmentVariable([string]$name,[string]$entry.Value,'Process')}else{Remove-Item -LiteralPath ('Env:'+ [string]$name) -ErrorAction SilentlyContinue}}
     }
 }
