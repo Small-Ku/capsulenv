@@ -74,8 +74,43 @@ $isPackageExec = (
 # Interactive child shells and package executables inherit this host's console;
 # putting the dispatcher in an assignment pipeline buffers their stdout until
 # they exit, which makes an interactive shell appear to hang after activation.
-Invoke-Capsulenv @CapsulenvArguments
-$invokeSucceeded = $?
+$invokeSucceeded = $false
+try {
+    Invoke-Capsulenv @CapsulenvArguments
+    $invokeSucceeded = $?
+} catch {
+    if ($env:CAPSULENV_DEBUG -eq '1') {
+        Write-Error -ErrorRecord $_
+        exit 1
+    }
+
+    $record = $_
+    $message = if ($null -ne $record.ErrorDetails -and -not [string]::IsNullOrWhiteSpace([string]$record.ErrorDetails.Message)) {
+        [string]$record.ErrorDetails.Message
+    } else {
+        [string]$record.Exception.Message
+    }
+    [Console]::Error.WriteLine(('capsulenv: {0}' -f $message))
+
+    if ($null -ne $record.Exception) {
+        $remediation = $record.Exception.Data['CapsulenvDiagnosticRemediation']
+        if ($null -ne $remediation -and @($remediation).Count -gt 0) {
+            [Console]::Error.WriteLine('')
+            foreach ($line in @($remediation)) {
+                [Console]::Error.WriteLine([string]$line)
+            }
+        }
+    }
+
+    $diagnosticId = [string]$record.FullyQualifiedErrorId
+    if ($diagnosticId -notlike 'Capsulenv.*' -and $null -ne $record.Exception) {
+        $diagnosticId = [string]$record.Exception.Data['CapsulenvDiagnosticId']
+    }
+    if ($diagnosticId -like 'Capsulenv.Cli.*' -or $message -like 'Usage:*') {
+        exit 2
+    }
+    exit 1
+}
 
 if ($isPackageExec) {
     $lastExitCode = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue

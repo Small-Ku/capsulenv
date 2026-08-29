@@ -551,6 +551,40 @@ function Invoke-CapsulenvBitwardenCommand {
     }
 }
 
+function New-CapsulenvCliUsageError {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Message,
+        [Parameter(Mandatory = $true)][string]$Usage,
+        [string]$Topic = ''
+    )
+
+    $remediation = New-Object System.Collections.Generic.List[string]
+    $remediation.Add(('Usage: {0}' -f $Usage))
+    if (-not [string]::IsNullOrWhiteSpace($Topic)) {
+        $remediation.Add(("Run 'capsulenv help {0}' for details." -f $Topic))
+    } else {
+        $remediation.Add("Run 'capsulenv help' to see available commands.")
+    }
+    return New-CapsulenvDiagnosticErrorRecord `
+        -Id 'Capsulenv.Cli.Usage' `
+        -Message $Message `
+        -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
+        -Remediation $remediation.ToArray()
+}
+
+function New-CapsulenvCliUnknownCommandError {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Command)
+
+    return New-CapsulenvDiagnosticErrorRecord `
+        -Id 'Capsulenv.Cli.UnknownCommand' `
+        -Message "Unknown capsulenv command '$Command'." `
+        -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
+        -TargetObject $Command `
+        -Remediation @("Run 'capsulenv help' to see available commands.")
+}
+
 function Invoke-CapsulenvBucketCommand {
     [CmdletBinding()]
     param([string[]]$Arguments)
@@ -566,31 +600,31 @@ function Invoke-CapsulenvBucketCommand {
     switch ($action) {
         'list' {
             if ($remaining.Count -gt 0) {
-                throw 'Usage: bucket list'
+                throw (New-CapsulenvCliUsageError -Message 'bucket list does not accept additional arguments.' -Usage 'capsulenv bucket list' -Topic bucket)
             }
             $scoopArguments = @('bucket', 'list')
         }
         'known' {
             if ($remaining.Count -gt 0) {
-                throw 'Usage: bucket known'
+                throw (New-CapsulenvCliUsageError -Message 'bucket known does not accept additional arguments.' -Usage 'capsulenv bucket known' -Topic bucket)
             }
             $scoopArguments = @('bucket', 'known')
         }
         'add' {
             if ($remaining.Count -lt 1 -or $remaining.Count -gt 2) {
-                throw 'Usage: bucket add <name> [repository]'
+                throw (New-CapsulenvCliUsageError -Message 'bucket add requires a bucket name and optional repository.' -Usage 'capsulenv bucket add <name> [repository]' -Topic bucket)
             }
             $scoopArguments = @('bucket', 'add') + @($remaining)
         }
         { $_ -in @('remove', 'rm') } {
             if ($remaining.Count -ne 1) {
-                throw 'Usage: bucket remove <name>'
+                throw (New-CapsulenvCliUsageError -Message 'bucket remove requires exactly one bucket name.' -Usage 'capsulenv bucket remove <name>' -Topic bucket)
             }
             $scoopArguments = @('bucket', 'rm', [string]$remaining[0])
         }
         'update' {
             if ($remaining.Count -gt 0) {
-                throw 'Usage: bucket update'
+                throw (New-CapsulenvCliUsageError -Message 'Scoop refreshes configured buckets together; bucket update does not accept a bucket name.' -Usage 'capsulenv bucket update' -Topic bucket)
             }
             $scoopArguments = @('update')
         }
@@ -658,7 +692,8 @@ function Invoke-CapsulenvAppCommand {
     param([string[]]$Arguments)
 
     if ($Arguments.Count -lt 1) {
-        throw 'Usage: app <plan|install|update|list|run|exec> [...]'
+        Show-CapsulenvHelp -Topic app
+        return
     }
 
     $action = $Arguments[0].ToLowerInvariant()
@@ -669,7 +704,7 @@ function Invoke-CapsulenvAppCommand {
             $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -ne '--json' })
             $references = @($remaining | Where-Object { $_ -notlike '--*' })
             if ($unknownFlags.Count -gt 0 -or $references.Count -ne 1) {
-                throw 'Usage: app plan <app|bucket/app> [--json]'
+                throw (New-CapsulenvCliUsageError -Message 'app plan requires exactly one package reference.' -Usage 'capsulenv app plan <app|bucket/app> [--json]' -Topic app)
             }
             $plan = Get-CapsulenvPackageInstallPlan -Reference ([string]$references[0])
             if ($json) {
@@ -689,7 +724,7 @@ function Invoke-CapsulenvAppCommand {
             $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -ne '--allow-trusted' })
             $references = @($remaining | Where-Object { $_ -notlike '--*' })
             if ($unknownFlags.Count -gt 0 -or $references.Count -ne 1) {
-                throw 'Usage: app install <app|bucket/app> [--allow-trusted]'
+                throw (New-CapsulenvCliUsageError -Message 'app install requires exactly one package reference.' -Usage 'capsulenv app install <app|bucket/app> [--allow-trusted]' -Topic app)
             }
             $reference = [string]$references[0]
             $plan = Get-CapsulenvPackageInstallPlan -Reference $reference
@@ -710,7 +745,7 @@ function Invoke-CapsulenvAppCommand {
                     -TargetObject $reference `
                     -Context ([ordered]@{ Reference = $reference; BlockedPackages = @($plan.BlockedPackages) }) `
                     -Remediation @(
-                        "Review `capsulenv.cmd app plan $reference`.",
+                        "Review 'capsulenv app plan $reference'.",
                         'Use --allow-trusted only if upstream Scoop lifecycle execution is acceptable.'
                     ))
             }
@@ -732,7 +767,10 @@ function Invoke-CapsulenvAppCommand {
                 (-not $all -and $references.Count -ne 1) -or
                 ($all -and $allowTrusted)
             ) {
-                throw 'Usage: app update <app|bucket/app|capsule/app|user/app|global/app> [--allow-trusted] [--local] | app update --all [--local]'
+                throw (New-CapsulenvCliUsageError `
+                    -Message 'app update accepts one installed app, or --all for Capsulenv-owned PortableSafe packages.' `
+                    -Usage 'capsulenv app update <app|bucket/app|capsule/app|user/app|global/app> [--allow-trusted] [--local] | capsulenv app update --all [--local]' `
+                    -Topic app)
             }
 
             if (-not $localOnly) {
@@ -777,7 +815,7 @@ function Invoke-CapsulenvAppCommand {
         }
         'list' {
             if ($remaining.Count -gt 1) {
-                throw 'Usage: app list [app]'
+                throw (New-CapsulenvCliUsageError -Message 'app list accepts at most one app selector.' -Usage 'capsulenv app list [app]' -Topic app)
             }
             $items = if ($remaining.Count -eq 1) {
                 @(Get-CapsulenvScoopAppShortcuts -App ([string]$remaining[0]))
@@ -788,7 +826,7 @@ function Invoke-CapsulenvAppCommand {
         }
         'run' {
             if ($remaining.Count -lt 1) {
-                throw 'Usage: app run <app> ["shortcut name"] [-- runtime arguments...]'
+                throw (New-CapsulenvCliUsageError -Message 'app run requires an installed app selector.' -Usage 'capsulenv app run <app> ["shortcut name"] [-- runtime arguments...]' -Topic app)
             }
             $selector = [string]$remaining[0]
             $tail = @($remaining | Select-Object -Skip 1)
@@ -799,7 +837,7 @@ function Invoke-CapsulenvAppCommand {
                 } else { $tail }
             )
             if ($before.Count -gt 1) {
-                throw 'Usage: app run <app> ["shortcut name"] [-- runtime arguments...]'
+                throw (New-CapsulenvCliUsageError -Message 'app run accepts at most one shortcut name before --.' -Usage 'capsulenv app run <app> ["shortcut name"] [-- runtime arguments...]' -Topic app)
             }
             $runtime = @(
                 if ($separatorIndex -ge 0 -and $separatorIndex -lt ($tail.Count - 1)) {
@@ -811,7 +849,7 @@ function Invoke-CapsulenvAppCommand {
         }
         'exec' {
             if ($remaining.Count -lt 2) {
-                throw 'Usage: app exec capsule/<app> <bin> [-- arguments...]'
+                throw (New-CapsulenvCliUsageError -Message 'app exec requires a capsule app and bin alias.' -Usage 'capsulenv app exec capsule/<app> <bin> [-- arguments...]' -Topic app)
             }
             $selector = [string]$remaining[0]
             $binName = [string]$remaining[1]
@@ -821,7 +859,14 @@ function Invoke-CapsulenvAppCommand {
             }
             return Invoke-CapsulenvPackageExecutable -App $selector -BinName $binName -Arguments $tail
         }
-        default { throw "Unknown app action: $action. Use plan, install, update, list, run, or exec." }
+        default {
+            throw (New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.Cli.UnknownAppAction' `
+                -Message "Unknown app action '$action'." `
+                -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
+                -TargetObject $action `
+                -Remediation @("Use plan, install, update, list, run, or exec.", "Run 'capsulenv help app' for details."))
+        }
     }
 }
 
@@ -991,7 +1036,7 @@ function Invoke-Capsulenv {
         }
         '--help' { Show-CapsulenvHelp }
         '-h' { Show-CapsulenvHelp }
-        default { throw "Unknown capsulenv command: $command. Run capsulenv.cmd help." }
+        default { throw (New-CapsulenvCliUnknownCommandError -Command $command) }
     }
 }
 

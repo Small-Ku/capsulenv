@@ -112,6 +112,14 @@ Describe 'Capsulenv app command trust boundary' {
         }
     }
 
+    It 'shows app help instead of throwing when the command group has no action' {
+        Mock Show-CapsulenvHelp {} -ModuleName Capsulenv
+
+        { & $script:Module { Invoke-CapsulenvAppCommand -Arguments @() } } | Should -Not -Throw
+
+        Should -Invoke Show-CapsulenvHelp -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Topic -eq 'app' }
+    }
+
     It 'refreshes metadata and uses the Capsulenv updater for PortableSafe ownership' {
         Mock Update-CapsulenvAppMetadata {} -ModuleName Capsulenv
         Mock Resolve-CapsulenvAppUpdateTarget {
@@ -174,8 +182,6 @@ Describe 'Capsulenv app command trust boundary' {
         }
     }
 
-
-
     It 'keeps bucket management as a thin stock Scoop facade' {
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { 0 } -ModuleName Capsulenv
@@ -195,5 +201,28 @@ Describe 'Capsulenv app command trust boundary' {
         }
     }
 
+    It 'returns structured guidance for unknown command surfaces' {
+        $appError = $null
+        $rootError = $null
+        try { & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('upgrade') } } catch { $appError = $_ }
+        $rootError = & $script:Module {
+            param($CapsuleRoot)
+            $previousRoot = $env:CAPSULENV_ROOT
+            try {
+                $env:CAPSULENV_ROOT = $CapsuleRoot
+                try { Invoke-Capsulenv -Arguments @('buckte') } catch { return $_ }
+            } finally {
+                $env:CAPSULENV_ROOT = $previousRoot
+            }
+        } $script:Root
+
+        $appError.FullyQualifiedErrorId | Should -Be 'Capsulenv.Cli.UnknownAppAction'
+        $rootError.FullyQualifiedErrorId | Should -Be 'Capsulenv.Cli.UnknownCommand'
+        $rootRemediation = & $script:Module {
+            param($ErrorRecord)
+            Get-CapsulenvDiagnosticRemediation -ErrorRecord $ErrorRecord
+        } $rootError
+        ($rootRemediation -join ' ') | Should -Match 'capsulenv help'
+    }
 
 }
