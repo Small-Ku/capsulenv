@@ -26,6 +26,7 @@ Describe 'Capsulenv portable workflow contracts' {
                 $identity1 | Should -Be $identity2
 
                 $plan = Get-CapsulenvEnvironmentPlan
+                @($plan.PathEntries) | Should -Contain ([System.IO.Path]::GetFullPath($CapsuleRoot))
                 $plan.Variables.SCOOP_CACHE | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'cache/scoop')))
                 $plan.Variables.GIT_CONFIG_GLOBAL | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data/git/config')))
                 $plan.Variables.UV_CONFIG_FILE | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data/uv/uv.toml')))

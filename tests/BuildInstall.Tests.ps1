@@ -241,6 +241,10 @@ Describe 'Capsulenv build and install' {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition ($effectiveModulePaths -contains $expectedPrivateModuleRoot) `
                     -Message 'Installed runtime did not prepend the portable private-module root to PSModulePath.'
+                $effectivePathEntries = @($env:PATH -split ';')
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition ($effectivePathEntries -contains ([System.IO.Path]::GetFullPath($installRoot))) `
+                    -Message 'Installed runtime did not expose the capsule launcher root on the process PATH.'
             } finally {
                 $env:CAPSULENV_ROOT = $previousCapsulenvRoot
                 $env:PSModulePath = $previousModulePath

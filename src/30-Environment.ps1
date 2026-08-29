@@ -58,6 +58,12 @@ function Get-CapsulenvEnvironmentPlan {
     if (-not ($pathEntries -contains $packageShims)) {
         $pathEntries.Add($packageShims)
     }
+    # Keep the active capsule control plane reachable from any working
+    # directory without writing a profile alias or persistent host PATH entry.
+    # On Windows, PATHEXT resolves `capsulenv` to capsulenv.cmd from this root.
+    if (-not ($pathEntries -contains $context.Root)) {
+        $pathEntries.Add($context.Root)
+    }
     # PowerShell resolves the genuine upstream dispatcher before Scoop's shim
     # directory. `scoop` therefore means upstream Scoop rather than a Capsulenv
     # command gateway. scoop.cmd remains only a cmd.exe compatibility trampoline.
