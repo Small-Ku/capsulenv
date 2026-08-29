@@ -17,6 +17,8 @@ Daily commands
   capsulenv.cmd run <command> [arguments...]
   capsulenv.cmd app plan <app|bucket/app> [--json]
   capsulenv.cmd app install <app|bucket/app> [--allow-trusted]
+  capsulenv.cmd app update <app|bucket/app|scope/app> [--allow-trusted] [--local]
+  capsulenv.cmd app update --all [--local]
   capsulenv.cmd app list [app]
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
   capsulenv.cmd user-shell [--force]
@@ -50,6 +52,16 @@ app commands
       Install a PortableSafe plan with the Capsulenv executor. --allow-trusted
       explicitly delegates the requested package to unmodified upstream Scoop;
       arbitrary lifecycle code and host mutation are then outside PortableSafe.
+
+  capsulenv.cmd app update <app|bucket/app|scope/app> [--allow-trusted] [--local]
+      Refresh Scoop/bucket metadata, then update an installed app without changing
+      its owner. capsule/<app> remains Capsulenv-owned PortableSafe; user/<app>
+      and global/<app> require --allow-trusted and use unmodified upstream Scoop.
+      --local skips the metadata refresh and uses the current local bucket snapshot.
+
+  capsulenv.cmd app update --all [--local]
+      Update all Capsulenv-owned PortableSafe packages. This deliberately does not
+      opt every upstream Scoop install into TrustedExecution.
 
   capsulenv.cmd app list [app]
       List launchable shortcut declarations from Capsulenv-owned packages and
@@ -523,12 +535,57 @@ function Invoke-CapsulenvBitwardenCommand {
     }
 }
 
+function Update-CapsulenvAppMetadata {
+    [CmdletBinding()]
+    param()
+
+    [void](Set-CapsulenvSessionEnvironment)
+    [void](Invoke-CapsulenvScoopCommand -Arguments @('update'))
+}
+
+function Resolve-CapsulenvAppUpdateTarget {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Reference)
+
+    $separator = $Reference.IndexOf('/')
+    if ($separator -gt 0) {
+        $prefix = $Reference.Substring(0, $separator).ToLowerInvariant()
+        if ($prefix -in @('capsule', 'user', 'global')) {
+            $installed = Get-CapsulenvInstalledScoopApp -Selector $Reference
+            if ([string]$installed.Scope -eq 'Capsule') {
+                $state = Get-CapsulenvInstalledPackageState -Name ([string]$installed.Name)
+                return [pscustomobject]@{ Scope='Capsule'; Name=[string]$installed.Name; Reference=[string]$state.Reference }
+            }
+            return [pscustomobject]@{ Scope=[string]$installed.Scope; Name=[string]$installed.Name; Reference=[string]$installed.Selector }
+        }
+
+        $parsed = Split-CapsulenvPackageReference -Reference $Reference
+        $state = Get-CapsulenvInstalledPackageState -Name ([string]$parsed.Name) -AllowMissing
+        if ($null -eq $state) {
+            throw (New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.Package.NotInstalled' `
+                -Message "Package is not installed as a Capsulenv-owned PortableSafe package: $Reference" `
+                -Category ([System.Management.Automation.ErrorCategory]::ObjectNotFound) `
+                -TargetObject $Reference `
+                -Remediation @("Install it first with 'capsulenv app install $Reference'."))
+        }
+        return [pscustomobject]@{ Scope='Capsule'; Name=[string]$state.Name; Reference=$Reference }
+    }
+
+    $match = Get-CapsulenvInstalledScoopApp -Selector $Reference
+    if ([string]$match.Scope -eq 'Capsule') {
+        $state = Get-CapsulenvInstalledPackageState -Name ([string]$match.Name)
+        return [pscustomobject]@{ Scope='Capsule'; Name=[string]$match.Name; Reference=[string]$state.Reference }
+    }
+    return [pscustomobject]@{ Scope=[string]$match.Scope; Name=[string]$match.Name; Reference=[string]$match.Selector }
+}
+
 function Invoke-CapsulenvAppCommand {
     [CmdletBinding()]
     param([string[]]$Arguments)
 
     if ($Arguments.Count -lt 1) {
-        throw 'Usage: app <plan|install|list|run|exec> [...]'
+        throw 'Usage: app <plan|install|update|list|run|exec> [...]'
     }
 
     $action = $Arguments[0].ToLowerInvariant()
@@ -589,6 +646,62 @@ function Invoke-CapsulenvAppCommand {
             Write-CapsulenvMessage -Level Warning -Message "Delegating '$reference' to unmodified upstream Scoop. Third-party lifecycle code may execute and is outside Capsulenv's PortableSafe guarantees."
             [void](Invoke-CapsulenvScoopCommand -Arguments @('install', $reference))
         }
+        'update' {
+            $allowTrusted = $remaining -contains '--allow-trusted'
+            $localOnly = $remaining -contains '--local'
+            $all = $remaining -contains '--all'
+            $knownFlags = @('--allow-trusted', '--local', '--all')
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin $knownFlags })
+            $references = @($remaining | Where-Object { $_ -notlike '--*' })
+            if (
+                $unknownFlags.Count -gt 0 -or
+                ($all -and $references.Count -gt 0) -or
+                (-not $all -and $references.Count -ne 1) -or
+                ($all -and $allowTrusted)
+            ) {
+                throw 'Usage: app update <app|bucket/app|capsule/app|user/app|global/app> [--allow-trusted] [--local] | app update --all [--local]'
+            }
+
+            if (-not $localOnly) {
+                Update-CapsulenvAppMetadata
+            }
+            if ($all) {
+                $states = @(Get-CapsulenvInstalledPackageStates -Strict | Sort-Object Name)
+                foreach ($state in $states) {
+                    Update-CapsulenvPortablePackage -Reference ([string]$state.Reference) |
+                        Select-Object Name, Version, Architecture, Reference, InstallRoot |
+                        Format-Table -AutoSize
+                }
+                break
+            }
+
+            $target = Resolve-CapsulenvAppUpdateTarget -Reference ([string]$references[0])
+            if ([string]$target.Scope -eq 'Capsule') {
+                Update-CapsulenvPortablePackage -Reference ([string]$target.Reference) |
+                    Select-Object Name, Version, Architecture, Reference, InstallRoot |
+                    Format-Table -AutoSize
+                break
+            }
+            if (-not $allowTrusted) {
+                throw (New-CapsulenvDiagnosticErrorRecord `
+                    -Id 'Capsulenv.Package.TrustedUpdateRequired' `
+                    -Message "'$($target.Reference)' is owned by upstream Scoop, so its update may execute package lifecycle code." `
+                    -Category ([System.Management.Automation.ErrorCategory]::PermissionDenied) `
+                    -TargetObject ([string]$target.Reference) `
+                    -Remediation @(
+                        "Re-run with --allow-trusted after reviewing the installed package.",
+                        "Or use upstream Scoop directly."
+                    ))
+            }
+            [void](Set-CapsulenvSessionEnvironment)
+            Write-CapsulenvMessage -Level Warning -Message "Delegating update of '$($target.Reference)' to unmodified upstream Scoop. Package lifecycle code and host mutation are outside Capsulenv's PortableSafe guarantees."
+            $scoopArguments = if ([string]$target.Scope -eq 'Global') {
+                @('update', [string]$target.Name, '--global')
+            } else {
+                @('update', [string]$target.Name)
+            }
+            [void](Invoke-CapsulenvScoopCommand -Arguments $scoopArguments)
+        }
         'list' {
             if ($remaining.Count -gt 1) {
                 throw 'Usage: app list [app]'
@@ -635,7 +748,7 @@ function Invoke-CapsulenvAppCommand {
             }
             return Invoke-CapsulenvPackageExecutable -App $selector -BinName $binName -Arguments $tail
         }
-        default { throw "Unknown app action: $action. Use plan, install, list, run, or exec." }
+        default { throw "Unknown app action: $action. Use plan, install, update, list, run, or exec." }
     }
 }
 
