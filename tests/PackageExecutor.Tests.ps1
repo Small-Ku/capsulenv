@@ -265,4 +265,38 @@ Describe 'Capsulenv PortableSafe package executor' {
             Should -Throw "*already owned by 'main/demo'*"
     }
 
+
+    It 'allows an explicit update to replace a changed same-version source manifest' {
+        $artifact = Join-Path $TestDrive 'same-version.cmd'
+        '@echo off`r`necho old' | Set-Content -LiteralPath $artifact -Encoding ASCII
+        $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+        $manifestPath = Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json'
+        @{
+            version = '1.0.0'
+            url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
+            hash = $hash
+            bin = 'same-version.cmd'
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+        [void](Install-CapsulenvPortablePackage -Reference demo)
+        { Install-CapsulenvPortablePackage -Reference demo } | Should -Not -Throw
+
+        '@echo off`r`necho new' | Set-Content -LiteralPath $artifact -Encoding ASCII
+        $newHash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+        @{
+            version = '1.0.0'
+            url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
+            hash = $newHash
+            bin = 'same-version.cmd'
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+        { Install-CapsulenvPortablePackage -Reference demo } | Should -Throw '*Explicit update/reinstall semantics are required*'
+        $updated = @(Update-CapsulenvPortablePackage -Reference demo)
+
+        $updated | Should -HaveCount 1
+        $updated[0].Version | Should -Be '1.0.0'
+        (Get-Content -LiteralPath (Join-Path $updated[0].InstallRoot 'same-version.cmd') -Raw) | Should -Match 'echo new'
+        @(Get-ChildItem -LiteralPath (Join-Path $script:Capsule 'packages/demo') -Directory -Force | Where-Object Name -Like '.update-rollback-*').Count | Should -Be 0
+    }
+
 }
