@@ -175,4 +175,25 @@ Describe 'Capsulenv app command trust boundary' {
     }
 
 
+
+    It 'keeps bucket management as a thin stock Scoop facade' {
+        Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvScoopCommand { 0 } -ModuleName Capsulenv
+
+        & $script:Module { Invoke-CapsulenvBucketCommand -Arguments @('add', 'extras') }
+        & $script:Module { Invoke-CapsulenvBucketCommand -Arguments @('remove', 'extras') }
+        & $script:Module { Invoke-CapsulenvBucketCommand -Arguments @('update') }
+
+        Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $Arguments.Count -eq 3 -and $Arguments[0] -eq 'bucket' -and $Arguments[1] -eq 'add' -and $Arguments[2] -eq 'extras'
+        }
+        Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $Arguments.Count -eq 3 -and $Arguments[0] -eq 'bucket' -and $Arguments[1] -eq 'rm' -and $Arguments[2] -eq 'extras'
+        }
+        Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $Arguments.Count -eq 1 -and $Arguments[0] -eq 'update'
+        }
+    }
+
+
 }

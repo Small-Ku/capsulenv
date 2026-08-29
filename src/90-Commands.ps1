@@ -30,6 +30,7 @@ Daily commands
 
 Setup and maintenance
   capsulenv.cmd bootstrap
+  capsulenv.cmd bucket <list|known|add|remove|update> [...]
   capsulenv.cmd seed ...
   capsulenv.cmd cache ...
   capsulenv.cmd tools ...
@@ -38,7 +39,7 @@ Setup and maintenance
   capsulenv.cmd rehydrate ...
 
 Use "capsulenv.cmd help <topic>" for details.
-Topics: app, browser, user, eject, seed, cache, tools, repair, offline, bitwarden, sing-box
+Topics: app, bucket, browser, user, eject, seed, cache, tools, repair, offline, bitwarden, sing-box
 '@ | Write-Host
         }
         'app' {
@@ -75,6 +76,21 @@ app commands
   scoop ...
       Direct Scoop commands are never intercepted. They use upstream Scoop
       semantics and are an explicit TrustedExecution boundary.
+'@ | Write-Host
+        }
+        'bucket' {
+@'
+bucket commands
+  capsulenv.cmd bucket list
+  capsulenv.cmd bucket known
+  capsulenv.cmd bucket add <name> [repository]
+  capsulenv.cmd bucket remove <name>
+  capsulenv.cmd bucket update
+
+      Bucket operations are a thin facade over the capsule's unmodified upstream
+      Scoop. add/remove change only package metadata repositories. update invokes
+      stock scoop update to refresh Scoop core and all configured bucket repos;
+      it does not update installed apps.
 '@ | Write-Host
         }
         'browser' {
@@ -535,6 +551,63 @@ function Invoke-CapsulenvBitwardenCommand {
     }
 }
 
+function Invoke-CapsulenvBucketCommand {
+    [CmdletBinding()]
+    param([string[]]$Arguments)
+
+    if ($Arguments.Count -lt 1) {
+        Show-CapsulenvHelp -Topic bucket
+        return
+    }
+
+    $action = $Arguments[0].ToLowerInvariant()
+    $remaining = @($Arguments | Select-Object -Skip 1)
+    $scoopArguments = $null
+    switch ($action) {
+        'list' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: bucket list'
+            }
+            $scoopArguments = @('bucket', 'list')
+        }
+        'known' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: bucket known'
+            }
+            $scoopArguments = @('bucket', 'known')
+        }
+        'add' {
+            if ($remaining.Count -lt 1 -or $remaining.Count -gt 2) {
+                throw 'Usage: bucket add <name> [repository]'
+            }
+            $scoopArguments = @('bucket', 'add') + @($remaining)
+        }
+        { $_ -in @('remove', 'rm') } {
+            if ($remaining.Count -ne 1) {
+                throw 'Usage: bucket remove <name>'
+            }
+            $scoopArguments = @('bucket', 'rm', [string]$remaining[0])
+        }
+        'update' {
+            if ($remaining.Count -gt 0) {
+                throw 'Usage: bucket update'
+            }
+            $scoopArguments = @('update')
+        }
+        default {
+            throw (New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.Cli.UnknownBucketAction' `
+                -Message "Unknown bucket action '$action'." `
+                -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
+                -TargetObject $action `
+                -Remediation @("Use list, known, add, remove, or update.", "Run 'capsulenv help bucket' for details."))
+        }
+    }
+
+    [void](Set-CapsulenvSessionEnvironment)
+    [void](Invoke-CapsulenvScoopCommand -Arguments ([string[]]$scoopArguments))
+}
+
 function Update-CapsulenvAppMetadata {
     [CmdletBinding()]
     param()
@@ -787,6 +860,7 @@ function Invoke-Capsulenv {
             Invoke-CapsulenvExternalCommand -Command $remaining[0] -Arguments $externalArguments
         }
         'app' { Invoke-CapsulenvAppCommand -Arguments $remaining }
+        'bucket' { Invoke-CapsulenvBucketCommand -Arguments $remaining }
         'init' {
             $allowed = @('--skip-hooks', '--skip-persist-repairs', '--skip-tool-repairs', '--strict-tool-repairs')
             $unknown = @($remaining | Where-Object { $_ -notin $allowed })
