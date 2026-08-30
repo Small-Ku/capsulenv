@@ -50,7 +50,25 @@ Describe 'Capsulenv static and relocation' {
             -Condition (-not $generatedText.Contains('##MOD_EXEC##')) `
             -Message 'Generated module still contains merge markers.'
 
-        $launcherSource = [System.IO.File]::ReadAllText((Join-Path $root 'capsulenv.cmd'))
+
+        Assert-CapsulenvTest `
+            -Condition (-not (Test-Path -LiteralPath (Join-Path $root 'capsulenv.cmd'))) `
+            -Message 'Development checkout must not expose a root capsulenv.cmd that can be mistaken for an installed capsule.'
+        Assert-CapsulenvTest `
+            -Condition (-not (Test-Path -LiteralPath (Join-Path $root 'install.cmd'))) `
+            -Message 'Development checkout must not expose a root install.cmd that makes source and release roots indistinguishable.'
+        foreach ($sourceEntrypoint in @('scripts/capsulenv-dev.cmd', 'scripts/install.cmd')) {
+            Assert-CapsulenvTest `
+                -Condition (Test-Path -LiteralPath (Join-Path $root $sourceEntrypoint) -PathType Leaf) `
+                -Message "Development checkout is missing explicit source entrypoint: $sourceEntrypoint"
+        }
+        foreach ($packagingEntrypoint in @('packaging/capsulenv.cmd', 'packaging/install.cmd')) {
+            Assert-CapsulenvTest `
+                -Condition (Test-Path -LiteralPath (Join-Path $root $packagingEntrypoint) -PathType Leaf) `
+                -Message "Release packaging entrypoint is missing: $packagingEntrypoint"
+        }
+
+        $launcherSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'packaging') 'capsulenv.cmd'))
         foreach ($requiredControlHostBehavior in @(
             'call :SelectWindowsPowerShell "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"',
             'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectWindowsPowerShell "%%P"',
@@ -62,6 +80,19 @@ Describe 'Capsulenv static and relocation' {
                 -Condition $launcherSource.Contains($requiredControlHostBehavior) `
                 -Message "Capsulenv control launcher is missing required Windows PowerShell behavior: $requiredControlHostBehavior"
         }
+        foreach ($requiredLauncherRoleBehavior in @(
+            '.capsulenv-runtime.json',
+            'this directory is a release bundle, not an installed capsule',
+            'install.cmd ^<destination^>',
+            'modules\Capsulenv\runtime\Invoke-Capsulenv.ps1'
+        )) {
+            Assert-CapsulenvTest `
+                -Condition $launcherSource.Contains($requiredLauncherRoleBehavior) `
+                -Message "Installed launcher is missing source/release role protection: $requiredLauncherRoleBehavior"
+        }
+        Assert-CapsulenvTest `
+            -Condition (-not $launcherSource.Contains('module-runtime\Invoke-Capsulenv.ps1')) `
+            -Message 'Installed launcher must not fall back to development source runtime.'
         $controlBootstrapSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'module-runtime') 'Initialize-CapsulenvControlHost.ps1'))
         foreach ($requiredBootstrapBehavior in @(
             "[System.IO.Path]::Combine(`$PSHOME, 'Modules')",
@@ -880,7 +911,7 @@ Describe 'Capsulenv static and relocation' {
                 -Message 'Installer update changed mutable workspace data.'
 
             $installerSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
-            $installCmdSource = [System.IO.File]::ReadAllText((Join-Path $root 'install.cmd'))
+            $installCmdSource = [System.IO.File]::ReadAllText((Join-Path (Join-Path $root 'packaging') 'install.cmd'))
             foreach ($requiredInstallerControlHostBehavior in @(
                 'call :SelectWindowsPowerShell "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"',
                 'for /f "delims=" %%P in (''where powershell.exe 2^>nul'') do call :SelectWindowsPowerShell "%%P"',

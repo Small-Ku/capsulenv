@@ -26,6 +26,17 @@ Describe 'Capsulenv build and install' {
         try {
             [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
 
+            foreach ($ambiguousRootEntrypoint in @('capsulenv.cmd', 'install.cmd')) {
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition (-not (Test-Path -LiteralPath (Join-Path $root $ambiguousRootEntrypoint))) `
+                    -Message "Development checkout exposes ambiguous root entrypoint: $ambiguousRootEntrypoint"
+            }
+            foreach ($sourceEntrypoint in @('scripts/capsulenv-dev.cmd', 'scripts/install.cmd')) {
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition (Test-Path -LiteralPath (Join-Path $root $sourceEntrypoint) -PathType Leaf) `
+                    -Message "Development checkout is missing explicit source entrypoint: $sourceEntrypoint"
+            }
+
             $build = & (Join-Path (Join-Path $root 'scripts') 'Build-Capsulenv.ps1') -OutputPath $buildRoot
             Assert-CapsulenvBuildInstallTest `
                 -Condition (Test-Path -LiteralPath $build.ModulePath -PathType Leaf) `
@@ -58,6 +69,18 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition (@($runtimeMetadata.InstallFiles) -contains 'modules/Capsulenv/Capsulenv.psm1') `
                 -Message 'Runtime install payload does not include the generated module.'
+            $releaseLauncherSource = [System.IO.File]::ReadAllText((Join-Path $buildRoot 'capsulenv.cmd'))
+            Assert-CapsulenvBuildInstallTest `
+                -Condition ($releaseLauncherSource.Contains('.capsulenv-runtime.json') -and $releaseLauncherSource.Contains('this directory is a release bundle, not an installed capsule')) `
+                -Message 'Release launcher does not protect the bundle/runtime role boundary.'
+            Assert-CapsulenvBuildInstallTest `
+                -Condition (-not $releaseLauncherSource.Contains('module-runtime\Invoke-Capsulenv.ps1')) `
+                -Message 'Release/installed launcher still contains a development-source fallback.'
+            foreach ($sourceOnlyEntrypoint in @('scripts/capsulenv-dev.cmd', 'scripts/install.cmd')) {
+                Assert-CapsulenvBuildInstallTest `
+                    -Condition (-not (Test-Path -LiteralPath (Join-Path $buildRoot $sourceOnlyEntrypoint))) `
+                    -Message "Release bundle unexpectedly includes source-only entrypoint: $sourceOnlyEntrypoint"
+            }
             foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition (@($runtimeMetadata.InstallFiles) -notcontains $bundleOnlyFile) `
