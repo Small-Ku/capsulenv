@@ -17,12 +17,35 @@ if ($pester.Version -lt [version]'6.1.0') {
 }
 Import-Module $pester.Path -Force
 
-$config = New-PesterConfiguration
-$config.Run.Path = $testsRoot
-$config.Run.PassThru = $true
-$config.Output.Verbosity = 'Detailed'
-$result = Invoke-Pester -Configuration $config
-if ([int]$result.FailedCount -gt 0 -or [int]$result.NotRunCount -gt 0) {
+$testPaths = @(
+    Get-ChildItem -LiteralPath $testsRoot -Filter '*.Tests.ps1' -File |
+        Sort-Object Name |
+        ForEach-Object { $_.FullName }
+)
+$passedCount = 0
+$failedCount = 0
+$notRunCount = 0
+$totalCount = 0
+
+# Run each suite through a fresh Pester invocation. Several tests rebuild and
+# reload the module; keeping all files in one Pester run causes accumulated
+# module/runspace state to make later suites progressively slower and can leave
+# the delivery gate waiting long after the individual tests have completed.
+foreach ($testPath in $testPaths) {
+    $config = New-PesterConfiguration
+    $config.Run.Path = $testPath
+    $config.Run.PassThru = $true
+    $config.Output.Verbosity = 'Minimal'
+    $result = Invoke-Pester -Configuration $config
+
+    $passedCount += [int]$result.PassedCount
+    $failedCount += [int]$result.FailedCount
+    $notRunCount += [int]$result.NotRunCount
+    $totalCount += [int]$result.TotalCount
+}
+
+Write-Host ("Capsulenv Pester gate: {0}/{1} passed, {2} failed, {3} not run." -f $passedCount, $totalCount, $failedCount, $notRunCount)
+if ($failedCount -gt 0 -or $notRunCount -gt 0) {
     exit 1
 }
 exit 0

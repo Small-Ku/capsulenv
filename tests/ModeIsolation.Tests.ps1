@@ -20,6 +20,8 @@ Describe 'Capsulenv install-mode isolation contracts' {
         (Test-Path -LiteralPath (Join-Path $script:Root 'tests/smoke')) | Should -BeFalse
         $runner = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/Test-Capsulenv.ps1') -Raw
         $runner | Should -Match 'Invoke-Pester'
+        $runner | Should -Match 'Get-ChildItem -LiteralPath \$testsRoot -Filter ''\*\.Tests\.ps1'''
+        $runner | Should -Match '\$config\.Run\.Path = \$testPath'
         $runner | Should -Not -Match '\.Smoke\.ps1'
     }
 
