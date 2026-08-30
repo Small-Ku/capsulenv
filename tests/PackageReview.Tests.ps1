@@ -165,4 +165,163 @@ Describe 'Capsulenv package TrustedExecution review' {
         $text | Should -Match 'Review checklist'
         $text | Should -Match 'app review demo --raw'
     }
+
+    It 'propagates a descendant TrustedExecution blocker through every dependency ancestor with an auditable path' {
+        @{
+            version = '1.0.0'; url = 'https://example.invalid/trusted.exe'; hash = ('c' * 64)
+            post_install = 'Write-Output descendant-trusted-script'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/trusted.json') -Encoding UTF8
+        @{
+            version = '1.0.0'; url = 'https://example.invalid/middle.exe'; hash = ('b' * 64); depends = 'trusted'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/middle.json') -Encoding UTF8
+        @{
+            version = '1.0.0'; url = 'https://example.invalid/demo.exe'; hash = ('a' * 64); depends = 'middle'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+
+        $review = & $script:Module { Get-CapsulenvPackageReviewPlan -Reference demo }
+        $root = @($review.Graph.Nodes | Where-Object Reference -eq 'main/demo')[0]
+        $middle = @($review.Graph.Nodes | Where-Object Reference -eq 'main/middle')[0]
+        $trusted = @($review.Graph.Nodes | Where-Object Reference -eq 'main/trusted')[0]
+
+        $root.DirectReviewRequired | Should -BeFalse
+        $root.EffectiveReviewRequired | Should -BeTrue
+        $root.ExecutionBoundary | Should -Be 'TrustedExecution'
+        $root.BlockingDescendants | Should -Contain 'main/trusted'
+        $middle.DirectReviewRequired | Should -BeFalse
+        $middle.EffectiveReviewRequired | Should -BeTrue
+        $middle.BlockingDescendants | Should -Contain 'main/trusted'
+        $trusted.DirectReviewRequired | Should -BeTrue
+        $review.Packages | Should -HaveCount 1
+        $review.Packages[0].Reference | Should -Be 'main/trusted'
+        $review.Graph.ReviewPaths | Should -HaveCount 1
+        @($review.Graph.ReviewPaths[0].Path) | Should -Be @('main/demo', 'main/middle', 'main/trusted')
+
+        $text = & $script:Module {
+            param($Review)
+            $InformationPreference = 'Continue'
+            Write-CapsulenvPackageReview -Review $Review 6>&1 | Out-String
+        } $review
+        $text | Should -Match 'Dependency trust propagation'
+        $text | Should -Match 'main/demo -> main/middle -> main/trusted'
+    }
+
+    It 'diffs the installed-old and current-bucket-new update DAG including execution-relevant effects and edges' {
+        foreach ($name in @('demo', 'helper', 'legacy')) {
+            [void](New-Item -ItemType Directory -Path (Join-Path $script:Capsule "scoop/apps/$name/current") -Force)
+            @{ bucket='main'; architecture='64bit' } | ConvertTo-Json |
+                Set-Content -LiteralPath (Join-Path $script:Capsule "scoop/apps/$name/current/install.json") -Encoding UTF8
+        }
+        @{
+            version='1.0.0'; url='https://example.invalid/demo-old.exe'; hash=('a' * 64)
+            depends=@('helper','legacy'); persist='OldData'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/apps/demo/current/manifest.json') -Encoding UTF8
+        @{
+            version='1.0.0'; url='https://example.invalid/helper.exe'; hash=('b' * 64)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/apps/helper/current/manifest.json') -Encoding UTF8
+        @{
+            version='1.0.0'; url='https://example.invalid/legacy.exe'; hash=('c' * 64)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/apps/legacy/current/manifest.json') -Encoding UTF8
+
+        @{
+            version='2.0.0'; url='https://example.invalid/demo-new.exe'; hash=('d' * 64)
+            depends=@('helper','scriptdep'); persist='NewData'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+        @{
+            version='1.0.0'; url='https://example.invalid/helper.exe'; hash=('b' * 64)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/helper.json') -Encoding UTF8
+        @{
+            version='1.0.0'; url='https://example.invalid/scriptdep.exe'; hash=('e' * 64)
+            post_install='Write-Output new-dependency-script'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/scriptdep.json') -Encoding UTF8
+
+        $review = & $script:Module { Get-CapsulenvPackageReviewPlan -Reference 'user/demo' }
+        $review.Diff.CompleteOldClosure | Should -BeTrue
+        $review.Diff.AddedNodes | Should -Contain 'scriptdep'
+        $review.Diff.RemovedNodes | Should -Contain 'legacy'
+        $review.Diff.ChangedNodes | Should -Contain 'demo'
+        $review.Diff.AddedEdges | Should -HaveCount 1
+        $review.Diff.AddedEdges[0].From | Should -Be 'demo'
+        $review.Diff.AddedEdges[0].To | Should -Be 'scriptdep'
+        $review.Diff.RemovedEdges | Should -HaveCount 1
+        $review.Diff.RemovedEdges[0].From | Should -Be 'demo'
+        $review.Diff.RemovedEdges[0].To | Should -Be 'legacy'
+
+        $demoDiff = @($review.Diff.Nodes | Where-Object Name -eq 'demo')[0]
+        @($demoDiff.Changes | ForEach-Object Name) | Should -Contain 'url'
+        @($demoDiff.Changes | ForEach-Object Name) | Should -Contain 'hash'
+        @($demoDiff.Changes | ForEach-Object Name) | Should -Contain 'depends'
+        @($demoDiff.Changes | ForEach-Object Name) | Should -Contain 'persist'
+        $scriptNode = @($review.Graph.Nodes | Where-Object Reference -eq 'main/scriptdep')[0]
+        $scriptNode.DirectReviewRequired | Should -BeTrue
+        $review.Graph.ReviewPaths | Where-Object Blocker -eq 'main/scriptdep' | Should -HaveCount 1
+
+        $text = & $script:Module {
+            param($Review)
+            $InformationPreference = 'Continue'
+            Write-CapsulenvPackageReview -Review $Review 6>&1 | Out-String
+        } $review
+        $text | Should -Match 'Update DAG / effect delta'
+        $text | Should -Match 'dependency added\s+: demo -> scriptdep'
+        $text | Should -Match 'dependency removed: demo -> legacy'
+        $text | Should -Match '\[Artifact\] url: Changed'
+    }
+
+    It 'uses the full resolved DAG for raw review output, including PortableSafe ancestors' {
+        @{
+            version='1.0.0'; url='https://example.invalid/helper.exe'; hash=('b' * 64); post_install='Write-Output helper'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/helper.json') -Encoding UTF8
+        @{
+            version='1.0.0'; url='https://example.invalid/demo.exe'; hash=('a' * 64); depends='helper'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+
+        $text = & $script:Module {
+            $InformationPreference = 'Continue'
+            $review = Get-CapsulenvPackageReviewPlan -Reference demo
+            Write-CapsulenvPackageReview -Review $review -Raw 6>&1 | Out-String
+        }
+        $text | Should -Match '=== main/demo ::'
+        $text | Should -Match '=== main/helper ::'
+    }
+
+
+    It 'keeps update DAG removal conclusions conservative when the installed dependency closure is incomplete' {
+        $installedCurrent = Join-Path $script:Capsule 'scoop/apps/demo/current'
+        [void](New-Item -ItemType Directory -Path $installedCurrent -Force)
+        @{
+            version='1.0.0'; url='https://example.invalid/old.exe'; hash=('a' * 64); depends='missingdep'
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedCurrent 'manifest.json') -Encoding UTF8
+        @{ bucket='main'; architecture='64bit' } | ConvertTo-Json |
+            Set-Content -LiteralPath (Join-Path $installedCurrent 'install.json') -Encoding UTF8
+        @{
+            version='2.0.0'; url='https://example.invalid/new.exe'; hash=('b' * 64)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+
+        $review = & $script:Module { Get-CapsulenvPackageReviewPlan -Reference 'user/demo' }
+        $review.Diff.CompleteOldClosure | Should -BeFalse
+        ($review.Diff.Warnings -join ' ') | Should -Match 'user/missingdep'
+        $review.Diff.RemovedNodes | Should -Not -Contain 'missingdep'
+        @($review.Diff.RemovedEdges) | Should -HaveCount 0
+    }
+
+    It 'surfaces newly introduced unknown active manifest semantics as an Unsupported effect delta' {
+        $installedCurrent = Join-Path $script:Capsule 'scoop/apps/demo/current'
+        [void](New-Item -ItemType Directory -Path $installedCurrent -Force)
+        @{
+            version='1.0.0'; url='https://example.invalid/old.exe'; hash=('a' * 64)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $installedCurrent 'manifest.json') -Encoding UTF8
+        @{ bucket='main'; architecture='64bit' } | ConvertTo-Json |
+            Set-Content -LiteralPath (Join-Path $installedCurrent 'install.json') -Encoding UTF8
+        @{
+            version='2.0.0'; url='https://example.invalid/new.exe'; hash=('b' * 64)
+            future_active_semantics=@{ mode='host-mutation' }
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
+
+        $review = & $script:Module { Get-CapsulenvPackageReviewPlan -Reference 'user/demo' }
+        $review.Classification | Should -Be 'TrustedExecutionRequired'
+        $demoDiff = @($review.Diff.Nodes | Where-Object Name -eq 'demo')[0]
+        $unknown = @($demoDiff.Changes | Where-Object Name -eq 'unknown:future_active_semantics')[0]
+        $unknown.Category | Should -Be 'Unsupported'
+        $unknown.Change | Should -Be 'Added'
+    }
+
 }
