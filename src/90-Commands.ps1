@@ -22,6 +22,12 @@ app commands
       Resolve dependencies and classify manifest semantics without changing the
       capsule. PortableSafe plans contain only the bounded declarative subset.
 
+  capsulenv.cmd app review <app|bucket/app|user/app|global/app> [--raw|--json]
+      Review every dependency that requires TrustedExecution. The default view
+      shows manifest path/hash, lifecycle scripts with line numbers, reasons,
+      a Scoop-specific review checklist and the explicit next action. --raw
+      prints complete source manifests; --json exposes the review contract.
+
   capsulenv.cmd app install <app|bucket/app> [--allow-trusted]
       Install a PortableSafe plan with the Capsulenv executor. --allow-trusted
       explicitly delegates the requested package to unmodified upstream Scoop;
@@ -728,6 +734,24 @@ function Invoke-CapsulenvAppCommand {
                     @{ Name = 'Capabilities'; Expression = { @($_.Capabilities) -join ',' } },
                     @{ Name = 'Reasons'; Expression = { @($_.Reasons) -join '; ' } } |
                 Format-Table -AutoSize
+            if ([string]$plan.Classification -ne 'PortableSafe') {
+                Write-CapsulenvMessage -Level Warning -Message "TrustedExecution review is required. Run 'capsulenv app review $([string]$plan.Reference)' to inspect the exact lifecycle surface before allowing upstream Scoop execution."
+            }
+        }
+        'review' {
+            $raw = $remaining -contains '--raw'
+            $json = $remaining -contains '--json'
+            $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin @('--raw', '--json') })
+            $references = @($remaining | Where-Object { $_ -notlike '--*' })
+            if ($unknownFlags.Count -gt 0 -or $references.Count -ne 1 -or ($raw -and $json)) {
+                throw (New-CapsulenvCliUsageError -Message 'app review requires one package reference and at most one output mode.' -Usage 'capsulenv app review <app|bucket/app|user/app|global/app> [--raw|--json]' -Topic app)
+            }
+            $review = Get-CapsulenvPackageReviewPlan -Reference ([string]$references[0])
+            if ($json) {
+                $review | ConvertTo-Json -Depth 12 | Write-Output
+                break
+            }
+            Write-CapsulenvPackageReview -Review $review -Raw:$raw
         }
         'install' {
             $allowTrusted = $remaining -contains '--allow-trusted'
@@ -755,7 +779,8 @@ function Invoke-CapsulenvAppCommand {
                     -TargetObject $reference `
                     -Context ([ordered]@{ Reference = $reference; BlockedPackages = @($plan.BlockedPackages) }) `
                     -Remediation @(
-                        "Review 'capsulenv app plan $reference'.",
+                        "Run 'capsulenv app review $reference' to inspect lifecycle scripts, complete manifests and review guidance.",
+                        "Use 'capsulenv app review $reference --raw' when you need the exact source manifest.",
                         'Use --allow-trusted only if upstream Scoop lifecycle execution is acceptable.'
                     ))
             }
@@ -810,8 +835,8 @@ function Invoke-CapsulenvAppCommand {
                     -Category ([System.Management.Automation.ErrorCategory]::PermissionDenied) `
                     -TargetObject ([string]$target.Reference) `
                     -Remediation @(
-                        "Re-run with --allow-trusted after reviewing the installed package.",
-                        "Or use upstream Scoop directly."
+                        "Run 'capsulenv app review $($target.Reference)' to inspect the current source manifest and dependency graph that Scoop would use for the update.",
+                        "Re-run with --allow-trusted only after that review, or use upstream Scoop directly."
                     ))
             }
             [void](Set-CapsulenvSessionEnvironment)

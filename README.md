@@ -32,7 +32,15 @@ capsulenv.cmd app install git
 
 Planner 只接受刻意很小的 declarative subset，例如 `url/hash`、`architecture`、`extract_dir/extract_to`、`bin`、`persist`、`env_add_path`、`env_set`、`shortcuts`、`depends`。第一版 executor 只支援 `http/https/file`、SHA-256、ZIP/plain-file artifact；`cookie`、`psmodule`、未知 active manifest property 等未實作 semantics 會 fail closed，而不是被忽略後誤判為 safe。若 dependency graph 全部可表示為 `PortableSafe`，Capsulenv 自己 download／verify／extract，並建立 capsule-owned `packages/`、`package-persist/`、`shims/` 與 installed state；manifest environment 只在 process runtime 套用。
 
-帶 `pre_install`／`post_install`／installer script 或其他 Capsulenv 不承諾安全語義的 package 會在 mutation 前被分類並停止。審核後若確實要接受 upstream semantics，可明示：
+帶 `pre_install`／`post_install`／installer script 或其他 Capsulenv 不承諾安全語義的 package 會在 mutation 前被分類並停止。此時先用專門的 review surface：
+
+```powershell
+capsulenv.cmd app review some-app
+capsulenv.cmd app review some-app --raw   # 展開完整來源 manifest
+capsulenv.cmd app review user/some-app    # 審目前 bucket 中下一次 upstream update 會採用的 manifest
+```
+
+Review view 會集中列出 dependency graph 裡所有被擋 package、來源 manifest 路徑與 SHA-256、實際 lifecycle script（帶行號）、阻擋原因，以及檢查 network／process／host writes／registry／services／credentials／update-uninstall symmetry 的指引。它是人工審核輔助，不會把 script 判成「安全」。審核後若確實要接受 upstream semantics，才明示：
 
 ```powershell
 capsulenv.cmd app install some-app --allow-trusted

@@ -13,7 +13,7 @@ function Get-CapsulenvCliCommandCatalog {
         [pscustomobject][ordered]@{ Category='Start'; Name='shell'; Usage='capsulenv shell'; Summary='Open the default ShellOnly capsule shell.'; Topic=''; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Start'; Name='user-shell'; Usage='capsulenv user-shell [--force]'; Summary='Synchronize explicit User integration and open a User-mode shell.'; Topic='user'; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Start'; Name='run'; Usage='capsulenv run <command> [arguments...]'; Summary='Run one command with the capsule process environment.'; Topic=''; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Packages'; Name='app'; Usage='capsulenv app <plan|install|update|list|run|exec> [...]'; Summary='Plan, install, update, inspect, or launch capsule applications.'; Topic='app'; Hidden=$false },
+        [pscustomobject][ordered]@{ Category='Packages'; Name='app'; Usage='capsulenv app <plan|review|install|update|list|run|exec> [...]'; Summary='Plan, install, update, inspect, or launch capsule applications.'; Topic='app'; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Packages'; Name='bucket'; Usage='capsulenv bucket <list|known|add|remove|update> [...]'; Summary='Manage upstream Scoop bucket metadata without changing Scoop semantics.'; Topic='bucket'; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Inspect'; Name='status'; Usage='capsulenv status'; Summary='Show a compact capsule readiness and ownership summary.'; Topic=''; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Inspect'; Name='doctor'; Usage='capsulenv doctor'; Summary='Run health checks and show remediation for checks needing attention.'; Topic=''; Hidden=$false },
@@ -47,6 +47,7 @@ function Get-CapsulenvCliActionCatalog {
     if ($null -eq $script:CapsulenvCliActionCatalog) {
         $script:CapsulenvCliActionCatalog = @(
             [pscustomobject][ordered]@{ Group='app'; Name='plan'; Usage='capsulenv app plan <app|bucket/app> [--json]'; Summary='Resolve dependencies and classify manifest semantics without mutation.' },
+            [pscustomobject][ordered]@{ Group='app'; Name='review'; Usage='capsulenv app review <app|bucket/app|user/app|global/app> [--raw|--json]'; Summary='Inspect the exact trusted lifecycle surface, manifests, hashes, and review guidance.' },
             [pscustomobject][ordered]@{ Group='app'; Name='install'; Usage='capsulenv app install <app|bucket/app> [--allow-trusted]'; Summary='Install with PortableSafe, or explicitly delegate TrustedExecution to upstream Scoop.' },
             [pscustomobject][ordered]@{ Group='app'; Name='update'; Usage='capsulenv app update <app|bucket/app|scope/app> [--allow-trusted] [--local]'; Summary='Update one installed app without changing its owner.' },
             [pscustomobject][ordered]@{ Group='app'; Name='list'; Usage='capsulenv app list [app]'; Summary='List installed app inventory, or one app shortcut declarations.' },

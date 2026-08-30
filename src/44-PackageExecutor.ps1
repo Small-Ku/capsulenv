@@ -936,7 +936,7 @@ function Update-CapsulenvPortablePackage {
             -Category ([System.Management.Automation.ErrorCategory]::PermissionDenied) `
             -TargetObject ([string]$existing.Reference) `
             -Remediation @(
-                "Review 'capsulenv app plan $($existing.Reference)'.",
+                "Run 'capsulenv app review $($existing.Reference)' to inspect why current metadata requires TrustedExecution.",
                 "Use 'capsulenv app update user/<app> --allow-trusted' only for an upstream Scoop-owned install; Capsulenv does not silently transfer ownership."
             ))
     }
