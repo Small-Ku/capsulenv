@@ -51,8 +51,8 @@ try {
         -Clean
 
     $files = @(
-        @{ Source = 'capsulenv.cmd'; Destination = 'capsulenv.cmd' }
-        @{ Source = 'install.cmd'; Destination = 'install.cmd' }
+        @{ Source = 'packaging/capsulenv.cmd'; Destination = 'capsulenv.cmd' }
+        @{ Source = 'packaging/install.cmd'; Destination = 'install.cmd' }
         @{ Source = 'README.md'; Destination = 'README.md' }
         @{ Source = 'scripts/Install-Capsulenv.ps1'; Destination = 'scripts/Install-Capsulenv.ps1' }
         @{ Source = 'bin/firefox-capsulenv.cmd'; Destination = 'bin/firefox-capsulenv.cmd' }
