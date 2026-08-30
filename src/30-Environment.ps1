@@ -1,3 +1,26 @@
+function Get-CapsulenvControlLauncherPath {
+    [CmdletBinding()]
+    param()
+
+    $root = (Get-CapsulenvContext).Root
+    $installed = Join-Path $root 'capsulenv.cmd'
+    if (Test-Path -LiteralPath $installed -PathType Leaf) {
+        return [System.IO.Path]::GetFullPath($installed)
+    }
+
+    # Development checkouts deliberately do not expose capsulenv.cmd at root.
+    # Keep the interactive `capsulenv` function useful there without weakening
+    # the installed/source root-role boundary.
+    $development = Join-Path $root 'scripts\capsulenv-dev.cmd'
+    if (Test-Path -LiteralPath $development -PathType Leaf) {
+        return [System.IO.Path]::GetFullPath($development)
+    }
+
+    # Preserve the intended installed location in plans built for an incomplete
+    # test/staging root. Invocation still fails closed if the file is absent.
+    return [System.IO.Path]::GetFullPath($installed)
+}
+
 function Get-CapsulenvEnvironmentPlan {
     [CmdletBinding()]
     param()
@@ -12,6 +35,7 @@ function Get-CapsulenvEnvironmentPlan {
 
     $variables = [ordered]@{
         CAPSULENV_ROOT = $context.Root
+        CAPSULENV_LAUNCHER = (Get-CapsulenvControlLauncherPath)
         SCOOP = $scoopRoot
         SCOOP_GLOBAL = $scoopGlobalRoot
         SCOOP_CACHE = (Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Cache) -AllowMissing)
@@ -54,15 +78,16 @@ function Get-CapsulenvEnvironmentPlan {
     }
 
     $pathEntries = New-Object System.Collections.Generic.List[string]
+    # The active capsule control plane must win command resolution before any
+    # package/Scoop shim directories. PowerShell also installs an exact-bound
+    # `capsulenv` function for interactive shells; this PATH entry is the
+    # compatibility surface for cmd.exe and child processes.
+    if (-not ($pathEntries -contains $context.Root)) {
+        $pathEntries.Add($context.Root)
+    }
     $packageShims = Get-CapsulenvPackageShimRoot
     if (-not ($pathEntries -contains $packageShims)) {
         $pathEntries.Add($packageShims)
-    }
-    # Keep the active capsule control plane reachable from any working
-    # directory without writing a profile alias or persistent host PATH entry.
-    # On Windows, PATHEXT resolves `capsulenv` to capsulenv.cmd from this root.
-    if (-not ($pathEntries -contains $context.Root)) {
-        $pathEntries.Add($context.Root)
     }
     # PowerShell resolves the genuine upstream dispatcher before Scoop's shim
     # directory. `scoop` therefore means upstream Scoop rather than a Capsulenv

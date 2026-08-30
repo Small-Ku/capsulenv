@@ -87,6 +87,33 @@ function ConvertTo-CapsulenvPowerShellSingleQuotedLiteral {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 
+function Get-CapsulenvPowerShellLauncherStartupStatement {
+    [CmdletBinding()]
+    param([string]$LauncherPath = (Get-CapsulenvControlLauncherPath))
+
+    # Bind the interactive command name to the exact launcher selected by the
+    # parent Capsulenv activation. The path is captured as a literal after
+    # profiles load, so neither PATH/PATHEXT nor a profile rewrite of
+    # CAPSULENV_LAUNCHER can redirect the active shell to another capsule.
+    $launcherLiteral = ConvertTo-CapsulenvPowerShellSingleQuotedLiteral -Value ([System.IO.Path]::GetFullPath($LauncherPath))
+    $template = @'
+function global:capsulenv {
+    [CmdletBinding(PositionalBinding = $false)]
+    param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$ArgumentList = @()
+    )
+    $launcher = __CAPSULENV_LAUNCHER_LITERAL__
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+        Write-Error "The active Capsulenv launcher is unavailable: $launcher. Re-enter the capsule from its current location."
+        return
+    }
+    & $launcher @ArgumentList
+}
+'@.Trim()
+    return $template.Replace('__CAPSULENV_LAUNCHER_LITERAL__', $launcherLiteral)
+}
+
 function Get-CapsulenvPowerShellHistoryStartupStatement {
     [CmdletBinding()]
     param()
@@ -113,6 +140,7 @@ function Get-CapsulenvShellOnlyPowerShellStartupCommand {
         $statements.Add(". $literal")
     }
     $statements.Add((Get-CapsulenvPowerShellHistoryStartupStatement))
+    $statements.Add((Get-CapsulenvPowerShellLauncherStartupStatement))
     return '& { ' + ($statements -join '; ') + ' }'
 }
 
@@ -144,7 +172,7 @@ function Get-CapsulenvPowerShellChildLaunchPlan {
         $arguments.Add('-Command')
         $arguments.Add($startup)
     } else {
-        $startup = '& { ' + (Get-CapsulenvPowerShellHistoryStartupStatement) + ' }'
+        $startup = '& { ' + (Get-CapsulenvPowerShellHistoryStartupStatement) + '; ' + (Get-CapsulenvPowerShellLauncherStartupStatement) + ' }'
         if (-not [string]::IsNullOrWhiteSpace($Command)) {
             $startup = $startup + '; ' + $Command
         }

@@ -75,6 +75,7 @@ function Get-CapsulenvRuntimeContext {
             ScratchRoot = Get-CapsulenvScratchPath
         }
         Runtime = [pscustomobject][ordered]@{
+            Launcher = Get-CapsulenvControlLauncherPath
             PowerShell = $currentPowerShell
             PowerShellVersion = [string]$PSVersionTable.PSVersion
             PSEdition = [string]$PSVersionTable.PSEdition
