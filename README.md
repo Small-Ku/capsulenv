@@ -40,7 +40,9 @@ capsulenv.cmd app review some-app --raw   # 展開完整來源 manifest
 capsulenv.cmd app review user/some-app    # 審目前 bucket 中下一次 upstream update 會採用的 manifest
 ```
 
-Review view 會集中列出 dependency graph 裡所有被擋 package、來源 manifest 路徑與 SHA-256、實際 lifecycle script（帶行號）、阻擋原因，以及檢查 network／process／host writes／registry／services／credentials／update-uninstall symmetry 的指引。它是人工審核輔助，不會把 script 判成「安全」。審核後若確實要接受 upstream semantics，才明示：
+Review view 不只列出直接被擋的 package。它會建立 resolved dependency DAG，分開顯示每個 node 的 direct classification 與由 descendants 傳遞而來的 effective execution boundary，並列出實際 blocker path，例如 `main/app -> main/runtime -> extras/helper`。直接 blocker 仍會顯示來源 manifest 路徑與 SHA-256、實際 lifecycle script（帶行號）、阻擋原因，以及檢查 network／process／host writes／registry／services／credentials／update-uninstall symmetry 的指引；`--raw` 則展開整個 resolved DAG 的 source manifests，而不是只展開 blocker。
+
+對 `user/<app>` / `global/<app>` update，review 還會從已安裝 manifests 建立 old dependency closure，和目前 bucket 將要使用的 new closure 做 DAG/effect delta：新增／移除 package 與 dependency edge，以及 version、URL/hash、persist、bin、environment、shortcut、lifecycle 等 execution-relevant 變更會先分類呈現，再由你 drill down 到完整 manifest/script。若舊 dependency evidence 不完整，輸出會明示 diff 是 conservative，不會把未知舊狀態當成「已移除」。這仍只是人工審核輔助，不會把 script 判成「安全」。審核後若確實要接受 upstream semantics，才明示：
 
 ```powershell
 capsulenv.cmd app install some-app --allow-trusted

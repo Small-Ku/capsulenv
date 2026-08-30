@@ -111,6 +111,12 @@ Planner 對 Scoop schema 採 **schema-aware fail-closed**：已知純 metadata �
 
 `pre_install`、`post_install`、installer/uninstaller script 等 arbitrary code 永遠不是 PortableSafe。Capsulenv 不對 script 做 fingerprint allowlist、rewrite 或 partial sandbox；要執行就進 TrustedExecution。
 
+### Review DAG and trust propagation
+
+Package review 使用和 planner 相同的 resolved dependency closure，但保留兩層 trust 狀態：node 的 `DirectReviewRequired` 只描述該 manifest/ownership boundary，本身安全的 ancestor 若依賴任一 direct blocker，`EffectiveReviewRequired` 仍向 root 傳遞成 `TrustedExecution`。Review contract 同時保留 root-to-blocker path，因此「整個 plan 被擋」不會只剩一個 aggregate boolean；使用者和外部 tooling 都能追到是哪條 dependency chain 引入 trusted lifecycle。
+
+對 upstream Scoop-owned `user/` / `global/` update，review 另外以 installed manifests 建立 old closure，以 current buckets 建立 new closure，然後按 package identity 比較 node/edge 與 execution-relevant effects。Diff 涵蓋 source/version、artifact URL/hash、dependencies、extract/projection、bin/persist、process environment、shortcuts 及 lifecycle semantics。舊 closure 缺少已安裝 dependency evidence 時，review 保留 warning 並把 removed-node/edge 判斷標成 conservative；缺失證據不能被解讀成安全 no-op。
+
 ## Provisioning and runtime separation
 
 Runtime consumer 不應關心 package 當初由哪個 CLI 安裝，而是解析 installed app projection。Selector scopes：

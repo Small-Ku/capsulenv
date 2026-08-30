@@ -23,10 +23,11 @@ app commands
       capsule. PortableSafe plans contain only the bounded declarative subset.
 
   capsulenv.cmd app review <app|bucket/app|user/app|global/app> [--raw|--json]
-      Review every dependency that requires TrustedExecution. The default view
-      shows manifest path/hash, lifecycle scripts with line numbers, reasons,
-      a Scoop-specific review checklist and the explicit next action. --raw
-      prints complete source manifests; --json exposes the review contract.
+      Review the resolved dependency DAG and propagate every direct blocker to
+      its ancestors with auditable root-to-blocker paths. Upstream-owned update
+      reviews also compare the installed-old and current-bucket-new DAG/effects.
+      --raw prints every source manifest in the resolved DAG; --json exposes the
+      graph, effect delta, lifecycle surface and explicit next action.
 
   capsulenv.cmd app install <app|bucket/app> [--allow-trusted]
       Install a PortableSafe plan with the Capsulenv executor. --allow-trusted

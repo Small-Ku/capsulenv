@@ -27,3 +27,9 @@ Legacy command handlers that still throw `Usage: ...` are normalized at the disp
 Discovery does not relax execution policy. PortableSafe package operations stay Capsulenv-owned; `--allow-trusted` remains an explicit per-invocation delegation to unmodified upstream Scoop. ShellOnly remains the default session mode, while `user-shell` / `install-user` are explicit persistent-integration entrypoints.
 
 Unlike NyaModule, Capsulenv does not add a persistent CLI-preference store or TUI merely for consistency. Its durable configuration describes the portable environment itself; one-off command intent stays in arguments. The shared lesson is the UX structure: searchable commands, focused help, stable diagnostics, and a clear next action.
+
+## Trusted package review
+
+`capsulenv app review` is an effect-oriented dependency review surface, not a script allow-list. The review graph keeps direct manifest classification separate from the effective boundary propagated through dependencies, and shows root-to-blocker paths so a declarative top-level package cannot hide a scripted descendant.
+
+For `user/<app>` and `global/<app>` updates, the default view compares the installed old closure with the current-bucket new closure before showing executable lifecycle fragments. Added/removed packages and dependency edges plus execution-relevant manifest effects are grouped first; incomplete old installed evidence is called out explicitly. `--raw` prints every source manifest in the resolved new DAG and `--json` exposes the graph, paths and diff for external review tooling.
