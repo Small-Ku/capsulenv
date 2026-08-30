@@ -16,7 +16,7 @@
 
 ## Source and compatibility rules
 
-- `capsulenv.cmd` stays a thin launcher. Environment/ownership logic belongs in the PowerShell module.
+- The installed/release `capsulenv.cmd` template lives under `packaging/` and stays a thin launcher. A development checkout must not expose root `capsulenv.cmd`/`install.cmd`; source-only entrypoints live under `scripts/`. Environment/ownership logic belongs in the PowerShell module.
 - Add module source under ordered `src/*.ps1`; mark public exports with the existing `##MOD_EXEC## Export-ModuleMember` convention.
 - Windows PowerShell 5.1 compatibility is required. Avoid unguarded PowerShell 7-only syntax/runtime behavior.
 - Installed runtime execution must be self-contained under `capsulenv.cmd` + `modules/Capsulenv` and must not depend on root `scripts/`, release-bundle metadata, or source/compiler files. Drive/host relocation is runtime rehydration, never an installer requirement.

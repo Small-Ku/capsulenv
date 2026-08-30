@@ -12,7 +12,7 @@ Installer 只負責**產生／取得 generated module，並 transactional deploy
 
 ## Build a release bundle
 
-Development checkout 可 deterministic merge `src/*.ps1` 並建立 release bundle：
+Development checkout 可 deterministic merge `src/*.ps1` 並建立 release bundle。Source root 本身刻意不提供 `capsulenv.cmd`／`install.cmd`；release root entrypoint 由 `packaging/*.cmd` 在 build 時 materialize：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Capsulenv.ps1 -OutputPath dist\capsulenv
@@ -39,9 +39,13 @@ Builder 會先清空 output tree，因此拒絕 repository root、repository anc
 
 ## Install or update a destination
 
-Source checkout 與 release bundle 都提供同一入口：
+Source checkout 與 release bundle 刻意使用不同位置的 batch entrypoint，以免 source root 看起來像可直接工作的 capsule：
 
 ```bat
+REM source checkout
+scripts\install.cmd D:\Portable\capsulenv
+
+REM release bundle
 install.cmd D:\Portable\capsulenv
 ```
 
@@ -73,9 +77,9 @@ Destination 中與 install marker 無關的其他檔案同樣保留。對非空�
 
 ## Runtime artifact contract
 
-`capsulenv.cmd` 優先啟動 `modules\Capsulenv\runtime\Invoke-Capsulenv.ps1`。因此 deployed capsule 的 control/runtime code 由同一個 generated module package 擁有，不依賴 root `scripts/`、README/docs、`.capsulenv-runtime.json` 或 source compiler。
+Installed `capsulenv.cmd` 只啟動 `modules\Capsulenv\runtime\Invoke-Capsulenv.ps1`，不再 fallback 到 source `module-runtime`。因此 deployed capsule 的 control/runtime code 由同一個 generated module package 擁有，不依賴 root `scripts/`、README/docs、`.capsulenv-runtime.json` 或 source compiler。
 
-Development checkout 則可 fallback 到 source `module-runtime/Invoke-Capsulenv.ps1`；若 `src/`、`Capsulenv.psd1` 與 `Merge-ModuleScripts.ps1` 同時存在，entrypoint 每次從 source clean-merge `.build/Capsulenv`，避免 stale generated module shadow source changes。
+Release bundle 雖包含同名 `capsulenv.cmd` 作 install payload，但 launcher 在看見 bundle-only `.capsulenv-runtime.json`、且沒有 installed marker 時會拒絕直接啟動，提示先執行 `install.cmd <destination>`。Development checkout 使用明確的 `scripts\capsulenv-dev.cmd` 進入 source `module-runtime/Invoke-Capsulenv.ps1`；source entrypoint 仍在 `src/`、`Capsulenv.psd1` 與 `Merge-ModuleScripts.ps1` 完整時 clean-merge `.build/Capsulenv`，避免 stale generated module shadow source changes。
 
 在 deployed capsule 設 `CAPSULENV_FORCE_REBUILD=1` 不會嘗試現場 compile，也不會讓 capsule 失去啟動能力；它只提示應從 development checkout 或新版 release bundle deploy 新 generated module。
 

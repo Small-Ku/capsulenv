@@ -9,6 +9,9 @@ src/*.ps1                         Capsulenv module source, ordered by filename
 Capsulenv.psd1                    module manifest
 Merge-ModuleScripts.ps1           deterministic module merger
 module-runtime/*.ps1               module-owned entrypoint/helper resource sources
+packaging/*.cmd                     release/installed root launcher templates
+scripts/capsulenv-dev.cmd           explicit source-tree CLI entrypoint
+scripts/install.cmd                 explicit source-tree installer wrapper
 scripts/Build-Capsulenv.ps1       produce redistributable release bundle
 scripts/Install-Capsulenv.ps1     transactional runtime installer/updater
 scripts/Analyze-Capsulenv.ps1     Windows PowerShell compatibility + architecture analysis
@@ -26,7 +29,7 @@ A development checkout may build/merge the module on entry. `Merge-ModuleScripts
 
 ## Editing the module
 
-Add module implementation to the appropriately ordered `src/*.ps1` file instead of putting environment logic in `capsulenv.cmd`. The batch file must remain a thin bootstrap launcher.
+Add module implementation to the appropriately ordered `src/*.ps1` file instead of putting environment logic in `packaging/capsulenv.cmd`. The packaged batch file must remain a thin bootstrap launcher.
 
 Public functions/aliases are exported through the module merger. Mark export statements with the existing `##MOD_EXEC## Export-ModuleMember` convention so deterministic merge and generated manifest behavior remain consistent.
 
@@ -39,11 +42,11 @@ Module sources must remain compatible with Windows PowerShell 5.1. Avoid PowerSh
 From the repository root:
 
 ```bat
-capsulenv.cmd help
-capsulenv.cmd doctor
+scripts\capsulenv-dev.cmd help
+scripts\capsulenv-dev.cmd doctor
 ```
 
-Development entry uses source + deterministic merge as needed. Do not commit generated `.build/` or `modules/` output.
+The repository root deliberately has no `capsulenv.cmd` or `install.cmd`: those names identify release/installed surfaces and were too easy to confuse with a working capsule. `scripts\capsulenv-dev.cmd` invokes the source `module-runtime` entrypoint, which clean-merges source as needed. Source installation likewise uses `scripts\install.cmd <destination>`. Do not commit generated `.build/` or `modules/` output.
 
 ## Build a runtime
 
@@ -75,7 +78,7 @@ Where possible, test dangerous integration through isolated fixtures/static inva
 
 ## Adding or changing commands
 
-CLI help in `Show-CapsulenvHelp` is the command contract users can query with `capsulenv.cmd help`. Keep dispatch/usage text in sync with the implementation and add tests through the same argument path used by the real launcher.
+CLI help in `Show-CapsulenvHelp` is the command contract installed users query with `capsulenv.cmd help` and developers query with `scripts\capsulenv-dev.cmd help`. Keep dispatch/usage text in sync with the implementation and add tests through the same argument path used by the real launcher.
 
 When a feature consumes package metadata at runtime, use the installed app projection (`capsule/`, `user/`, `global/`) and its installed `manifest.json`/`install.json` as the source of truth. Bucket manifests are provisioning input and may have advanced since installation; they must not silently replace installed-version semantics.
 
