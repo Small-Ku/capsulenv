@@ -39,8 +39,8 @@
         # Network = @{
         #     Enabled = $true
         #     Trigger = @('OnEnter', 'OnRehydrate')
-        #     Command = 'nya'
-        #     Arguments = @('job', 'portable-network')
+        #     Command = 'powershell.exe'
+        #     Arguments = @('-NoLogo', '-NoProfile', '-Command', "Import-Module NyaModule -Force; Invoke-NyaJob -Name 'portable-network'")
         #     MinimumIntervalSeconds = 60
         #     FailurePolicy = 'Warn'
         # }

@@ -234,8 +234,8 @@
         # Example = @{
         #     Enabled = $true
         #     Trigger = @('OnEnter', 'OnRehydrate')
-        #     Command = 'nya'
-        #     Arguments = @('job', 'portable-sync')
+        #     Command = 'powershell.exe'
+        #     Arguments = @('-NoLogo', '-NoProfile', '-Command', "Import-Module NyaModule -Force; Invoke-NyaJob -Name 'portable-sync'")
         #     MinimumIntervalSeconds = 300
         #     FailurePolicy = 'Warn'
         # }

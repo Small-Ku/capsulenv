@@ -244,8 +244,8 @@ Capsulenv only owns capsule-local lifecycle triggers. Workload policy such as si
 Routines = @{
     Network = @{
         Trigger = @('OnEnter', 'OnRehydrate')
-        Command = 'nya'
-        Arguments = @('job', 'portable-network')
+        Command = 'powershell.exe'
+        Arguments = @('-NoLogo', '-NoProfile', '-Command', "Import-Module NyaModule -Force; Invoke-NyaJob -Name 'portable-network'")
         MinimumIntervalSeconds = 60
         FailurePolicy = 'Warn'
     }
