@@ -1,0 +1,29 @@
+# CLI UX model
+
+Capsulenv keeps one command surface and separates discovery, action intent, safety boundaries, and diagnostics instead of adding a second interactive configuration model.
+
+## Discovery
+
+Inside an activated capsule, the capsule root is on `PATH`, so `capsulenv` resolves the same `capsulenv.cmd` launcher without requiring a full path. `capsulenv help` is the command index and groups daily commands by task rather than exposing the dispatcher switch as a flat list.
+
+Focused help accepts both forms:
+
+```text
+capsulenv help app update
+capsulenv app update --help
+capsulenv cache status --help
+```
+
+Command groups can also use `capsulenv <group> help [action]` when the group has an action catalog.
+
+## Errors are actionable
+
+CLI input failures use Capsulenv's structured diagnostic contract. The launcher renders a short error first, optional hints second, and concrete remediation under `Try:`. Known command and action typos use bounded edit-distance matching, so for example `buckte` can suggest `bucket` without guessing an unrelated command.
+
+Legacy command handlers that still throw `Usage: ...` are normalized at the dispatcher boundary into `Capsulenv.Cli.Usage`. This keeps old handlers compatible while preventing normal launcher use from leaking a PowerShell source location or stack-style error as the primary UX.
+
+## Safety remains explicit
+
+Discovery does not relax execution policy. PortableSafe package operations stay Capsulenv-owned; `--allow-trusted` remains an explicit per-invocation delegation to unmodified upstream Scoop. ShellOnly remains the default session mode, while `user-shell` / `install-user` are explicit persistent-integration entrypoints.
+
+Unlike NyaModule, Capsulenv does not add a persistent CLI-preference store or TUI merely for consistency. Its durable configuration describes the portable environment itself; one-off command intent stays in arguments. The shared lesson is the UX structure: searchable commands, focused help, stable diagnostics, and a clear next action.
