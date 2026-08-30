@@ -20,6 +20,8 @@ Describe 'Capsulenv build and install' {
         $installRoot = Join-Path $temporaryRoot 'install'
         $relocatedInstallRoot = Join-Path $temporaryRoot 'relocated-install'
         $prebuiltInstallRoot = Join-Path $temporaryRoot 'prebuilt-install'
+        $brokenPrebuiltRoot = Join-Path $temporaryRoot 'broken-prebuilt'
+        $brokenPrebuiltInstallRoot = Join-Path $temporaryRoot 'broken-prebuilt-install'
 
         try {
             [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
@@ -93,6 +95,20 @@ Describe 'Capsulenv build and install' {
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $prebuiltInstallRoot $bundleOnlyFile))) `
                     -Message "Prebuilt deployment copied bundle-only file into capsule: $bundleOnlyFile"
             }
+
+            [void](New-Item -ItemType Directory -Path $brokenPrebuiltRoot -Force)
+            Get-ChildItem -LiteralPath $buildRoot -Force | Copy-Item -Destination $brokenPrebuiltRoot -Recurse -Force
+            Remove-Item -LiteralPath (Join-Path $brokenPrebuiltRoot 'modules/Capsulenv/Capsulenv.psd1') -Force
+            $brokenPrebuiltError = $null
+            try {
+                & (Join-Path $brokenPrebuiltRoot 'scripts/Install-Capsulenv.ps1') $brokenPrebuiltInstallRoot | Out-Null
+            } catch {
+                $brokenPrebuiltError = $_
+            }
+            Assert-CapsulenvBuildInstallTest `
+                -Condition ($null -ne $brokenPrebuiltError -and $brokenPrebuiltError.Exception.Message -like 'Prebuilt runtime managed file is missing:*') `
+                -Message 'An incomplete prebuilt runtime must fail closed instead of falling back to source build semantics.'
+
             $runtimeScoopAdapters = @(Get-ChildItem -LiteralPath (Join-Path $buildRoot 'modules/Capsulenv/runtime') -Filter 'scoop-capsulenv-*' -File -ErrorAction SilentlyContinue)
             Assert-CapsulenvBuildInstallTest `
                 -Condition ($runtimeScoopAdapters.Count -eq 0) `
@@ -127,6 +143,23 @@ Describe 'Capsulenv build and install' {
                 $environmentOriginals[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
                 [Environment]::SetEnvironmentVariable($name, [string]$environmentSentinels[$name], 'Process')
             }
+            $sourceRuntimeMetadataPath = Join-Path $root '.capsulenv-runtime.json'
+            $sourceRuntimeMetadataExisted = Test-Path -LiteralPath $sourceRuntimeMetadataPath -PathType Leaf
+            $sourceRuntimeMetadataBackup = if ($sourceRuntimeMetadataExisted) {
+                Get-Content -LiteralPath $sourceRuntimeMetadataPath -Raw
+            } else {
+                $null
+            }
+            $staleSourceMetadata = [ordered]@{
+                SchemaVersion = 3
+                Version = [string]$runtimeMetadata.Version
+                SourceCommit = [string]$runtimeMetadata.SourceCommit
+                BuiltAtUtc = [DateTime]::UtcNow.ToString('o')
+                DevelopmentFilesIncluded = $false
+                ManagedFiles = @('.capsulenv-runtime.json', 'modules/Capsulenv/__stale_runtime_probe__.ps1')
+                InstallFiles = @('modules/Capsulenv/__stale_runtime_probe__.ps1')
+            }
+            $staleSourceMetadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $sourceRuntimeMetadataPath -Encoding UTF8
             try {
                 $install = & $installerPath $installRoot
                 foreach ($name in $environmentSentinels.Keys) {
@@ -135,6 +168,11 @@ Describe 'Capsulenv build and install' {
                         -Message "Installer leaked process environment variable $name into its caller."
                 }
             } finally {
+                if ($sourceRuntimeMetadataExisted) {
+                    [System.IO.File]::WriteAllText($sourceRuntimeMetadataPath, $sourceRuntimeMetadataBackup)
+                } elseif (Test-Path -LiteralPath $sourceRuntimeMetadataPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $sourceRuntimeMetadataPath -Force
+                }
                 foreach ($name in $environmentOriginals.Keys) {
                     [Environment]::SetEnvironmentVariable($name, $environmentOriginals[$name], 'Process')
                 }
