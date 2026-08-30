@@ -236,18 +236,25 @@ capsulenv.cmd bitwarden restore
 
 Capsulenv 不複製、重建或重新序列化 Bitwarden vault/app state；`Bitwarden.App` 可指向任何相容的 installed runtime app selector（通常是 `capsule/<app>` 或 `scoop/<app>`；必要時用 `scoop:user/`／`scoop:global/` 消歧）；executable 與 state path 由該 app 的 installed manifest/persist projection 決定。更精確的 safety contract 見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
-## sing-box 私有網絡
+## Lifecycle routines
 
-若 capsule 已安裝 sing-box 並在它自己的 persist store 放好非空設定，Capsulenv 可檢查並啟動該 instance：
+Capsulenv only owns capsule-local lifecycle triggers. Workload policy such as sing-box connectivity or rclone synchronization belongs to an orchestrator such as NyaModule. Configure generic routines in `config/capsulenv.local.psd1` when a capsule event should call that orchestrator or another command:
 
-```bat
-capsulenv.cmd sing-box status
-capsulenv.cmd sing-box check
-capsulenv.cmd sing-box connect
-capsulenv.cmd sing-box disconnect --force
+```powershell
+Routines = @{
+    Network = @{
+        Trigger = @('OnEnter', 'OnRehydrate')
+        Command = 'nya'
+        Arguments = @('job', 'portable-network')
+        MinimumIntervalSeconds = 60
+        FailurePolicy = 'Warn'
+    }
+}
 ```
 
-預設 `SingBox.App = 'sing-box'`、`ConfigPath = 'config.json'` 且 `AutoConnect = $true`；未安裝或 persisted config 為空時 activation 只略過，不會下載、生成或猜測 VPN/Tailscale 設定。自訂 bucket／改名 manifest 可把 `SingBox.App` 改成對應 selector，必要時再指定 `BinName`／`ExecutablePath`。
+Supported events are `OnEnter`, `OnExit`, `OnRehydrate`, and `OnEject`. `MinimumIntervalSeconds` is persisted under capsule state so repeated activation does not have to repeat an expensive reconciliation. `capsulenv.cmd routine list` shows the last-run state, and `capsulenv.cmd routine run <trigger> [name] [--force]` invokes a trigger explicitly. Routines can also target an installed app with `App` + `BinName`; they do not contain application-specific policy.
+
+The provider-neutral runtime boundary is also available directly as `capsulenv.cmd app exec <installed-app> <bin> -- ...`; `capsule/<app>` and `scoop/<app>` share the same resolver.
 
 ## 更新與移除
 

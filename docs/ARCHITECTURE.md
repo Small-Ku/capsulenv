@@ -128,7 +128,7 @@ scoop:user/<app>       Provider=Scoop, ProviderScope=User    # 只作消歧
 scoop:global/<app>     Provider=Scoop, ProviderScope=Global  # 只作消歧
 ```
 
-`user/<app>` / `global/<app>` 保留為 legacy aliases，但 resolver 會 canonicalize 成 `scoop:user/<app>` / `scoop:global/<app>`。不帶 selector namespace 時仍優先 Capsulenv-owned package；若只存在一個 upstream Scoop match，`scoop/<app>` 足夠；只有 user/global 兩個 Scoop roots 同時存在同名 app 才要求 provider-local scope。Browser、Bitwarden、sing-box、tool resolver 和 `app run` 應使用同一 installed-runtime abstraction，而不是各自 hard-code `scoop/apps/<name>/current`。
+`user/<app>` / `global/<app>` 保留為 legacy aliases，但 resolver 會 canonicalize 成 `scoop:user/<app>` / `scoop:global/<app>`。不帶 selector namespace 時仍優先 Capsulenv-owned package；若只存在一個 upstream Scoop match，`scoop/<app>` 足夠；只有 user/global 兩個 Scoop roots 同時存在同名 app 才要求 provider-local scope。Browser、Bitwarden、tool resolver、`app run` 和 `app exec` 應使用同一 installed-runtime abstraction，而不是各自 hard-code `scoop/apps/<name>/current`。`app exec` 是 provider-neutral runtime boundary：provider ownership 只影響 process environment projection，不改變 caller-facing execution model。
 
 PortableSafe install 仍會在 version tree 寫出 installed `manifest.json` / `install.json` compatibility metadata，讓現有 runtime manifest parser 可共用，而 `.capsulenv/packages/*.json` 保存 Capsulenv 自己的 ownership/state。State 同時保存 provider/reference、source manifest fingerprint 與 installed metadata fingerprints；runtime 每次讀取都驗證它仍指向同一 capsule-owned version/current/persist roots，metadata 漂移即 fail closed。這是 migration bridge，不代表 Scoop 重新取得 ownership。
 
@@ -226,9 +226,11 @@ Capsulenv 不複製/重建/重新序列化 Bitwarden vault/app state。Setting p
 
 ShellOnly Git/OpenSSH 設定使用 process overlay且不更改 Windows `ssh-agent` service；User integration才可進入明確備份/還原流程。
 
-## sing-box process ownership
+## Lifecycle routine ownership
 
-Capsulenv只管理由 configured installed app selector啟動、可證明 executable/config 都位於 capsule-owned runtime/persist scope 的 sing-box process。它不生成未知 VPN設定，也不終止無法證明 ownership 的 foreign sing-box process。
+Capsulenv does not own sing-box, rclone, backup, network, or other workload semantics. It owns only portable runtime projection plus capsule-local lifecycle events. `Routines` may bind `OnEnter`, `OnExit`, `OnRehydrate`, or `OnEject` to a generic command or to an installed-app `App` + `BinName` ProcessPlan. Successful runs persist their last-success timestamp so `MinimumIntervalSeconds` can suppress redundant work after repeated activation.
+
+Long-lived desired state, retry policy, host boot/logon schedules, network configuration meaning, synchronization direction, and process policy belong above Capsulenv. NyaModule can consume the provider-neutral installed-app execution boundary and use a capsule routine only as a local trigger back into its own control plane. This keeps the portable runtime unaware of the workload it happens to execute.
 
 ## Weasel seed ownership
 
