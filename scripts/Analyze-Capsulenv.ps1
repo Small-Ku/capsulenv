@@ -24,6 +24,7 @@ Import-Module $analyzer.Path -Force
 # newer tooling APIs intentionally and are checked by the parser/Pester suite.
 $runtimePaths = @(
     (Join-Path $root 'Merge-ModuleScripts.ps1')
+    (Join-Path (Join-Path $root 'packaging') 'capsulenv-runtime.ps1')
     (Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
     (Get-ChildItem -LiteralPath (Join-Path $root 'module-runtime') -Filter '*.ps1' -File -Recurse | Select-Object -ExpandProperty FullName)
     (Get-ChildItem -LiteralPath (Join-Path $root 'scripts') -Filter '*.ps1' -File |
@@ -80,6 +81,18 @@ if ($hostIntegrationViolations.Count -gt 0) {
     throw "Capsulenv host-integration ownership analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
+
+$workloadSpecializationViolations = @(
+    Get-CapsulenvWorkloadSpecializationViolations -Paths @(
+        Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName
+    )
+)
+if ($workloadSpecializationViolations.Count -gt 0) {
+    $detail = $workloadSpecializationViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv workload-ownership analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
 
 $scoopRuntimeAdapterViolations = @(
     Get-CapsulenvScoopRuntimeAdapterViolations -RuntimeRoot (Join-Path $root 'module-runtime')
@@ -157,6 +170,7 @@ if ($diagnostics.Count -gt 0) {
     ControlBootstrapCommands = $controlBootstrapCommands.Count
     ForbiddenRuntimeCommands = $forbiddenRuntimeUses.Count
     HostIntegrationOwnershipViolations = $hostIntegrationViolations.Count
+    WorkloadSpecializationViolations = $workloadSpecializationViolations.Count
     ScoopRuntimeAdapterViolations = $scoopRuntimeAdapterViolations.Count
     SessionModeBoundaryViolations = $sessionModeViolations.Count
     StockScoopBoundaryViolations = $stockScoopBoundaryViolations.Count

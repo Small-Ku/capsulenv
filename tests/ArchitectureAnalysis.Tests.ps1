@@ -37,6 +37,29 @@ function shortcut_folder($global) {
         $violations[0].Rule | Should -Be 'ScoopShortcutOverrideForbidden'
     }
 
+
+    It 'rejects sing-box or rclone runtime specializations' {
+        $fixture = New-CapsulenvStaticFixture -Name 'workload-specialization.ps1' -Source @'
+function Connect-CapsulenvSingBox {
+    $config = Get-CapsulenvConfiguration
+    return $config.SingBox
+}
+'@
+        $violations = @(Get-CapsulenvWorkloadSpecializationViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'NoWorkloadSpecializedRuntime'
+        @($violations.Rule) | Should -Contain 'NoWorkloadSpecializedConfiguration'
+    }
+
+    It 'accepts generic lifecycle routine runtime code' {
+        $fixture = New-CapsulenvStaticFixture -Name 'generic-routine.ps1' -Source @'
+function Invoke-CapsulenvRoutine {
+    $config = Get-CapsulenvConfiguration
+    return $config.Routines
+}
+'@
+        @(Get-CapsulenvWorkloadSpecializationViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
     It 'rejects Scoop runtime source adapters by filename' {
         $runtimeRoot = Join-Path $TestDrive 'runtime-adapters'
         [void](New-Item -ItemType Directory -Path $runtimeRoot -Force)

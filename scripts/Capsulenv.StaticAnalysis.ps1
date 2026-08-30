@@ -111,6 +111,55 @@ function Get-CapsulenvHostIntegrationOwnershipViolations {
     return $violations.ToArray()
 }
 
+
+function Get-CapsulenvWorkloadSpecializationViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    foreach ($path in $Paths) {
+        $fullPath = [System.IO.Path]::GetFullPath($path)
+        $ast = Get-CapsulenvStaticAst -Path $fullPath
+        foreach ($functionAst in @(
+            $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    [string]$node.Name -match '(?i)(SingBox|Rclone)'
+                },
+                $true
+            )
+        )) {
+            $violations.Add([pscustomobject]@{
+                Rule = 'NoWorkloadSpecializedRuntime'
+                Path = $fullPath
+                Line = $functionAst.Extent.StartLineNumber
+                Column = $functionAst.Extent.StartColumnNumber
+                Detail = 'sing-box and rclone workload policy belongs to an external orchestrator; Capsulenv runtime must stay application-agnostic'
+            })
+        }
+        foreach ($memberAst in @(
+            $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.MemberExpressionAst] -and
+                    [string]$node.Member.Value -match '^(?i:SingBox|Rclone)$'
+                },
+                $true
+            )
+        )) {
+            $violations.Add([pscustomobject]@{
+                Rule = 'NoWorkloadSpecializedConfiguration'
+                Path = $fullPath
+                Line = $memberAst.Extent.StartLineNumber
+                Column = $memberAst.Extent.StartColumnNumber
+                Detail = 'runtime configuration must use generic lifecycle routines instead of sing-box or rclone sections'
+            })
+        }
+    }
+    return $violations.ToArray()
+}
+
 function Get-CapsulenvScoopRuntimeAdapterViolations {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$RuntimeRoot)
