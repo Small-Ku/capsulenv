@@ -11,6 +11,17 @@ Describe 'Capsulenv package projection repair boundary' {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
+    It 'builds the rehydrate desired-state DAG without binding adjacent nodes into Verify' {
+        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+
+        $rehydrate = Get-CapsulenvScoopRehydratePlan -IntegrationMode ShellOnly
+
+        @($rehydrate.Plan.Nodes).Count | Should -Be 8
+        @($rehydrate.Plan.Nodes | ForEach-Object { $_.Node.Verify }).Count | Should -Be 8
+        @($rehydrate.Plan.Nodes | Where-Object { $_.Node.Verify -isnot [scriptblock] }).Count | Should -Be 0
+    }
+
     It 'delegates the compatibility reset command to bounded projection repair only' {
         Mock Repair-CapsulenvInstalledAppProjections { $true } -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { throw 'upstream Scoop must not be invoked by Capsulenv projection repair' } -ModuleName Capsulenv

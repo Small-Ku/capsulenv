@@ -233,49 +233,49 @@ function Get-CapsulenvScoopRehydratePlan {
             -WriteResources @('process:///environment') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) Set-CapsulenvSessionEnvironment } `
-            -Verify { param($c,$d,$o) $true },
+            -Verify { param($c,$d,$o) $true }
         New-CapsulenvDesiredStateNode -Id 'user-environment-backup' `
             -DependsOn 'session-environment' `
             -ReadResources @('host:///environment/user') `
             -WriteResources @('capsule:///state/user-environment-backup') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) $plan=Get-CapsulenvEnvironmentPlan; $name=Get-CapsulenvScoopPathEnvironmentVariable; Ensure-CapsulenvUserEnvironmentBackupEntries -Names (@($plan.Variables.Keys)+@('PATH',$name)) } `
-            -Verify { param($c,$d,$o) $true },
+            -Verify { param($c,$d,$o) $true }
         New-CapsulenvDesiredStateNode -Id 'package-projections' `
             -DependsOn @('session-environment','user-environment-backup') `
             -ReadResources @('capsule:///packages/installed-state') `
             -WriteResources @('capsule:///packages/projections','capsule:///scoop/apps','capsule:///scoop/persist','capsule:///packages/shims','host:///start-menu/capsulenv') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) [bool](Repair-CapsulenvInstalledAppProjections -IntegrationMode $c.IntegrationMode -DeferRunningApps:($c.IntegrationMode -eq 'User')) } `
-            -Verify { param($c,$d,$o) $null -ne $o },
+            -Verify { param($c,$d,$o) $null -ne $o }
         New-CapsulenvDesiredStateNode -Id 'persist-relocation' -ParallelSafe `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///scoop/persist') `
             -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipPersistRepairs)-and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvPersistRelocationRepair -RelocationContext $c.RelocationContext } `
-            -Verify { param($c,$d,$o) $true },
+            -Verify { param($c,$d,$o) $true }
         New-CapsulenvDesiredStateNode -Id 'project-cache-links' -ParallelSafe `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///project-cache/registry') `
             -WriteResources @('capsule:///project-cache','host:///project-cache-links') `
             -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipToolRepairs)-and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Repair-CapsulenvProjectCacheLinks -Strict:$c.StrictToolRepairs -Quiet } `
-            -Verify { param($c,$d,$o) $true },
+            -Verify { param($c,$d,$o) $true }
         New-CapsulenvDesiredStateNode -Id 'tool-relocation' `
             -DependsOn 'project-cache-links' `
             -ReadResources @('capsule:///tool-storage/configuration') `
             -WriteResources @('capsule:///tool-data','capsule:///tool-storage') `
             -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipToolRepairs)-and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepair -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
-            -Verify { param($c,$d,$o) $true },
+            -Verify { param($c,$d,$o) $true }
         New-CapsulenvDesiredStateNode -Id 'user-integration' `
             -DependsOn @('persist-relocation','tool-relocation') `
             -ReadResources @('capsule:///packages/installed-state') `
             -WriteResources @('host:///environment/user','host:///start-menu/capsulenv') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvUserEnvironment -RelocationContext $c.RelocationContext } `
-            -Verify { param($c,$d,$o) $true },
+            -Verify { param($c,$d,$o) $true }
         New-CapsulenvDesiredStateNode -Id 'rehydration-state' `
             -DependsOn @('persist-relocation','tool-relocation','user-integration') `
             -ReadResources @('capsule:///state/rehydration') `
