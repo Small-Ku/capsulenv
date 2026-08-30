@@ -164,6 +164,7 @@ function Invoke-CapsulenvEject {
     param([switch]$Force)
 
     [void](Set-CapsulenvSessionEnvironment)
+    [void](Invoke-CapsulenvRoutines -Trigger OnEject)
     $dirtyRepositories = @(Get-CapsulenvDirtyRepositories)
     foreach ($repository in $dirtyRepositories) {
         Write-CapsulenvMessage -Level Warning -Message ("Dirty workspace repository: {0} ({1} change line(s))" -f $repository.Path, $repository.Changes)

@@ -226,17 +226,19 @@
         StatePath = 'bitwarden-appdata\data.json'
     }
 
-    SingBox = @{
-        Enabled = $true
-        # Installed Scoop app selector. `user/` or `global/` may be used when
-        # the same manifest exists in both portable roots.
-        App = 'sing-box'
-        BinName = 'sing-box'
-        # Paths are relative to the selected app's Scoop persist root.
-        ConfigPath = 'config.json'
-        ConfigDirectory = ''
-        AutoConnect = $true
-        ExtraArguments = @()
+    # Capsule-local lifecycle triggers. These routines are intentionally
+    # application-agnostic: long-lived workload policy belongs to an external
+    # orchestrator such as NyaModule, while Capsulenv only supplies lifecycle
+    # events and relocation-safe process execution.
+    Routines = @{
+        # Example = @{
+        #     Enabled = $true
+        #     Trigger = @('OnEnter', 'OnRehydrate')
+        #     Command = 'nya'
+        #     Arguments = @('job', 'portable-sync')
+        #     MinimumIntervalSeconds = 300
+        #     FailurePolicy = 'Warn'
+        # }
     }
 
     Browsers = @{

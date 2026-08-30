@@ -902,7 +902,12 @@ function Invoke-CapsulenvChildShell {
     if ([string]::IsNullOrWhiteSpace($Command)) {
         Write-CapsulenvMessage -Level Success -Message "capsulenv active at $env:CAPSULENV_ROOT"
     }
-    Invoke-CapsulenvProcessPlan -Plan $launchPlan
+    [void](Invoke-CapsulenvRoutines -Trigger OnEnter)
+    try {
+        Invoke-CapsulenvProcessPlan -Plan $launchPlan
+    } finally {
+        [void](Invoke-CapsulenvRoutines -Trigger OnExit)
+    }
 }
 
 function Invoke-CapsulenvExternalCommand {

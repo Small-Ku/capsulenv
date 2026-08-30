@@ -302,6 +302,7 @@ function Invoke-CapsulenvScoopRehydrate {
     $state = @($results | Where-Object Id -eq 'rehydration-state' | Select-Object -Last 1).Output
     if ($null -ne $state -and [bool]$state.ProjectionRepairComplete) { Write-CapsulenvMessage -Level Success -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode." }
     else { Write-CapsulenvMessage -Level Warning -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode with a deferred legacy app projection; it will be retried automatically." }
+    [void](Invoke-CapsulenvRoutines -Trigger OnRehydrate)
     return $results
 }
 

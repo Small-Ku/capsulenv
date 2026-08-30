@@ -252,4 +252,16 @@ Describe 'Capsulenv app command trust boundary' {
         ($rootRemediation -join ' ') | Should -Match 'capsulenv help'
     }
 
+    It 'routes app exec through provider-neutral installed-app execution' {
+        Mock Invoke-CapsulenvInstalledAppExecutable { } -ModuleName Capsulenv
+
+        & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('exec', 'scoop:global/rclone', 'rclone', '--', 'version') }
+
+        Should -Invoke Invoke-CapsulenvInstalledAppExecutable -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $App -eq 'scoop:global/rclone' -and $BinName -eq 'rclone' -and
+            $Arguments.Count -eq 1 -and $Arguments[0] -eq 'version'
+        }
+    }
+
+
 }

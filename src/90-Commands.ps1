@@ -220,19 +220,6 @@ ShellOnly keeps Git/service changes process-only; User mode may own reversible
 current-user integration.
 '@ | Write-Host
         }
-        'sing-box' {
-@'
-sing-box private-network commands
-  capsulenv.cmd sing-box status
-  capsulenv.cmd sing-box check
-  capsulenv.cmd sing-box connect
-  capsulenv.cmd sing-box disconnect [--force]
-
-The executable and configuration are resolved from SingBox.App and that
-installed Scoop manifest/persist root. Automatic connection only runs when the
-selected app is installed and its persisted configuration is non-empty.
-'@ | Write-Host
-        }
         default {
             if (Write-CapsulenvCliCommandHelp -Command $topicName) { return }
             $remediation = New-Object System.Collections.Generic.List[string]
@@ -891,7 +878,7 @@ function Invoke-CapsulenvAppCommand {
         }
         'exec' {
             if ($remaining.Count -lt 2) {
-                throw (New-CapsulenvCliUsageError -Message 'app exec requires a capsule app and bin alias.' -Usage 'capsulenv app exec capsule/<app> <bin> [-- arguments...]' -Topic app)
+                throw (New-CapsulenvCliUsageError -Message 'app exec requires an installed app selector and bin alias.' -Usage 'capsulenv app exec <installed-app> <bin> [-- arguments...]' -Topic app)
             }
             $selector = [string]$remaining[0]
             $binName = [string]$remaining[1]
@@ -899,7 +886,7 @@ function Invoke-CapsulenvAppCommand {
             if ($tail.Count -gt 0 -and [string]$tail[0] -eq '--') {
                 $tail = @($tail | Select-Object -Skip 1)
             }
-            return Invoke-CapsulenvPackageExecutable -App $selector -BinName $binName -Arguments $tail
+            return Invoke-CapsulenvInstalledAppExecutable -App $selector -BinName $binName -Arguments $tail
         }
         default {
             throw (New-CapsulenvCliUnknownActionError -Group app -Action $action -Id 'Capsulenv.Cli.UnknownAppAction')
@@ -1088,7 +1075,7 @@ function Invoke-Capsulenv {
         'zen' { Invoke-CapsulenvBrowserCommand -App zen-browser -Arguments $remaining }
         'librewolf' { Invoke-CapsulenvBrowserCommand -App librewolf -Arguments $remaining }
         'bitwarden' { Invoke-CapsulenvBitwardenCommand -Arguments $remaining }
-        'sing-box' { Invoke-CapsulenvSingBoxCommand -Arguments $remaining }
+        'routine' { Invoke-CapsulenvRoutineCommand -Arguments $remaining }
         'help' {
             $helpArguments = @($remaining)
             if ($helpArguments.Count -gt 2) { throw 'Usage: help [topic] [action]' }

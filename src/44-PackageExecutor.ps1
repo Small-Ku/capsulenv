@@ -1072,6 +1072,43 @@ function Set-CapsulenvPackageProcessEnvironment {
     return $environment
 }
 
+function Get-CapsulenvInstalledAppProcessPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$App,
+        [Parameter(Mandatory = $true)][string]$BinName,
+        [string[]]$Arguments = @(),
+        [AllowNull()][string]$WorkingDirectory = $null,
+        [ValidateSet('Passthrough','Detached')][string]$ExecutionMode = 'Passthrough'
+    )
+
+    $installed = Get-CapsulenvInstalledApp -Selector $App
+    $executable = Resolve-CapsulenvScoopAppExecutable -App $installed.Selector -BinName $BinName
+    $environment = [pscustomobject]@{ PathEntries=@(); Variables=[ordered]@{} }
+    if ([string]$installed.Scope -eq 'Capsule') {
+        $environment = Get-CapsulenvPackageEnvironmentPlan -Installed $installed
+    }
+    $plan = New-CapsulenvProcessPlan `
+        -Executable $executable `
+        -Arguments @($Arguments) `
+        -WorkingDirectory $WorkingDirectory `
+        -Environment $environment.Variables `
+        -PathEntries @($environment.PathEntries) `
+        -ExecutionMode $ExecutionMode `
+        -Metadata ([ordered]@{
+            App = [string]$installed.Selector
+            BinName = $BinName
+            Provider = [string]$installed.Provider
+            ProviderScope = $installed.ProviderScope
+            Ownership = [string]$installed.Ownership
+        })
+    $plan | Add-Member -NotePropertyName App -NotePropertyValue ([string]$installed.Selector)
+    $plan | Add-Member -NotePropertyName BinName -NotePropertyValue $BinName
+    $plan | Add-Member -NotePropertyName FilePath -NotePropertyValue $plan.Executable
+    $plan | Add-Member -NotePropertyName Variables -NotePropertyValue $plan.Environment
+    return $plan
+}
+
 function Get-CapsulenvPackageProcessPlan {
     [CmdletBinding()]
     param(
@@ -1081,7 +1118,7 @@ function Get-CapsulenvPackageProcessPlan {
 
     $installed = Get-CapsulenvInstalledApp -Selector $App
     if ([string]$installed.Scope -ne 'Capsule') {
-        throw "app exec is reserved for Capsulenv-owned PortableSafe packages: $App"
+        throw "Package execution is reserved for Capsulenv-owned PortableSafe packages: $App"
     }
     $matches = @(Get-CapsulenvScoopAppBins -App $installed.Selector | Where-Object {
         [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, $BinName)
@@ -1098,6 +1135,26 @@ function Get-CapsulenvPackageProcessPlan {
     return $plan
 }
 
+function Invoke-CapsulenvInstalledAppExecutable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$App,
+        [Parameter(Mandatory = $true)][string]$BinName,
+        [string[]]$Arguments = @(),
+        [AllowNull()][string]$WorkingDirectory = $null,
+        [ValidateSet('Passthrough','Detached')][string]$ExecutionMode = 'Passthrough'
+    )
+
+    [void](Set-CapsulenvSessionEnvironment)
+    $plan = Get-CapsulenvInstalledAppProcessPlan `
+        -App $App `
+        -BinName $BinName `
+        -Arguments $Arguments `
+        -WorkingDirectory $WorkingDirectory `
+        -ExecutionMode $ExecutionMode
+    return Invoke-CapsulenvProcessPlan -Plan $plan
+}
+
 function Invoke-CapsulenvPackageExecutable {
     [CmdletBinding()]
     param(
@@ -1112,4 +1169,4 @@ function Invoke-CapsulenvPackageExecutable {
     Invoke-CapsulenvProcessPlan -Plan $plan
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvPackageInstallPlan, Install-CapsulenvPortablePackage, Update-CapsulenvPortablePackage, Repair-CapsulenvPackageProjections
+##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvPackageInstallPlan, Install-CapsulenvPortablePackage, Update-CapsulenvPortablePackage, Repair-CapsulenvPackageProjections, Get-CapsulenvInstalledAppProcessPlan, Invoke-CapsulenvInstalledAppExecutable

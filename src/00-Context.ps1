@@ -86,6 +86,8 @@ function Get-CapsulenvRuntimeContext {
             PackagePlanFeatures = @('ExecutableAliases')
             PackagePlanSchemaVersion = 2
             TrustModes = @('PortableSafe', 'TrustedExecution')
+            InstalledAppExecution = 'ProcessPlanV1'
+            LifecycleRoutineTriggers = @('OnEnter', 'OnExit', 'OnRehydrate', 'OnEject')
         }
     }
 }

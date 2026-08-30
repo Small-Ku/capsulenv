@@ -52,6 +52,7 @@ try {
 
     $files = @(
         @{ Source = 'packaging/capsulenv.cmd'; Destination = 'capsulenv.cmd' }
+        @{ Source = 'packaging/capsulenv-runtime.ps1'; Destination = 'capsulenv-runtime.ps1' }
         @{ Source = 'packaging/install.cmd'; Destination = 'install.cmd' }
         @{ Source = 'README.md'; Destination = 'README.md' }
         @{ Source = 'scripts/Install-Capsulenv.ps1'; Destination = 'scripts/Install-Capsulenv.ps1' }
@@ -133,6 +134,7 @@ try {
 
     $installFiles = @(
         'capsulenv.cmd'
+        'capsulenv-runtime.ps1'
         'bin/firefox-capsulenv.cmd'
         'bin/librewolf-capsulenv.cmd'
         'bin/zen-capsulenv.cmd'

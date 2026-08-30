@@ -207,42 +207,6 @@ function Invoke-CapsulenvDoctor {
         }
     }
 
-    if ($configuration.SingBox.Enabled) {
-        try {
-            $singBoxStatus = Get-CapsulenvSingBoxStatus
-            $availabilityDetail = if ($singBoxStatus.Installed) {
-                [string]$singBoxStatus.Executable
-            } elseif (-not [string]::IsNullOrWhiteSpace([string]$singBoxStatus.AvailabilityError)) {
-                [string]$singBoxStatus.AvailabilityError
-            } else {
-                "Scoop app '$($singBoxStatus.App)' is not installed"
-            }
-            $results.Add((New-CapsulenvCheckResult `
-                -Name 'sing-box selected app' `
-                -Passed ([bool]$singBoxStatus.Installed) `
-                -Importance Optional `
-                -Detail $availabilityDetail))
-            if ($singBoxStatus.Installed) {
-                $results.Add((New-CapsulenvCheckResult `
-                    -Name 'sing-box persisted configuration' `
-                    -Passed ([bool]$singBoxStatus.Configured) `
-                    -Importance Optional `
-                    -Detail $(if ($singBoxStatus.Configured) { [string]$singBoxStatus.Configuration } else { 'No non-empty selected Scoop-persisted configuration' })))
-                $results.Add((New-CapsulenvCheckResult `
-                    -Name 'sing-box process ownership' `
-                    -Passed ([int]$singBoxStatus.ForeignProcesses -eq 0) `
-                    -Importance Optional `
-                    -Detail ("Running={0}; capsule-owned PIDs={1}; foreign same-name processes={2}" -f $singBoxStatus.Running, (@($singBoxStatus.CapsuleOwnedPids) -join ','), $singBoxStatus.ForeignProcesses)))
-            }
-        } catch {
-            $results.Add((New-CapsulenvCheckResult `
-                -Name 'sing-box selected app' `
-                -Passed $false `
-                -Importance Optional `
-                -Detail $_.Exception.Message))
-        }
-    }
-
     $browserConfiguration = Get-CapsulenvConfiguration
     foreach ($browserName in @($browserConfiguration.Browsers.Keys)) {
         $definition = $browserConfiguration.Browsers[$browserName]
@@ -374,7 +338,6 @@ function Initialize-CapsulenvIntegrations {
         Sync-CapsulenvPackageStartMenuShortcuts
     }
     Initialize-CapsulenvBitwarden
-    Initialize-CapsulenvSingBox
 }
 
 function Initialize-Capsulenv {
@@ -396,7 +359,6 @@ function Initialize-Capsulenv {
         -StrictToolRepairs:$StrictToolRepairs
     [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden
-    Initialize-CapsulenvSingBox
 
     $context = Get-CapsulenvContext
     Write-CapsulenvMessage -Level Success -Message "capsulenv initialized at $($context.Root)"

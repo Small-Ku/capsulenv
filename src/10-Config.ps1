@@ -119,7 +119,7 @@ function Assert-CapsulenvConfiguration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][hashtable]$Configuration)
 
-    foreach ($sectionName in @('Packages', 'Scoop', 'Environment', 'ToolStorage', 'Bitwarden', 'SingBox', 'Browsers', 'UserIntegration')) {
+    foreach ($sectionName in @('Packages', 'Scoop', 'Environment', 'ToolStorage', 'Bitwarden', 'Routines', 'Browsers', 'UserIntegration')) {
         if (-not $Configuration.ContainsKey($sectionName) -or $Configuration[$sectionName] -isnot [hashtable]) {
             throw "Configuration section is missing or invalid: $sectionName"
         }
@@ -288,46 +288,55 @@ function Assert-CapsulenvConfiguration {
         Assert-CapsulenvScoopIntegrationRelativePath -Name 'Bitwarden.ExecutablePath' -Path ([string]$Configuration.Bitwarden.ExecutablePath)
     }
 
-    foreach ($booleanName in @('Enabled', 'AutoConnect')) {
-        if (-not $Configuration.SingBox.ContainsKey($booleanName) -or $Configuration.SingBox[$booleanName] -isnot [bool]) {
-            throw "SingBox.$booleanName must be Boolean."
+    foreach ($routineName in @($Configuration.Routines.Keys)) {
+        if ([string]::IsNullOrWhiteSpace([string]$routineName)) {
+            throw 'Routines contains an empty routine name.'
         }
-    }
-    if (-not $Configuration.SingBox.ContainsKey('App') -or [string]::IsNullOrWhiteSpace([string]$Configuration.SingBox.App)) {
-        throw 'SingBox.App must select an installed app.'
-    }
-    [void](Split-CapsulenvInstalledAppSelector -Selector ([string]$Configuration.SingBox.App))
-    if ($Configuration.SingBox.ContainsKey('ExecutablePath') -and -not [string]::IsNullOrWhiteSpace([string]$Configuration.SingBox.ExecutablePath)) {
-        Assert-CapsulenvScoopIntegrationRelativePath -Name 'SingBox.ExecutablePath' -Path ([string]$Configuration.SingBox.ExecutablePath)
-    }
-    $singBoxConfigPath = if ($Configuration.SingBox.ContainsKey('ConfigPath')) { [string]$Configuration.SingBox.ConfigPath } else { '' }
-    $singBoxConfigDirectory = if ($Configuration.SingBox.ContainsKey('ConfigDirectory')) { [string]$Configuration.SingBox.ConfigDirectory } else { '' }
-    if ([string]::IsNullOrWhiteSpace($singBoxConfigPath) -and [string]::IsNullOrWhiteSpace($singBoxConfigDirectory)) {
-        throw 'SingBox must configure ConfigPath or ConfigDirectory.'
-    }
-    if (-not [string]::IsNullOrWhiteSpace($singBoxConfigPath)) {
-        Assert-CapsulenvScoopIntegrationRelativePath -Name 'SingBox.ConfigPath' -Path $singBoxConfigPath
-    }
-    if (-not [string]::IsNullOrWhiteSpace($singBoxConfigDirectory)) {
-        Assert-CapsulenvScoopIntegrationRelativePath -Name 'SingBox.ConfigDirectory' -Path $singBoxConfigDirectory
+        $routine = $Configuration.Routines[$routineName]
+        if ($routine -isnot [hashtable]) {
+            throw "Routines.$routineName must be a hashtable."
+        }
+        if ($routine.ContainsKey('Enabled') -and $routine.Enabled -isnot [bool]) {
+            throw "Routines.$routineName.Enabled must be Boolean."
+        }
+        $triggers = @($routine.Trigger)
+        if ($triggers.Count -eq 0) {
+            throw "Routines.$routineName.Trigger must contain at least one lifecycle trigger."
+        }
+        foreach ($trigger in $triggers) {
+            if ([string]$trigger -notin @('OnEnter', 'OnExit', 'OnRehydrate', 'OnEject')) {
+                throw "Routines.$routineName.Trigger contains unsupported trigger '$trigger'."
+            }
+        }
+        $command = if ($routine.ContainsKey('Command')) { [string]$routine.Command } else { '' }
+        $app = if ($routine.ContainsKey('App')) { [string]$routine.App } else { '' }
+        $binName = if ($routine.ContainsKey('BinName')) { [string]$routine.BinName } else { '' }
+        $hasCommand = -not [string]::IsNullOrWhiteSpace($command)
+        $hasApp = -not [string]::IsNullOrWhiteSpace($app)
+        $hasBin = -not [string]::IsNullOrWhiteSpace($binName)
+        if (($hasCommand -and ($hasApp -or $hasBin)) -or (-not $hasCommand -and -not ($hasApp -and $hasBin))) {
+            throw "Routines.$routineName must configure either Command or App plus BinName, but not both."
+        }
+        if (-not [string]::IsNullOrWhiteSpace($app)) {
+            if ([string]::IsNullOrWhiteSpace($binName)) {
+                throw "Routines.$routineName.BinName is required when App is configured."
+            }
+            [void](Split-CapsulenvInstalledAppSelector -Selector $app)
+        }
+        if ($routine.ContainsKey('Mode') -and [string]$routine.Mode -notin @('Passthrough', 'Detached')) {
+            throw "Routines.$routineName.Mode must be Passthrough or Detached."
+        }
+        if ($routine.ContainsKey('FailurePolicy') -and [string]$routine.FailurePolicy -notin @('Warn', 'Stop')) {
+            throw "Routines.$routineName.FailurePolicy must be Warn or Stop."
+        }
+        if ($routine.ContainsKey('MinimumIntervalSeconds') -and [int64]$routine.MinimumIntervalSeconds -lt 0) {
+            throw "Routines.$routineName.MinimumIntervalSeconds must not be negative."
+        }
+        if ($routine.ContainsKey('WorkingDirectory') -and -not [string]::IsNullOrWhiteSpace([string]$routine.WorkingDirectory)) {
+            Assert-CapsulenvPortableStoragePath -Name "Routines.$routineName.WorkingDirectory" -Path ([string]$routine.WorkingDirectory)
+        }
     }
 
-    foreach ($name in @('PathVariables', 'Variables')) {
-        if (
-            -not $Configuration.Environment.ContainsKey($name) -or
-            $Configuration.Environment[$name] -isnot [hashtable]
-        ) {
-            throw "Environment configuration value must be a hashtable: $name"
-        }
-    }
-    foreach ($name in @('PathVariables', 'FileVariables', 'Variables')) {
-        if (
-            -not $Configuration.ToolStorage.ContainsKey($name) -or
-            $Configuration.ToolStorage[$name] -isnot [hashtable]
-        ) {
-            throw "ToolStorage configuration value must be a hashtable: $name"
-        }
-    }
     if (-not $Configuration.Environment.ContainsKey('Path')) {
         throw 'Environment configuration value is missing: Path'
     }

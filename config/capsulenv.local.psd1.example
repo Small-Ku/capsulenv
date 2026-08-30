@@ -33,14 +33,17 @@
         Authorization = 'always'
     }
 
-    SingBox = @{
-        # Any compatible installed Scoop app selector. Empty/missing persisted
-        # config makes AutoConnect a no-op rather than a download/provision step.
-        # App = 'global/my-sing-box'
-        # BinName = 'sing-box'
-        # ConfigPath = 'config.json'
-        # ConfigDirectory = ''
-        # AutoConnect = $true
+    Routines = @{
+        # Keep workload semantics outside Capsulenv. This example asks NyaModule
+        # to reconcile a portable job when the capsule becomes active.
+        # Network = @{
+        #     Enabled = $true
+        #     Trigger = @('OnEnter', 'OnRehydrate')
+        #     Command = 'nya'
+        #     Arguments = @('job', 'portable-network')
+        #     MinimumIntervalSeconds = 60
+        #     FailurePolicy = 'Warn'
+        # }
     }
 
     UserIntegration = @{

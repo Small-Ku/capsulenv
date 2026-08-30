@@ -630,8 +630,8 @@ Describe 'Capsulenv static and relocation' {
             -Condition ([string]$config.Bitwarden.App -eq 'bitwarden') `
             -Message 'Bitwarden must default to a manifest app selector.'
         Assert-CapsulenvTest `
-            -Condition ([string]$config.SingBox.App -eq 'sing-box') `
-            -Message 'sing-box must default to a manifest app selector.'
+            -Condition ($config.ContainsKey('Routines') -and -not $config.ContainsKey('SingBox')) `
+            -Message 'workload lifecycle policy must use generic Routines rather than a sing-box specialization.'
         Assert-CapsulenvTest `
             -Condition ([string]$config.ToolStorage.Relocation.Uv.App -eq 'uv') `
             -Message 'uv relocation must default to a manifest app selector.'
