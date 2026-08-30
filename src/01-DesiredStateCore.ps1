@@ -398,7 +398,7 @@ try {
         $results = New-Object System.Collections.Generic.List[object]
         foreach ($job in $jobs.ToArray()) {
             $workerOutput = @($job.PowerShell.EndInvoke($job.Async))
-            $worker = $workerOutput | Select-Object -Last 1
+            $worker = if ($workerOutput.Count -gt 0) { $workerOutput[$workerOutput.Count - 1] } else { $null }
             if ($null -eq $worker) {
                 throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelWorkerNoResult' -Message ("Parallel worker returned no result for desired-state node '{0}'." -f $job.Decision.Id) -TargetObject $job.Decision.Id)
             }
