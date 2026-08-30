@@ -85,6 +85,7 @@ Describe 'Capsulenv app command trust boundary' {
             param($ErrorRecord)
             Get-CapsulenvDiagnosticRemediation -ErrorRecord $ErrorRecord
         } $errorRecord
+        ($remediation -join ' ') | Should -Match 'app review demo'
         ($remediation -join ' ') | Should -Match '--allow-trusted'
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
     }
@@ -163,6 +164,8 @@ Describe 'Capsulenv app command trust boundary' {
         }
 
         $errorRecord.FullyQualifiedErrorId | Should -Be 'Capsulenv.Package.TrustedUpdateRequired'
+        $remediation = & $script:Module { param($record) @(Get-CapsulenvDiagnosticRemediation -ErrorRecord $record) } $errorRecord
+        ($remediation -join ' ') | Should -Match 'app review user/demo'
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
     }
 
@@ -199,6 +202,30 @@ Describe 'Capsulenv app command trust boundary' {
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
             $Arguments.Count -eq 1 -and $Arguments[0] -eq 'update'
         }
+    }
+
+    It 'exposes the dedicated trusted review contract through app review --json' {
+        Mock Get-CapsulenvPackageReviewPlan {
+            [pscustomobject][ordered]@{
+                SchemaVersion = 1
+                Reference = 'main/demo'
+                Classification = 'TrustedExecutionRequired'
+                ReviewRequired = $true
+                Packages = @([pscustomobject][ordered]@{
+                    Reference='main/demo'; Version='1.0'; Architecture='64bit'; Classification='TrustedScript';
+                    ManifestPath='C:\bucket\demo.json'; ManifestSha256=('a' * 64); Reasons=@('post_install');
+                    ReviewItems=@([pscustomobject][ordered]@{ Field='post_install'; Kind='LifecycleScript'; Summary='script'; Lines=@('Write-Output demo') })
+                })
+                Checklist = @('inspect it')
+                RecommendedAction = 'review then allow trusted'
+            }
+        } -ModuleName Capsulenv
+
+        $json = & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('review', 'demo', '--json') }
+        $contract = $json | ConvertFrom-Json
+        $contract.ReviewRequired | Should -BeTrue
+        $contract.Packages[0].ReviewItems[0].Field | Should -Be 'post_install'
+        $contract.Packages[0].ReviewItems[0].Lines[0] | Should -Be 'Write-Output demo'
     }
 
     It 'returns structured guidance for unknown command surfaces' {
