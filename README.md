@@ -252,7 +252,7 @@ Routines = @{
 }
 ```
 
-Supported events are `OnEnter`, `OnExit`, `OnRehydrate`, and `OnEject`. `MinimumIntervalSeconds` is persisted under capsule state so repeated activation does not have to repeat an expensive reconciliation. `capsulenv.cmd routine list` shows the last-run state, and `capsulenv.cmd routine run <trigger> [name] [--force]` invokes a trigger explicitly. Routines can also target an installed app with `App` + `BinName`; they do not contain application-specific policy.
+Supported events are `OnEnter`, `OnExit`, `OnRehydrate`, and `OnEject`. Commands launched by these routines inherit the active capsule environment, including relocation-correct `CAPSULENV_ROOT` and `CAPSULENV_LAUNCHER`, so an orchestrator such as NyaModule does not need a separate capsule ID or drive-letter discovery pass. `MinimumIntervalSeconds` is persisted under capsule state so repeated activation does not have to repeat an expensive reconciliation. `capsulenv.cmd routine list` shows the last-run state, and `capsulenv.cmd routine run <trigger> [name] [--force]` invokes a trigger explicitly. Routines can also target an installed app with `App` + `BinName`; they do not contain application-specific policy.
 
 The provider-neutral runtime boundary is also available directly as `capsulenv.cmd app exec <installed-app> <bin> -- ...`; `capsule/<app>` and `scoop/<app>` share the same resolver.
 

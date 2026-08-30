@@ -232,6 +232,8 @@ Capsulenv does not own sing-box, rclone, backup, network, or other workload sema
 
 Long-lived desired state, retry policy, host boot/logon schedules, network configuration meaning, synchronization direction, and process policy belong above Capsulenv. NyaModule can consume the provider-neutral installed-app execution boundary and use a capsule routine only as a local trigger back into its own control plane. This keeps the portable runtime unaware of the workload it happens to execute.
 
+An activated capsule already exports its current runtime location as process environment: `CAPSULENV_ROOT` is the relocation-correct root and `CAPSULENV_LAUNCHER` identifies the control launcher selected for that session. External orchestration launched from the capsule must consume that inherited session context instead of inventing another capsule locator, scanning drive letters, or requiring a copied identity registry. A fixed `CapsuleRoot` may still be supplied by an external orchestrator when it intentionally runs outside a capsule session.
+
 ## Weasel seed ownership
 
 Weasel integration是 explicit seed/restore workflow：只對可確認的 machine-installed Weasel user-data tree做 cold copy，restore 前先建立 host rollback snapshot。它不是 portable package executor的一部分。
