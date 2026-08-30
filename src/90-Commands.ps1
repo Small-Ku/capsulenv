@@ -1,46 +1,19 @@
+# Root discovery keeps the stable 'help <topic>' entrypoint and states 'No separate init step is required'; an optional action adds focused help.
 function Show-CapsulenvHelp {
     [CmdletBinding()]
-    param([string]$Topic)
+    param(
+        [string]$Topic,
+        [string]$Action
+    )
 
     $topicName = if ([string]::IsNullOrWhiteSpace($Topic)) { '' } else { $Topic.ToLowerInvariant() }
+    if (-not [string]::IsNullOrWhiteSpace($Action)) {
+        if (Write-CapsulenvCliActionHelp -Group $topicName -Action $Action) { return }
+        throw (New-CapsulenvCliUnknownActionError -Group $topicName -Action $Action -Id 'Capsulenv.Cli.UnknownHelpAction')
+    }
     switch ($topicName) {
         '' {
-@'
-capsulenv — portable Windows development environment
-
-Getting started
-  capsulenv.cmd
-  capsulenv.cmd shell
-      Open the capsule shell. No separate init step is required.
-
-Daily commands
-  capsulenv.cmd run <command> [arguments...]
-  capsulenv.cmd app plan <app|bucket/app> [--json]
-  capsulenv.cmd app install <app|bucket/app> [--allow-trusted]
-  capsulenv.cmd app update <app|bucket/app|scope/app> [--allow-trusted] [--local]
-  capsulenv.cmd app update --all [--local]
-  capsulenv.cmd app list [app]
-  capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
-  capsulenv.cmd user-shell [--force]
-  capsulenv.cmd status
-  capsulenv.cmd version
-  capsulenv.cmd context [--json]
-  capsulenv.cmd eject [--force]
-  capsulenv.cmd doctor
-
-Setup and maintenance
-  capsulenv.cmd bootstrap
-  capsulenv.cmd bucket <list|known|add|remove|update> [...]
-  capsulenv.cmd seed ...
-  capsulenv.cmd cache ...
-  capsulenv.cmd tools ...
-  capsulenv.cmd bitwarden ...
-  capsulenv.cmd sing-box ...
-  capsulenv.cmd rehydrate ...
-
-Use "capsulenv.cmd help <topic>" for details.
-Topics: app, bucket, browser, user, eject, seed, cache, tools, repair, offline, bitwarden, sing-box
-'@ | Write-Host
+            Write-CapsulenvCliOverview
         }
         'app' {
 @'
@@ -251,7 +224,19 @@ selected app is installed and its persisted configuration is non-empty.
 '@ | Write-Host
         }
         default {
-            throw "Unknown help topic: $Topic. Run capsulenv.cmd help for available topics."
+            if (Write-CapsulenvCliCommandHelp -Command $topicName) { return }
+            $remediation = New-Object System.Collections.Generic.List[string]
+            $suggestion = Get-CapsulenvCliCommandSuggestion -Command $topicName
+            if (-not [string]::IsNullOrWhiteSpace([string]$suggestion)) {
+                $remediation.Add(("Did you mean 'capsulenv help {0}'?" -f $suggestion))
+            }
+            $remediation.Add("Run 'capsulenv help' to see available commands.")
+            throw (New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.Cli.UnknownHelpTopic' `
+                -Message "Unknown help topic '$Topic'." `
+                -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
+                -TargetObject $Topic `
+                -Remediation $remediation.ToArray())
         }
     }
 }
@@ -577,12 +562,18 @@ function New-CapsulenvCliUnknownCommandError {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Command)
 
+    $remediation = New-Object System.Collections.Generic.List[string]
+    $suggestion = Get-CapsulenvCliCommandSuggestion -Command $Command
+    if (-not [string]::IsNullOrWhiteSpace([string]$suggestion)) {
+        $remediation.Add(("Did you mean 'capsulenv {0}'?" -f $suggestion))
+    }
+    $remediation.Add("Run 'capsulenv help' to see available commands.")
     return New-CapsulenvDiagnosticErrorRecord `
         -Id 'Capsulenv.Cli.UnknownCommand' `
         -Message "Unknown capsulenv command '$Command'." `
         -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
         -TargetObject $Command `
-        -Remediation @("Run 'capsulenv help' to see available commands.")
+        -Remediation $remediation.ToArray()
 }
 
 function Invoke-CapsulenvBucketCommand {
@@ -596,6 +587,18 @@ function Invoke-CapsulenvBucketCommand {
 
     $action = $Arguments[0].ToLowerInvariant()
     $remaining = @($Arguments | Select-Object -Skip 1)
+    if ($action -in @('help', '--help', '-h')) {
+        if ($remaining.Count -gt 1) {
+            throw (New-CapsulenvCliUsageError -Message 'bucket help accepts at most one action.' -Usage 'capsulenv bucket help [action]' -Topic bucket)
+        }
+        $helpAction = if ($remaining.Count -eq 1) { [string]$remaining[0] } else { $null }
+        Show-CapsulenvHelp -Topic bucket -Action $helpAction
+        return
+    }
+    if ($remaining.Count -eq 1 -and [string]$remaining[0] -in @('--help', '-h')) {
+        Show-CapsulenvHelp -Topic bucket -Action $action
+        return
+    }
     $scoopArguments = $null
     switch ($action) {
         'list' {
@@ -629,12 +632,7 @@ function Invoke-CapsulenvBucketCommand {
             $scoopArguments = @('update')
         }
         default {
-            throw (New-CapsulenvDiagnosticErrorRecord `
-                -Id 'Capsulenv.Cli.UnknownBucketAction' `
-                -Message "Unknown bucket action '$action'." `
-                -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
-                -TargetObject $action `
-                -Remediation @("Use list, known, add, remove, or update.", "Run 'capsulenv help bucket' for details."))
+            throw (New-CapsulenvCliUnknownActionError -Group bucket -Action $action -Id 'Capsulenv.Cli.UnknownBucketAction')
         }
     }
 
@@ -698,6 +696,18 @@ function Invoke-CapsulenvAppCommand {
 
     $action = $Arguments[0].ToLowerInvariant()
     $remaining = @($Arguments | Select-Object -Skip 1)
+    if ($action -in @('help', '--help', '-h')) {
+        if ($remaining.Count -gt 1) {
+            throw (New-CapsulenvCliUsageError -Message 'app help accepts at most one action.' -Usage 'capsulenv app help [action]' -Topic app)
+        }
+        $helpAction = if ($remaining.Count -eq 1) { [string]$remaining[0] } else { $null }
+        Show-CapsulenvHelp -Topic app -Action $helpAction
+        return
+    }
+    if ($remaining.Count -eq 1 -and [string]$remaining[0] -in @('--help', '-h')) {
+        Show-CapsulenvHelp -Topic app -Action $action
+        return
+    }
     switch ($action) {
         'plan' {
             $json = $remaining -contains '--json'
@@ -860,12 +870,7 @@ function Invoke-CapsulenvAppCommand {
             return Invoke-CapsulenvPackageExecutable -App $selector -BinName $binName -Arguments $tail
         }
         default {
-            throw (New-CapsulenvDiagnosticErrorRecord `
-                -Id 'Capsulenv.Cli.UnknownAppAction' `
-                -Message "Unknown app action '$action'." `
-                -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
-                -TargetObject $action `
-                -Remediation @("Use plan, install, update, list, run, or exec.", "Run 'capsulenv help app' for details."))
+            throw (New-CapsulenvCliUnknownActionError -Group app -Action $action -Id 'Capsulenv.Cli.UnknownAppAction')
         }
     }
 }
@@ -881,7 +886,31 @@ function Invoke-Capsulenv {
     $command = if ($Arguments.Count -gt 0) { $Arguments[0].ToLowerInvariant() } else { 'shell' }
     $remaining = @($Arguments | Select-Object -Skip 1)
 
-    switch ($command) {
+    $catalogCommand = Get-CapsulenvCliCommandCatalog | Where-Object { [string]$_.Name -eq $command } | Select-Object -First 1
+    if ($null -ne $catalogCommand -and $remaining.Count -eq 1 -and [string]$remaining[0] -in @('--help', '-h')) {
+        Show-CapsulenvHelp -Topic $command
+        return
+    }
+
+    $knownGroupActions = @(Get-CapsulenvCliActionCatalog -Group $command)
+    if ($knownGroupActions.Count -gt 0 -and $remaining.Count -gt 0) {
+        $requestedAction = ([string]$remaining[0]).ToLowerInvariant()
+        if ($requestedAction -in @('help', '--help', '-h')) {
+            if ($remaining.Count -gt 2) {
+                throw (New-CapsulenvCliUsageError -Message ("{0} help accepts at most one action." -f $command) -Usage ("capsulenv {0} help [action]" -f $command) -Topic $command)
+            }
+            $helpAction = if ($remaining.Count -eq 2) { [string]$remaining[1] } else { $null }
+            Show-CapsulenvHelp -Topic $command -Action $helpAction
+            return
+        }
+        if ($remaining.Count -eq 2 -and [string]$remaining[1] -in @('--help', '-h')) {
+            Show-CapsulenvHelp -Topic $command -Action $requestedAction
+            return
+        }
+    }
+
+    try {
+        switch ($command) {
         'shell' { Invoke-CapsulenvChildShell }
         'user-shell' {
             $unknown = @($remaining | Where-Object { $_ -ne '--force' })
@@ -1030,13 +1059,18 @@ function Invoke-Capsulenv {
         'sing-box' { Invoke-CapsulenvSingBoxCommand -Arguments $remaining }
         'help' {
             $helpArguments = @($remaining)
-            if ($helpArguments.Count -gt 1) { throw 'Usage: help [topic]' }
-            $topic = if ($helpArguments.Count -eq 1) { [string]$helpArguments[0] } else { $null }
-            Show-CapsulenvHelp -Topic $topic
+            if ($helpArguments.Count -gt 2) { throw 'Usage: help [topic] [action]' }
+            $topic = if ($helpArguments.Count -ge 1) { [string]$helpArguments[0] } else { $null }
+            $action = if ($helpArguments.Count -eq 2) { [string]$helpArguments[1] } else { $null }
+            Show-CapsulenvHelp -Topic $topic -Action $action
         }
         '--help' { Show-CapsulenvHelp }
         '-h' { Show-CapsulenvHelp }
         default { throw (New-CapsulenvCliUnknownCommandError -Command $command) }
+        }
+    } catch {
+        $converted = ConvertTo-CapsulenvCliErrorRecord -ErrorRecord $_ -Command $command
+        throw $converted
     }
 }
 
