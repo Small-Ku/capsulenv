@@ -29,6 +29,8 @@ Describe 'Capsulenv PowerShell and seed ownership' {
                 [void](Get-CapsulenvConfiguration -Refresh)
                 $environment = Get-CapsulenvEnvironmentPlan
                 $environment.Variables.CAPSULENV_PSREADLINE_HISTORY | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data/powershell/PSReadLine/ConsoleHost_history.txt')))
+                $environment.Variables.CAPSULENV_LAUNCHER | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'capsulenv.cmd')))
+                [System.IO.Path]::GetFullPath([string]$environment.PathEntries[0]) | Should -Be ([System.IO.Path]::GetFullPath($CapsuleRoot))
 
                 $shellOnly = Get-CapsulenvPowerShellChildLaunchPlan -ShellPath $Pwsh -IntegrationMode ShellOnly
                 @($shellOnly.Arguments) | Should -Contain '-NoProfile'
@@ -36,10 +38,14 @@ Describe 'Capsulenv PowerShell and seed ownership' {
                 $shellCommand | Should -Match ([regex]::Escape((Join-Path (Split-Path -Parent $Pwsh) 'profile.ps1')))
                 $shellCommand | Should -Match ([regex]::Escape((Join-Path (Split-Path -Parent $Pwsh) 'Microsoft.PowerShell_profile.ps1')))
                 $shellCommand | Should -Match 'CAPSULENV_PSREADLINE_HISTORY'
+                $shellCommand | Should -Match 'function global:capsulenv'
+                $shellCommand | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'capsulenv.cmd'))))
 
                 $user = Get-CapsulenvPowerShellChildLaunchPlan -ShellPath $Pwsh -IntegrationMode User
                 @($user.Arguments) | Should -Not -Contain '-NoProfile'
                 [string]$user.Arguments[-1] | Should -Match 'CAPSULENV_PSREADLINE_HISTORY'
+                [string]$user.Arguments[-1] | Should -Match 'function global:capsulenv'
+                [string]$user.Arguments[-1] | Should -Match ([regex]::Escape([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'capsulenv.cmd'))))
                 [string]$user.Arguments[-1] | Should -Not -Match ([regex]::Escape((Join-Path (Split-Path -Parent $Pwsh) 'profile.ps1')))
 
                 $foreign = Join-Path (Split-Path -Parent $CapsuleRoot) 'foreign/pwsh.exe'
@@ -49,6 +55,44 @@ Describe 'Capsulenv PowerShell and seed ownership' {
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
             }
+        }
+    }
+
+    It 'binds source shells to the explicit development launcher instead of an absent root launcher' {
+        $launcher = & $script:Module {
+            param($SourceRoot)
+            Initialize-CapsulenvContext -Root $SourceRoot | Out-Null
+            [void](Get-CapsulenvConfiguration -Refresh)
+            (Get-CapsulenvEnvironmentPlan).Variables.CAPSULENV_LAUNCHER
+        } $script:Root
+        [System.IO.Path]::GetFullPath([string]$launcher) | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:Root 'scripts/capsulenv-dev.cmd')))
+    }
+
+    It 'binds the interactive capsulenv command to the exact active launcher and forwards arguments' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-shell-command-' + [Guid]::NewGuid().ToString('N'))
+        $previousLauncher = $env:CAPSULENV_LAUNCHER
+        $previousCapture = $env:CAPSULENV_TEST_CAPTURE
+        try {
+            [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
+            $launcher = Join-Path $temporaryRoot 'fake-launcher.ps1'
+            $capture = Join-Path $temporaryRoot 'arguments.txt'
+            @'
+[System.IO.File]::WriteAllLines($env:CAPSULENV_TEST_CAPTURE, [string[]]$args)
+'@ | Set-Content -LiteralPath $launcher -Encoding UTF8
+            $env:CAPSULENV_LAUNCHER = $launcher
+            $env:CAPSULENV_TEST_CAPTURE = $capture
+
+            $statement = & $script:Module { param($Path) Get-CapsulenvPowerShellLauncherStartupStatement -LauncherPath $Path } $launcher
+            & ([scriptblock]::Create($statement))
+            (Get-Command capsulenv -CommandType Function).Name | Should -Be 'capsulenv'
+            $env:CAPSULENV_LAUNCHER = (Join-Path $temporaryRoot 'wrong-launcher.cmd')
+            capsulenv app list 'argument with spaces' --flag
+            @(Get-Content -LiteralPath $capture) | Should -Be @('app', 'list', 'argument with spaces', '--flag')
+        } finally {
+            Remove-Item Function:\capsulenv -ErrorAction SilentlyContinue
+            if ($null -eq $previousLauncher) { Remove-Item Env:CAPSULENV_LAUNCHER -ErrorAction SilentlyContinue } else { $env:CAPSULENV_LAUNCHER = $previousLauncher }
+            if ($null -eq $previousCapture) { Remove-Item Env:CAPSULENV_TEST_CAPTURE -ErrorAction SilentlyContinue } else { $env:CAPSULENV_TEST_CAPTURE = $previousCapture }
+            if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }
         }
     }
 

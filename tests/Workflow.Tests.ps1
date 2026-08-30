@@ -39,6 +39,7 @@ Describe 'Capsulenv portable workflow contracts' {
                 $runtimeContext.SchemaVersion | Should -Be 1
                 $runtimeContext.Id | Should -Be (Get-CapsulenvIdentity)
                 $runtimeContext.Root | Should -Be ([System.IO.Path]::GetFullPath($CapsuleRoot))
+                $runtimeContext.Runtime.Launcher | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'capsulenv.cmd')))
                 $runtimeContext.Storage.DataRoot | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'tool-data')))
                 $runtimeContext.Storage.CacheRoot | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'cache')))
                 $runtimeContext.Storage.ProjectCacheRoot | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $CapsuleRoot 'project-cache')))
