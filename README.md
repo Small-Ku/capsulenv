@@ -13,6 +13,14 @@ install.cmd D:\Portable\capsulenv
 D:\Portable\capsulenv\capsulenv.cmd
 ```
 
+進入 Capsulenv 開出的 PowerShell 後，直接用 `capsulenv` 即可；它會綁定目前 active capsule 的 exact launcher，所以不需要 full path，也不會因 PATH 中有另一份 Capsulenv 而跑錯：
+
+```powershell
+capsulenv status
+capsulenv app list
+capsulenv help app
+```
+
 Source checkout 刻意不在 repository root 放 `capsulenv.cmd`／`install.cmd`，避免把開發樹誤認成已安裝 capsule。從 source 安裝請用 `scripts\install.cmd <destination>`；只有 release bundle 才在根目錄提供 `install.cmd`，而工作中的 capsule 根目錄只提供 `capsulenv.cmd`。Installer 完成後直接執行 destination 的 `capsulenv.cmd` 即可；不需要先跑 `doctor` 或 `init`。
 
 第一次啟動若 capsule 還沒有 Scoop core／Main，Capsulenv 會 bootstrap **未修改的 upstream Scoop 與 Main bucket**，供 manifest resolution、bucket 管理和必要的 explicit fallback 使用。安全的日常 package path 是先看 plan，再安裝：

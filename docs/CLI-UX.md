@@ -4,7 +4,7 @@ Capsulenv keeps one command surface and separates discovery, action intent, safe
 
 ## Discovery
 
-Inside an activated capsule, the capsule root is on `PATH`, so `capsulenv` resolves the same `capsulenv.cmd` launcher without requiring a full path. `capsulenv help` is the command index and groups daily commands by task rather than exposing the dispatcher switch as a flat list.
+Inside an activated PowerShell, `capsulenv` is a session function bound to the exact control launcher for that active root. Installed capsules capture `<root>\capsulenv.cmd`; source-development shells capture `scripts\capsulenv-dev.cmd`. `CAPSULENV_LAUNCHER` mirrors that resolved path for environment introspection, while the function itself captures a literal path after profiles load, so later PATH or environment rewrites cannot redirect it to another capsule. The capsule root also remains first on session `PATH` for `cmd.exe` and child-process compatibility. `capsulenv help` is the command index and groups daily commands by task rather than exposing the dispatcher switch as a flat list.
 
 Focused help accepts both forms:
 
