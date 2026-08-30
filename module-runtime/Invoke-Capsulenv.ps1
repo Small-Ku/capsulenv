@@ -93,11 +93,20 @@ try {
     [Console]::Error.WriteLine(('capsulenv: {0}' -f $message))
 
     if ($null -ne $record.Exception) {
+        $hints = $record.Exception.Data['CapsulenvDiagnosticHints']
+        if ($null -ne $hints -and @($hints).Count -gt 0) {
+            [Console]::Error.WriteLine('')
+            [Console]::Error.WriteLine('Hint:')
+            foreach ($line in @($hints)) {
+                [Console]::Error.WriteLine(('  {0}' -f [string]$line))
+            }
+        }
         $remediation = $record.Exception.Data['CapsulenvDiagnosticRemediation']
         if ($null -ne $remediation -and @($remediation).Count -gt 0) {
             [Console]::Error.WriteLine('')
+            [Console]::Error.WriteLine('Try:')
             foreach ($line in @($remediation)) {
-                [Console]::Error.WriteLine([string]$line)
+                [Console]::Error.WriteLine(('  {0}' -f [string]$line))
             }
         }
     }
