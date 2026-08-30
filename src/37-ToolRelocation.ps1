@@ -24,7 +24,7 @@ function Get-CapsulenvPortableToolExecutable {
     )
 
     if (-not [string]::IsNullOrWhiteSpace($ScoopApp)) {
-        $installedScoopApp = Get-CapsulenvInstalledScoopApp -Selector $ScoopApp -AllowMissing
+        $installedScoopApp = Get-CapsulenvInstalledApp -Selector $ScoopApp -AllowMissing
         if ($null -ne $installedScoopApp) {
             $parameters = @{ App = [string]$installedScoopApp.Selector }
             if (-not [string]::IsNullOrWhiteSpace($ScoopExecutablePath)) {

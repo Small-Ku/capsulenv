@@ -107,15 +107,15 @@ Describe 'Capsulenv package TrustedExecution review' {
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $script:Capsule 'scoop/buckets/main/bucket/demo.json') -Encoding UTF8
 
         $review = & $script:Module { Get-CapsulenvPackageReviewPlan -Reference 'user/demo' }
-        $review.RequestReference | Should -Be 'user/demo'
+        $review.RequestReference | Should -Be 'scoop:user/demo'
         $review.Reference | Should -Be 'main/demo'
         $review.Operation | Should -Be 'Update'
         $review.ExecutionBoundary | Should -Be 'TrustedExecution'
         $review.ReviewRequired | Should -BeTrue
-        $review.InstalledSelector | Should -Be 'user/demo'
+        $review.InstalledSelector | Should -Be 'scoop:user/demo'
         $review.Packages[0].Version | Should -Be '2.0.0'
         ($review.Packages[0].ReviewItems[0].Lines -join ' ') | Should -Match 'new-update-script'
-        $review.RecommendedAction | Should -Match 'app update user/demo --allow-trusted'
+        $review.RecommendedAction | Should -Match 'app update scoop:user/demo --allow-trusted'
     }
 
     It 'keeps upstream ownership as a TrustedExecution review boundary even when the new manifest is declarative' {
@@ -134,7 +134,7 @@ Describe 'Capsulenv package TrustedExecution review' {
         $review.ReviewRequired | Should -BeTrue
         $review.Packages | Should -HaveCount 1
         ($review.Packages[0].Reasons -join ' ') | Should -Match 'upstream Scoop-owned'
-        $review.RecommendedAction | Should -Match 'app update user/demo --allow-trusted'
+        $review.RecommendedAction | Should -Match 'app update scoop:user/demo --allow-trusted'
     }
 
     It 'escapes terminal control characters in the review screen without changing the review contract' {
@@ -298,7 +298,7 @@ Describe 'Capsulenv package TrustedExecution review' {
 
         $review = & $script:Module { Get-CapsulenvPackageReviewPlan -Reference 'user/demo' }
         $review.Diff.CompleteOldClosure | Should -BeFalse
-        ($review.Diff.Warnings -join ' ') | Should -Match 'user/missingdep'
+        ($review.Diff.Warnings -join ' ') | Should -Match 'scoop:user/missingdep'
         $review.Diff.RemovedNodes | Should -Not -Contain 'missingdep'
         @($review.Diff.RemovedEdges) | Should -HaveCount 0
     }

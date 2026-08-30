@@ -110,7 +110,12 @@ Describe 'Capsulenv PortableSafe package executor' {
         $resolved = & $script:Module { Get-CapsulenvInstalledScoopApp -Selector demo }
         $resolved.Scope | Should -Be 'Capsule'
         $resolved.Selector | Should -Be 'capsule/demo'
-        (& $script:Module { Get-CapsulenvInstalledScoopApp -Selector user/demo }).Scope | Should -Be 'User'
+        $legacy = & $script:Module { Get-CapsulenvInstalledApp -Selector user/demo }
+        $legacy.Scope | Should -Be 'User'
+        $legacy.Provider | Should -Be 'Scoop'
+        $legacy.ProviderScope | Should -Be 'User'
+        $legacy.Selector | Should -Be 'scoop:user/demo'
+        (& $script:Module { Get-CapsulenvInstalledApp -Selector scoop/demo }).Selector | Should -Be 'scoop:user/demo'
     }
 
     It 'removes obsolete owned shims when a safe package advances to a new version' {

@@ -18,8 +18,8 @@ Describe 'Capsulenv tool executable manifest selection' {
                 Pixi = @{ App = 'pixi'; BinName = 'pixi' }
             }
         } -ModuleName Capsulenv
-        Mock Get-CapsulenvInstalledScoopApp {
-            [pscustomobject]@{ Selector = 'global/private-uv' }
+        Mock Get-CapsulenvInstalledApp {
+            [pscustomobject]@{ Selector = 'scoop:global/private-uv' }
         } -ModuleName Capsulenv
         Mock Resolve-CapsulenvScoopAppExecutable { 'X:\scoop-global\apps\private-uv\current\uv.exe' } -ModuleName Capsulenv
         Mock Test-CapsulenvPortableToolExecutable { $true } -ModuleName Capsulenv
@@ -27,11 +27,11 @@ Describe 'Capsulenv tool executable manifest selection' {
         $resolved = & $script:Module { Get-CapsulenvUvExecutable }
 
         $resolved | Should -Be 'X:\scoop-global\apps\private-uv\current\uv.exe'
-        Should -Invoke Get-CapsulenvInstalledScoopApp -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+        Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
             $Selector -eq 'global/private-uv' -and $AllowMissing
         }
         Should -Invoke Resolve-CapsulenvScoopAppExecutable -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $App -eq 'global/private-uv' -and $BinName -eq 'uv-custom'
+            $App -eq 'scoop:global/private-uv' -and $BinName -eq 'uv-custom'
         }
     }
 
@@ -42,8 +42,8 @@ Describe 'Capsulenv tool executable manifest selection' {
                 Pixi = @{ App = 'user/private-pixi'; BinName = 'pixi-custom' }
             }
         } -ModuleName Capsulenv
-        Mock Get-CapsulenvInstalledScoopApp {
-            [pscustomobject]@{ Selector = 'user/private-pixi' }
+        Mock Get-CapsulenvInstalledApp {
+            [pscustomobject]@{ Selector = 'scoop:user/private-pixi' }
         } -ModuleName Capsulenv
         Mock Resolve-CapsulenvScoopAppExecutable { 'X:\scoop\apps\private-pixi\current\pixi.exe' } -ModuleName Capsulenv
         Mock Test-CapsulenvPortableToolExecutable { $true } -ModuleName Capsulenv
@@ -52,7 +52,7 @@ Describe 'Capsulenv tool executable manifest selection' {
 
         $resolved | Should -Be 'X:\scoop\apps\private-pixi\current\pixi.exe'
         Should -Invoke Resolve-CapsulenvScoopAppExecutable -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $App -eq 'user/private-pixi' -and $BinName -eq 'pixi-custom'
+            $App -eq 'scoop:user/private-pixi' -and $BinName -eq 'pixi-custom'
         }
     }
 
@@ -63,7 +63,7 @@ Describe 'Capsulenv tool executable manifest selection' {
                 Pixi = @{ App = 'pixi'; BinName = 'pixi' }
             }
         } -ModuleName Capsulenv
-        Mock Get-CapsulenvInstalledScoopApp { $null } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstalledApp { $null } -ModuleName Capsulenv
         Mock Resolve-CapsulenvScoopAppExecutable { throw 'must not resolve an absent app' } -ModuleName Capsulenv
         Mock Resolve-CapsulenvPath {
             param($Path, $AllowMissing)

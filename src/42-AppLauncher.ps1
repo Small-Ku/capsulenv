@@ -22,7 +22,7 @@ function Get-CapsulenvJsonPropertyRecord {
     return [pscustomobject]@{ Value = $property.Value }
 }
 
-function Get-CapsulenvScoopAppRootRecord {
+function Get-CapsulenvInstalledAppRootRecord {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -34,6 +34,8 @@ function Get-CapsulenvScoopAppRootRecord {
         $root = Get-CapsulenvPackageRoot
         return [pscustomobject]@{
             Scope = $Scope
+            Provider = 'Capsulenv'
+            ProviderScope = $null
             Root = $root
             AppsRoot = $root
             PersistRoot = Get-CapsulenvPackagePersistRoot
@@ -43,13 +45,28 @@ function Get-CapsulenvScoopAppRootRecord {
     $root = if ($Scope -eq 'Global') { Get-CapsulenvScoopGlobalRoot } else { Get-CapsulenvScoopRoot }
     return [pscustomobject]@{
         Scope = $Scope
+        Provider = 'Scoop'
+        ProviderScope = $Scope
         Root = $root
         AppsRoot = Join-Path $root 'apps'
         PersistRoot = Join-Path $root 'persist'
     }
 }
 
-function Split-CapsulenvScoopAppSelector {
+function Get-CapsulenvScoopAppRootRecord {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Capsule', 'User', 'Global')]
+        [string]$Scope
+    )
+
+    # Compatibility name for legacy relocation code. The primary abstraction
+    # is provider-neutral because Capsule is not a Scoop scope.
+    return Get-CapsulenvInstalledAppRootRecord -Scope $Scope
+}
+
+function Split-CapsulenvInstalledAppSelector {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Selector)
 
@@ -57,19 +74,44 @@ function Split-CapsulenvScoopAppSelector {
         throw 'Installed app selector must not be empty.'
     }
 
-    $scope = $null
+    $provider = $null
+    $providerScope = $null
+    $legacyAlias = $false
     $name = $Selector
     $separator = $Selector.IndexOf('/')
     if ($separator -ge 0) {
         if ($separator -eq 0 -or $separator -eq ($Selector.Length - 1) -or $Selector.IndexOf('/', $separator + 1) -ge 0) {
-            throw "Invalid installed app selector '$Selector'. Use <app>, capsule/<app>, user/<app>, or global/<app>."
+            throw "Invalid installed app selector '$Selector'. Use <app>, capsule/<app>, scoop/<app>, scoop:user/<app>, or scoop:global/<app>."
         }
-        $scopeToken = $Selector.Substring(0, $separator).ToLowerInvariant()
-        switch ($scopeToken) {
-            'capsule' { $scope = 'Capsule' }
-            'user' { $scope = 'User' }
-            'global' { $scope = 'Global' }
-            default { throw "Invalid installed app scope '$scopeToken'. Use capsule/<app>, user/<app>, or global/<app>." }
+        $selectorToken = $Selector.Substring(0, $separator).ToLowerInvariant()
+        switch ($selectorToken) {
+            'capsule' {
+                $provider = 'Capsulenv'
+            }
+            'scoop' {
+                $provider = 'Scoop'
+            }
+            'scoop:user' {
+                $provider = 'Scoop'
+                $providerScope = 'User'
+            }
+            'scoop:global' {
+                $provider = 'Scoop'
+                $providerScope = 'Global'
+            }
+            'user' {
+                $provider = 'Scoop'
+                $providerScope = 'User'
+                $legacyAlias = $true
+            }
+            'global' {
+                $provider = 'Scoop'
+                $providerScope = 'Global'
+                $legacyAlias = $true
+            }
+            default {
+                throw "Invalid installed app selector namespace '$selectorToken'. Use capsule/<app> or scoop/<app>; use scoop:user/<app> or scoop:global/<app> only to disambiguate an upstream Scoop root. Legacy user/<app> and global/<app> aliases remain accepted."
+            }
         }
         $name = $Selector.Substring($separator + 1)
     }
@@ -79,24 +121,87 @@ function Split-CapsulenvScoopAppSelector {
     }
 
     return [pscustomobject]@{
-        Scope = $scope
+        Provider = $provider
+        ProviderScope = $providerScope
         Name = $name
+        LegacyAlias = $legacyAlias
     }
 }
 
-function Get-CapsulenvInstalledScoopApp {
+function Test-CapsulenvInstalledAppSelectorEquivalent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Left,
+        [Parameter(Mandatory = $true)][string]$Right
+    )
+
+    try {
+        $leftSelector = Split-CapsulenvInstalledAppSelector -Selector $Left
+        $rightSelector = Split-CapsulenvInstalledAppSelector -Selector $Right
+    } catch {
+        return $false
+    }
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$leftSelector.Name, [string]$rightSelector.Name)) {
+        return $false
+    }
+    if ($null -eq $leftSelector.Provider -or $null -eq $rightSelector.Provider) {
+        return ($null -eq $leftSelector.Provider -and $null -eq $rightSelector.Provider)
+    }
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$leftSelector.Provider, [string]$rightSelector.Provider)) {
+        return $false
+    }
+    if ([string]$leftSelector.Provider -ne 'Scoop') {
+        return $true
+    }
+    if ($null -eq $leftSelector.ProviderScope -or $null -eq $rightSelector.ProviderScope) {
+        return $true
+    }
+    return [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$leftSelector.ProviderScope, [string]$rightSelector.ProviderScope)
+}
+
+function Split-CapsulenvScoopAppSelector {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Selector)
+
+    # Compatibility surface for older internal callers. Scope used to mix the
+    # package provider (Capsulenv) with Scoop's user/global roots. New code
+    # should consume Provider + ProviderScope from Split-CapsulenvInstalledAppSelector.
+    $parsed = Split-CapsulenvInstalledAppSelector -Selector $Selector
+    $legacyScope = if ([string]$parsed.Provider -eq 'Capsulenv') {
+        'Capsule'
+    } elseif ([string]$parsed.Provider -eq 'Scoop' -and $null -ne $parsed.ProviderScope) {
+        [string]$parsed.ProviderScope
+    } else {
+        $null
+    }
+    return [pscustomobject]@{
+        Scope = $legacyScope
+        Provider = $parsed.Provider
+        ProviderScope = $parsed.ProviderScope
+        Name = [string]$parsed.Name
+        LegacyAlias = [bool]$parsed.LegacyAlias
+    }
+}
+
+function Get-CapsulenvInstalledApp {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$Selector,
         [switch]$AllowMissing
     )
 
-    $parsed = Split-CapsulenvScoopAppSelector -Selector $Selector
-    $scopes = if ($null -ne $parsed.Scope) { @([string]$parsed.Scope) } else { @('Capsule', 'User', 'Global') }
+    $parsed = Split-CapsulenvInstalledAppSelector -Selector $Selector
+    $scopes = if ([string]$parsed.Provider -eq 'Capsulenv') {
+        @('Capsule')
+    } elseif ([string]$parsed.Provider -eq 'Scoop') {
+        if ($null -ne $parsed.ProviderScope) { @([string]$parsed.ProviderScope) } else { @('User', 'Global') }
+    } else {
+        @('Capsule', 'User', 'Global')
+    }
     $matches = New-Object System.Collections.Generic.List[object]
 
     foreach ($scope in $scopes) {
-        $rootRecord = Get-CapsulenvScoopAppRootRecord -Scope $scope
+        $rootRecord = Get-CapsulenvInstalledAppRootRecord -Scope $scope
         $packageState = $null
         if ($scope -eq 'Capsule') {
             $packageState = Get-CapsulenvInstalledPackageState -Name $parsed.Name -AllowMissing
@@ -114,26 +219,42 @@ function Get-CapsulenvInstalledScoopApp {
                 continue
             }
         }
+
+        $provider = [string]$rootRecord.Provider
+        $providerScope = $rootRecord.ProviderScope
+        $canonicalSelector = if ($provider -eq 'Capsulenv') {
+            'capsule/{0}' -f $parsed.Name
+        } else {
+            'scoop:{0}/{1}' -f $scope.ToLowerInvariant(), $parsed.Name
+        }
+        $displaySelector = if ($provider -eq 'Capsulenv') { $canonicalSelector } else { 'scoop/{0}' -f $parsed.Name }
+        $legacySelector = if ($provider -eq 'Capsulenv') { $canonicalSelector } else { '{0}/{1}' -f $scope.ToLowerInvariant(), $parsed.Name }
+
         $manifestPath = Join-Path $current 'manifest.json'
         $installPath = Join-Path $current 'install.json'
         if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-            throw "Installed manifest is missing for $($scope.ToLowerInvariant())/$($parsed.Name): $manifestPath"
+            throw "Installed manifest is missing for ${canonicalSelector}: $manifestPath"
         }
         if (-not (Test-Path -LiteralPath $installPath -PathType Leaf)) {
-            throw "Installed metadata is missing for $($scope.ToLowerInvariant())/$($parsed.Name): $installPath"
+            throw "Installed metadata is missing for ${canonicalSelector}: $installPath"
         }
 
         try {
             $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
             $install = Get-Content -LiteralPath $installPath -Raw | ConvertFrom-Json
         } catch {
-            throw "Failed to read installed app metadata for $($scope.ToLowerInvariant())/$($parsed.Name): $($_.Exception.Message)"
+            throw "Failed to read installed app metadata for ${canonicalSelector}: $($_.Exception.Message)"
         }
 
         $matches.Add([pscustomobject]@{
+            Provider = $provider
+            ProviderScope = $providerScope
+            Ownership = if ($provider -eq 'Capsulenv') { 'PortableSafe' } else { 'Upstream' }
             Scope = $scope
             Name = [string]$parsed.Name
-            Selector = ('{0}/{1}' -f $scope.ToLowerInvariant(), $parsed.Name)
+            Selector = $canonicalSelector
+            DisplaySelector = $displaySelector
+            LegacySelector = $legacySelector
             Root = $rootRecord.Root
             AppRoot = Join-Path $rootRecord.AppsRoot $parsed.Name
             Current = $current
@@ -143,7 +264,7 @@ function Get-CapsulenvInstalledScoopApp {
             Manifest = $manifest
             Install = $install
         })
-        if ($null -eq $parsed.Scope -and $scope -eq 'Capsule') {
+        if ($null -eq $parsed.Provider -and $scope -eq 'Capsule') {
             return $matches[0]
         }
     }
@@ -155,9 +276,22 @@ function Get-CapsulenvInstalledScoopApp {
         throw "App is not installed in the capsule: $Selector"
     }
     if ($matches.Count -gt 1) {
-        throw "App '$($parsed.Name)' is installed in both user and global Scoop roots. Use user/$($parsed.Name) or global/$($parsed.Name)."
+        throw "App '$($parsed.Name)' exists in both user and global upstream Scoop roots. Use scoop:user/$($parsed.Name) or scoop:global/$($parsed.Name)."
     }
     return $matches[0]
+}
+
+function Get-CapsulenvInstalledScoopApp {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Selector,
+        [switch]$AllowMissing
+    )
+
+    # Historical name kept for module-internal and third-party compatibility.
+    # The resolver has always included Capsulenv-owned packages, so route it to
+    # the provider-neutral implementation instead of perpetuating that model.
+    return Get-CapsulenvInstalledApp -Selector $Selector -AllowMissing:$AllowMissing
 }
 
 function Get-CapsulenvInstalledManifestPropertyRecord {
@@ -346,9 +480,12 @@ function ConvertTo-CapsulenvInstalledShortcut {
     }
 
     return [pscustomobject]@{
+        Provider = [string]$App.Provider
+        ProviderScope = $App.ProviderScope
         Scope = [string]$App.Scope
         App = [string]$App.Name
-        Selector = ('{0}/{1}' -f $App.Scope.ToLowerInvariant(), $App.Name)
+        Selector = [string]$App.Selector
+        DisplaySelector = [string]$App.DisplaySelector
         Name = $shortcutName
         Target = $target
         Arguments = $arguments
@@ -393,9 +530,12 @@ function ConvertTo-CapsulenvInstalledBin {
     }
 
     return [pscustomobject]@{
+        Provider = [string]$App.Provider
+        ProviderScope = $App.ProviderScope
         Scope = [string]$App.Scope
         App = [string]$App.Name
         Selector = [string]$App.Selector
+        DisplaySelector = [string]$App.DisplaySelector
         Name = $alias
         Target = $target
         Architecture = Get-CapsulenvInstalledScoopArchitecture -App $App
@@ -408,7 +548,7 @@ function Get-CapsulenvScoopAppBins {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
 
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     $results = New-Object System.Collections.Generic.List[object]
     $entrySet = Get-CapsulenvInstalledBinEntries -App $installed
     foreach ($entry in @($entrySet.Entries)) {
@@ -460,7 +600,7 @@ function Resolve-CapsulenvScoopAppExecutable {
         [string]$ShortcutName
     )
 
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     if (-not [string]::IsNullOrWhiteSpace($RelativePath)) {
         $target = Resolve-CapsulenvScoopAppRelativePath -Root $installed.Current -RelativePath $RelativePath
         if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
@@ -526,7 +666,7 @@ function Resolve-CapsulenvScoopAppPersistPath {
         [switch]$AllowMissing
     )
 
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     $target = Resolve-CapsulenvScoopAppRelativePath -Root $installed.Persist -RelativePath $RelativePath
     if (-not $AllowMissing -and -not (Test-Path -LiteralPath $target)) {
         throw "Configured persisted path is missing for '$($installed.Selector)': $target"
@@ -542,7 +682,7 @@ function Resolve-CapsulenvScoopAppRuntimePersistPath {
         [switch]$AllowMissing
     )
 
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     $persistedTarget = Resolve-CapsulenvScoopAppRelativePath -Root $installed.Persist -RelativePath $RelativePath
     if (-not $AllowMissing -and -not (Test-Path -LiteralPath $persistedTarget)) {
         throw "Configured persisted path is missing for '$($installed.Selector)': $persistedTarget"
@@ -633,7 +773,7 @@ function Test-CapsulenvScoopAppOwnsPath {
         [Parameter(Mandatory = $true)][string]$Path
     )
 
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     try {
         $root = [System.IO.Path]::GetFullPath([string]$installed.AppRoot).TrimEnd([char[]]'\\/')
         $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd([char[]]'\\/')
@@ -653,7 +793,7 @@ function Get-CapsulenvScoopAppShortcuts {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
 
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     $results = New-Object System.Collections.Generic.List[object]
     $entrySet = Get-CapsulenvInstalledShortcutEntries -App $installed
     foreach ($entry in @($entrySet.Entries)) {
@@ -668,7 +808,7 @@ function Get-CapsulenvScoopShortcutCatalog {
 
     $results = New-Object System.Collections.Generic.List[object]
     foreach ($scope in @('Capsule', 'User', 'Global')) {
-        $rootRecord = Get-CapsulenvScoopAppRootRecord -Scope $scope
+        $rootRecord = Get-CapsulenvInstalledAppRootRecord -Scope $scope
         if (-not (Test-Path -LiteralPath $rootRecord.AppsRoot -PathType Container)) {
             continue
         }
@@ -678,7 +818,12 @@ function Get-CapsulenvScoopShortcutCatalog {
                 continue
             }
             try {
-                foreach ($shortcut in @(Get-CapsulenvScoopAppShortcuts -App (('{0}/{1}' -f $scope.ToLowerInvariant(), $directory.Name)))) {
+                $selector = if ($scope -eq 'Capsule') {
+                    'capsule/{0}' -f $directory.Name
+                } else {
+                    'scoop:{0}/{1}' -f $scope.ToLowerInvariant(), $directory.Name
+                }
+                foreach ($shortcut in @(Get-CapsulenvScoopAppShortcuts -App $selector)) {
                     $results.Add($shortcut)
                 }
             } catch {
@@ -699,7 +844,7 @@ function Start-CapsulenvScoopShortcut {
     )
 
     [void](Set-CapsulenvSessionEnvironment)
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     if ([string]$installed.Scope -eq 'Capsule') {
         [void](Set-CapsulenvPackageProcessEnvironment -Installed $installed)
     }

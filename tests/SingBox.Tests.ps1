@@ -45,7 +45,7 @@ Describe 'Capsulenv sing-box integration contracts' {
         Mock Get-CapsulenvSingBoxDefinition {
             @{ Enabled = $true; AutoConnect = $true; App = 'custom-sing-box' }
         } -ModuleName Capsulenv
-        Mock Get-CapsulenvInstalledScoopApp { throw 'not installed' } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstalledApp { throw 'not installed' } -ModuleName Capsulenv
         Mock Start-CapsulenvSingBox {} -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 

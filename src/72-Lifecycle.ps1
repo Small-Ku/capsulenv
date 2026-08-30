@@ -250,8 +250,13 @@ function Get-CapsulenvInstalledScoopApps {
                 }
             }
             $results.Add([pscustomobject]@{
-                Name = $directory.Name
+                Provider = 'Scoop'
+                ProviderScope = $scope.Name
+                Ownership = 'Upstream'
                 Scope = $scope.Name
+                Name = $directory.Name
+                Selector = ('scoop:{0}/{1}' -f ([string]$scope.Name).ToLowerInvariant(), $directory.Name)
+                DisplaySelector = ('scoop/{0}' -f $directory.Name)
                 Root = $scope.Root
                 Version = $version
                 Bucket = $bucket
@@ -261,6 +266,36 @@ function Get-CapsulenvInstalledScoopApps {
         }
     }
     return $results.ToArray()
+}
+
+function Get-CapsulenvInstalledAppInventory {
+    [CmdletBinding()]
+    param()
+
+    $results = New-Object System.Collections.Generic.List[object]
+    foreach ($state in @(Get-CapsulenvInstalledPackageStates)) {
+        $results.Add([pscustomobject]@{
+            Provider = 'Capsulenv'
+            ScoopScope = ''
+            App = [string]$state.Name
+            Selector = [string]$state.Selector
+            Version = [string]$state.Version
+            Bucket = [string]$state.Bucket
+            Ready = $true
+        })
+    }
+    foreach ($app in @(Get-CapsulenvInstalledScoopApps)) {
+        $results.Add([pscustomobject]@{
+            Provider = 'Scoop'
+            ScoopScope = [string]$app.ProviderScope
+            App = [string]$app.Name
+            Selector = [string]$app.Selector
+            Version = [string]$app.Version
+            Bucket = [string]$app.Bucket
+            Ready = [bool]$app.Ready
+        })
+    }
+    return @($results.ToArray() | Sort-Object App, Provider, ScoopScope)
 }
 
 function Get-CapsulenvBucketManifestForApp {

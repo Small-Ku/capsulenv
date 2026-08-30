@@ -9,7 +9,7 @@
 
         # RelocationRepairs also replaces the default allow-list as one unit.
         # Use @{} to disable all persisted text path repairs.
-        # Keys accept the same <app> / user/<app> / global/<app> selector.
+        # Keys accept <app>, capsule/<app>, or scoop/<app>; scoop:user/<app> / scoop:global/<app> disambiguate upstream roots.
         # RelocationRepairs = @{
         #     'user/some-app' = @(
         #         @{

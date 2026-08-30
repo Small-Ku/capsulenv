@@ -258,7 +258,7 @@ function Initialize-CapsulenvSingBox {
         return
     }
     try {
-        [void](Get-CapsulenvInstalledScoopApp -Selector ([string]$definition.App))
+        [void](Get-CapsulenvInstalledApp -Selector ([string]$definition.App))
     } catch {
         Write-CapsulenvMessage -Level Detail -Message "Configured sing-box Scoop app '$($definition.App)' is unavailable; automatic private-network connection is skipped. $($_.Exception.Message)"
         return

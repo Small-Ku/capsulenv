@@ -47,9 +47,9 @@ function Get-CapsulenvCliActionCatalog {
     if ($null -eq $script:CapsulenvCliActionCatalog) {
         $script:CapsulenvCliActionCatalog = @(
             [pscustomobject][ordered]@{ Group='app'; Name='plan'; Usage='capsulenv app plan <app|bucket/app> [--json]'; Summary='Resolve dependencies and classify manifest semantics without mutation.' },
-            [pscustomobject][ordered]@{ Group='app'; Name='review'; Usage='capsulenv app review <app|bucket/app|user/app|global/app> [--raw|--json]'; Summary='Inspect the exact trusted lifecycle surface, manifests, hashes, and review guidance.' },
+            [pscustomobject][ordered]@{ Group='app'; Name='review'; Usage='capsulenv app review <app|bucket/app|scoop/app|scoop:user/app|scoop:global/app> [--raw|--json]'; Summary='Inspect the exact trusted lifecycle surface, manifests, hashes, and review guidance.' },
             [pscustomobject][ordered]@{ Group='app'; Name='install'; Usage='capsulenv app install <app|bucket/app> [--allow-trusted]'; Summary='Install with PortableSafe, or explicitly delegate TrustedExecution to upstream Scoop.' },
-            [pscustomobject][ordered]@{ Group='app'; Name='update'; Usage='capsulenv app update <app|bucket/app|scope/app> [--allow-trusted] [--local]'; Summary='Update one installed app without changing its owner.' },
+            [pscustomobject][ordered]@{ Group='app'; Name='update'; Usage='capsulenv app update <app|bucket/app|capsule/app|scoop/app|scoop:user/app|scoop:global/app> [--allow-trusted] [--local]'; Summary='Update one installed app without changing its owner.' },
             [pscustomobject][ordered]@{ Group='app'; Name='list'; Usage='capsulenv app list [app]'; Summary='List installed app inventory, or one app shortcut declarations.' },
             [pscustomobject][ordered]@{ Group='app'; Name='run'; Usage='capsulenv app run <app> ["shortcut name"] [-- runtime arguments...]'; Summary='Launch an installed app through the unified runtime selector.' },
             [pscustomobject][ordered]@{ Group='app'; Name='exec'; Usage='capsulenv app exec capsule/<app> <bin> [-- arguments...]'; Summary='Execute a PortableSafe package bin projection.' },

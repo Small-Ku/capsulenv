@@ -71,7 +71,8 @@
     UserIntegration = @{
         # Empty by default: changing Windows defaults requires an explicit
         # per-user choice. Set this to an installed Scoop app selector such as
-        # librewolf, firefox, user/firefox, or global/librewolf. The selector
+        # librewolf, firefox, scoop/firefox, or scoop/librewolf. Use
+        # scoop:user/<app> / scoop:global/<app> only to disambiguate. The selector
         # must have a matching Browsers entry below.
         DefaultBrowser = ''
     }

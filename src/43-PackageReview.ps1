@@ -140,8 +140,8 @@ function Resolve-CapsulenvPackageReviewRequest {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Reference)
 
-    if ($Reference -match '^(?i:(user|global))/') {
-        $installed = Get-CapsulenvInstalledScoopApp -Selector $Reference
+    if ($Reference -match '^(?i:(scoop(?::(?:user|global))?|user|global))/') {
+        $installed = Get-CapsulenvInstalledApp -Selector $Reference
         $bucketProperty = Get-CapsulenvJsonPropertyRecord -Object $installed.Install -Name 'bucket'
         $bucket = if ($null -ne $bucketProperty) { [string]$bucketProperty.Value } else { '' }
         if ([string]::IsNullOrWhiteSpace($bucket)) {
@@ -423,11 +423,11 @@ function Get-CapsulenvInstalledScoopReviewGraph {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Selector)
 
-    $root = Get-CapsulenvInstalledScoopApp -Selector $Selector
-    if ([string]$root.Scope -notin @('User', 'Global')) {
-        throw "Installed Scoop review graph requires user/ or global/ scope: $Selector"
+    $root = Get-CapsulenvInstalledApp -Selector $Selector
+    if ([string]$root.Provider -ne 'Scoop' -or [string]$root.ProviderScope -notin @('User', 'Global')) {
+        throw "Installed Scoop review graph requires an upstream Scoop selector: $Selector"
     }
-    $scopePrefix = ([string]$root.Scope).ToLowerInvariant()
+    $scopePrefix = 'scoop:{0}' -f ([string]$root.ProviderScope).ToLowerInvariant()
     $nodesByName = @{}
     $warnings = New-Object System.Collections.Generic.List[string]
 
@@ -471,7 +471,7 @@ function Get-CapsulenvInstalledScoopReviewGraph {
         $resolvedDependencies = New-Object System.Collections.Generic.List[string]
         foreach ($dependencyName in @($node.DependencyNames)) {
             $dependencySelector = "$scopePrefix/$dependencyName"
-            $dependencyApp = Get-CapsulenvInstalledScoopApp -Selector $dependencySelector -AllowMissing
+            $dependencyApp = Get-CapsulenvInstalledApp -Selector $dependencySelector -AllowMissing
             if ($null -eq $dependencyApp) {
                 $warnings.Add("Installed dependency '$dependencySelector' is missing, so the old update closure is incomplete.")
                 continue

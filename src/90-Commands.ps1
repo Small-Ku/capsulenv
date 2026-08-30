@@ -22,7 +22,7 @@ app commands
       Resolve dependencies and classify manifest semantics without changing the
       capsule. PortableSafe plans contain only the bounded declarative subset.
 
-  capsulenv.cmd app review <app|bucket/app|user/app|global/app> [--raw|--json]
+  capsulenv.cmd app review <app|bucket/app|scoop/app|scoop:user/app|scoop:global/app> [--raw|--json]
       Review the resolved dependency DAG and propagate every direct blocker to
       its ancestors with auditable root-to-blocker paths. Upstream-owned update
       reviews also compare the installed-old and current-bucket-new DAG/effects.
@@ -34,10 +34,11 @@ app commands
       explicitly delegates the requested package to unmodified upstream Scoop;
       arbitrary lifecycle code and host mutation are then outside PortableSafe.
 
-  capsulenv.cmd app update <app|bucket/app|scope/app> [--allow-trusted] [--local]
+  capsulenv.cmd app update <app|bucket/app|capsule/app|scoop/app> [--allow-trusted] [--local]
       Refresh Scoop/bucket metadata, then update an installed app without changing
-      its owner. capsule/<app> remains Capsulenv-owned PortableSafe; user/<app>
-      and global/<app> require --allow-trusted and use unmodified upstream Scoop.
+      its provider. capsule/<app> remains Capsulenv-owned PortableSafe; scoop/<app>
+      requires --allow-trusted and uses unmodified upstream Scoop. Use scoop:user/<app>
+      or scoop:global/<app> only when both upstream Scoop roots contain the same name.
       --local skips the metadata refresh and uses the current local bucket snapshot.
 
   capsulenv.cmd app update --all [--local]
@@ -49,9 +50,10 @@ app commands
       legacy/upstream Scoop installs.
 
   capsulenv.cmd app run <app> ["shortcut name"] [-- runtime arguments...]
-      Launch through the unified runtime selector. Use capsule/<app>, user/<app>
-      or global/<app> when an explicit provider/scope is required. Unscoped names
-      prefer Capsulenv-owned PortableSafe packages.
+      Launch through the unified runtime selector. Use capsule/<app> for a
+      Capsulenv-owned package or scoop/<app> for an upstream Scoop package.
+      Unscoped names prefer Capsulenv-owned PortableSafe packages; Scoop user/global
+      scope is a provider detail and is explicit only when disambiguation is needed.
 
   scoop ...
       Direct Scoop commands are never intercepted. They use upstream Scoop
@@ -82,8 +84,9 @@ browser commands
   capsulenv.cmd librewolf [--host] [browser arguments...]
 
       The selector resolves an installed runtime app. Use capsule/<app> for a
-      Capsulenv-owned PortableSafe package or user/<app>/global/<app> for an
-      upstream Scoop install. A matching Browsers entry describes only
+      Capsulenv-owned PortableSafe package or scoop/<app> for an upstream Scoop
+      install. scoop:user/<app> / scoop:global/<app> are disambiguation forms.
+      A matching Browsers entry describes only
       Gecko-specific details such as the persisted profile path.
 
       --host is explicit and uses only the configured product's machine
@@ -662,13 +665,13 @@ function Resolve-CapsulenvAppUpdateTarget {
     $separator = $Reference.IndexOf('/')
     if ($separator -gt 0) {
         $prefix = $Reference.Substring(0, $separator).ToLowerInvariant()
-        if ($prefix -in @('capsule', 'user', 'global')) {
-            $installed = Get-CapsulenvInstalledScoopApp -Selector $Reference
-            if ([string]$installed.Scope -eq 'Capsule') {
+        if ($prefix -in @('capsule', 'scoop', 'scoop:user', 'scoop:global', 'user', 'global')) {
+            $installed = Get-CapsulenvInstalledApp -Selector $Reference
+            if ([string]$installed.Provider -eq 'Capsulenv') {
                 $state = Get-CapsulenvInstalledPackageState -Name ([string]$installed.Name)
-                return [pscustomobject]@{ Scope='Capsule'; Name=[string]$installed.Name; Reference=[string]$state.Reference }
+                return [pscustomobject]@{ Provider='Capsulenv'; ProviderScope=$null; Scope='Capsule'; Name=[string]$installed.Name; Reference=[string]$state.Reference }
             }
-            return [pscustomobject]@{ Scope=[string]$installed.Scope; Name=[string]$installed.Name; Reference=[string]$installed.Selector }
+            return [pscustomobject]@{ Provider='Scoop'; ProviderScope=$installed.ProviderScope; Scope=[string]$installed.Scope; Name=[string]$installed.Name; Reference=[string]$installed.Selector }
         }
 
         $parsed = Split-CapsulenvPackageReference -Reference $Reference
@@ -681,15 +684,15 @@ function Resolve-CapsulenvAppUpdateTarget {
                 -TargetObject $Reference `
                 -Remediation @("Install it first with 'capsulenv app install $Reference'."))
         }
-        return [pscustomobject]@{ Scope='Capsule'; Name=[string]$state.Name; Reference=$Reference }
+        return [pscustomobject]@{ Provider='Capsulenv'; ProviderScope=$null; Scope='Capsule'; Name=[string]$state.Name; Reference=$Reference }
     }
 
-    $match = Get-CapsulenvInstalledScoopApp -Selector $Reference
-    if ([string]$match.Scope -eq 'Capsule') {
+    $match = Get-CapsulenvInstalledApp -Selector $Reference
+    if ([string]$match.Provider -eq 'Capsulenv') {
         $state = Get-CapsulenvInstalledPackageState -Name ([string]$match.Name)
-        return [pscustomobject]@{ Scope='Capsule'; Name=[string]$match.Name; Reference=[string]$state.Reference }
+        return [pscustomobject]@{ Provider='Capsulenv'; ProviderScope=$null; Scope='Capsule'; Name=[string]$match.Name; Reference=[string]$state.Reference }
     }
-    return [pscustomobject]@{ Scope=[string]$match.Scope; Name=[string]$match.Name; Reference=[string]$match.Selector }
+    return [pscustomobject]@{ Provider='Scoop'; ProviderScope=$match.ProviderScope; Scope=[string]$match.Scope; Name=[string]$match.Name; Reference=[string]$match.Selector }
 }
 
 function Invoke-CapsulenvAppCommand {
@@ -745,7 +748,7 @@ function Invoke-CapsulenvAppCommand {
             $unknownFlags = @($remaining | Where-Object { $_ -like '--*' -and $_ -notin @('--raw', '--json') })
             $references = @($remaining | Where-Object { $_ -notlike '--*' })
             if ($unknownFlags.Count -gt 0 -or $references.Count -ne 1 -or ($raw -and $json)) {
-                throw (New-CapsulenvCliUsageError -Message 'app review requires one package reference and at most one output mode.' -Usage 'capsulenv app review <app|bucket/app|user/app|global/app> [--raw|--json]' -Topic app)
+                throw (New-CapsulenvCliUsageError -Message 'app review requires one package reference and at most one output mode.' -Usage 'capsulenv app review <app|bucket/app|scoop/app|scoop:user/app|scoop:global/app> [--raw|--json]' -Topic app)
             }
             $review = Get-CapsulenvPackageReviewPlan -Reference ([string]$references[0])
             if ($json) {
@@ -805,7 +808,7 @@ function Invoke-CapsulenvAppCommand {
             ) {
                 throw (New-CapsulenvCliUsageError `
                     -Message 'app update accepts one installed app, or --all for Capsulenv-owned PortableSafe packages.' `
-                    -Usage 'capsulenv app update <app|bucket/app|capsule/app|user/app|global/app> [--allow-trusted] [--local] | capsulenv app update --all [--local]' `
+                    -Usage 'capsulenv app update <app|bucket/app|capsule/app|scoop/app|scoop:user/app|scoop:global/app> [--allow-trusted] [--local] | capsulenv app update --all [--local]' `
                     -Topic app)
             }
 
@@ -823,7 +826,7 @@ function Invoke-CapsulenvAppCommand {
             }
 
             $target = Resolve-CapsulenvAppUpdateTarget -Reference ([string]$references[0])
-            if ([string]$target.Scope -eq 'Capsule') {
+            if ([string]$target.Provider -eq 'Capsulenv') {
                 Update-CapsulenvPortablePackage -Reference ([string]$target.Reference) |
                     Select-Object Name, Version, Architecture, Reference, InstallRoot |
                     Format-Table -AutoSize
@@ -842,7 +845,7 @@ function Invoke-CapsulenvAppCommand {
             }
             [void](Set-CapsulenvSessionEnvironment)
             Write-CapsulenvMessage -Level Warning -Message "Delegating update of '$($target.Reference)' to unmodified upstream Scoop. Package lifecycle code and host mutation are outside Capsulenv's PortableSafe guarantees."
-            $scoopArguments = if ([string]$target.Scope -eq 'Global') {
+            $scoopArguments = if ([string]$target.ProviderScope -eq 'Global') {
                 @('update', [string]$target.Name, '--global')
             } else {
                 @('update', [string]$target.Name)
@@ -853,12 +856,15 @@ function Invoke-CapsulenvAppCommand {
             if ($remaining.Count -gt 1) {
                 throw (New-CapsulenvCliUsageError -Message 'app list accepts at most one app selector.' -Usage 'capsulenv app list [app]' -Topic app)
             }
-            $items = if ($remaining.Count -eq 1) {
-                @(Get-CapsulenvScoopAppShortcuts -App ([string]$remaining[0]))
-            } else {
-                @(Get-CapsulenvScoopShortcutCatalog)
+            if ($remaining.Count -eq 0) {
+                Get-CapsulenvInstalledAppInventory |
+                    Select-Object Provider, ScoopScope, App, Selector, Version, Bucket, Ready |
+                    Format-Table -AutoSize
+                break
             }
-            $items | Select-Object Scope, App, Name, Target, Arguments, Architecture | Format-Table -AutoSize
+            Get-CapsulenvScoopAppShortcuts -App ([string]$remaining[0]) |
+                Select-Object Provider, @{ Name='ScoopScope'; Expression={ [string]$_.ProviderScope } }, App, Selector, Name, Target, Arguments, Architecture |
+                Format-Table -AutoSize
         }
         'run' {
             if ($remaining.Count -lt 1) {

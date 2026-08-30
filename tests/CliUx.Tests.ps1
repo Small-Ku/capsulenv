@@ -26,8 +26,8 @@ Describe 'Capsulenv CLI UX' {
         @($model.Commands.Name) | Should -Contain 'doctor'
         @($model.AppActions.Name) | Should -Contain 'update'
         @($model.AppActions.Name) | Should -Contain 'review'
-        $model.Update.Usage | Should -Be 'capsulenv app update <app|bucket/app|scope/app> [--allow-trusted] [--local]'
-        (@($model.AppActions | Where-Object Name -eq review)[0]).Usage | Should -Be 'capsulenv app review <app|bucket/app|user/app|global/app> [--raw|--json]'
+        $model.Update.Usage | Should -Be 'capsulenv app update <app|bucket/app|capsule/app|scoop/app|scoop:user/app|scoop:global/app> [--allow-trusted] [--local]'
+        (@($model.AppActions | Where-Object Name -eq review)[0]).Usage | Should -Be 'capsulenv app review <app|bucket/app|scoop/app|scoop:user/app|scoop:global/app> [--raw|--json]'
     }
 
     It 'suggests the nearest top-level command for a typo' {

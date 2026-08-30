@@ -68,7 +68,7 @@ workspace/
 .capsulenv/
 ```
 
-`packages/`、`package-persist/`、`shims/` 是 PortableSafe package domain。`scoop/` 則承載 stock Scoop core、buckets，以及使用者顯式 TrustedExecution/歷史 install；兩者不可混成一個「Scoop owns everything」模型。
+`packages/`、`package-persist/`、`shims/` 是 PortableSafe package domain。`scoop/` 則承載 stock Scoop core、buckets，以及使用者顯式 TrustedExecution/歷史 install；兩者不可混成一個「Scoop owns everything」模型。`scoop-global/` 只保留 upstream Scoop `-g` 的 compatibility root semantics；它仍位於 capsule 內，不代表 Capsulenv 擁有 machine-global package domain，也不需要在未使用 `-g` 時 materialize。
 
 `.capsulenv/packages/<app>.json` 是 Capsulenv-owned installed state，記錄 package/version/architecture/install root/current root/persist mappings/shims/capabilities。State path 以 capsule-relative reference 儲存，避免 drive relocation 後把舊 absolute path 當 authority。
 
@@ -115,19 +115,20 @@ Planner 對 Scoop schema 採 **schema-aware fail-closed**：已知純 metadata �
 
 Package review 使用和 planner 相同的 resolved dependency closure，但保留兩層 trust 狀態：node 的 `DirectReviewRequired` 只描述該 manifest/ownership boundary，本身安全的 ancestor 若依賴任一 direct blocker，`EffectiveReviewRequired` 仍向 root 傳遞成 `TrustedExecution`。Review contract 同時保留 root-to-blocker path，因此「整個 plan 被擋」不會只剩一個 aggregate boolean；使用者和外部 tooling 都能追到是哪條 dependency chain 引入 trusted lifecycle。
 
-對 upstream Scoop-owned `user/` / `global/` update，review 另外以 installed manifests 建立 old closure，以 current buckets 建立 new closure，然後按 package identity 比較 node/edge 與 execution-relevant effects。Diff 涵蓋 source/version、artifact URL/hash、dependencies、extract/projection、bin/persist、process environment、shortcuts 及 lifecycle semantics。舊 closure 缺少已安裝 dependency evidence 時，review 保留 warning 並把 removed-node/edge 判斷標成 conservative；缺失證據不能被解讀成安全 no-op。
+對 upstream Scoop-owned `scoop/<app>` update，review 另外以 installed manifests 建立 old closure，以 current buckets 建立 new closure，然後按 package identity 比較 node/edge 與 execution-relevant effects。Diff 涵蓋 source/version、artifact URL/hash、dependencies、extract/projection、bin/persist、process environment、shortcuts 及 lifecycle semantics。舊 closure 缺少已安裝 dependency evidence 時，review 保留 warning 並把 removed-node/edge 判斷標成 conservative；缺失證據不能被解讀成安全 no-op。
 
 ## Provisioning and runtime separation
 
-Runtime consumer 不應關心 package 當初由哪個 CLI 安裝，而是解析 installed app projection。Selector scopes：
+Runtime consumer 不應關心 package 當初由哪個 CLI 安裝，而是解析 installed app projection。Primary selector namespace 表達 **provider/ownership**，而不是把 Scoop 自己的 root scope 混進同一維度：
 
 ```text
-capsule/<app>   Capsulenv-owned PortableSafe package
-user/<app>      stock Scoop user root
-global/<app>    stock Scoop global root
+capsule/<app>          Provider=Capsulenv, Ownership=PortableSafe
+scoop/<app>            Provider=Scoop,     Ownership=Upstream
+scoop:user/<app>       Provider=Scoop, ProviderScope=User    # 只作消歧
+scoop:global/<app>     Provider=Scoop, ProviderScope=Global  # 只作消歧
 ```
 
-不帶 scope 時，Capsulenv-owned package優先；user/global 同名仍要求顯式 scope。Browser、Bitwarden、sing-box、tool resolver 和 `app run` 應使用同一 installed-runtime abstraction，而不是各自 hard-code `scoop/apps/<name>/current`。
+`user/<app>` / `global/<app>` 保留為 legacy aliases，但 resolver 會 canonicalize 成 `scoop:user/<app>` / `scoop:global/<app>`。不帶 selector namespace 時仍優先 Capsulenv-owned package；若只存在一個 upstream Scoop match，`scoop/<app>` 足夠；只有 user/global 兩個 Scoop roots 同時存在同名 app 才要求 provider-local scope。Browser、Bitwarden、sing-box、tool resolver 和 `app run` 應使用同一 installed-runtime abstraction，而不是各自 hard-code `scoop/apps/<name>/current`。
 
 PortableSafe install 仍會在 version tree 寫出 installed `manifest.json` / `install.json` compatibility metadata，讓現有 runtime manifest parser 可共用，而 `.capsulenv/packages/*.json` 保存 Capsulenv 自己的 ownership/state。State 同時保存 provider/reference、source manifest fingerprint 與 installed metadata fingerprints；runtime 每次讀取都驗證它仍指向同一 capsule-owned version/current/persist roots，metadata 漂移即 fail closed。這是 migration bridge，不代表 Scoop 重新取得 ownership。
 
@@ -221,7 +222,7 @@ ShellOnly 不把 capsule request 隨意交給 foreign browser profile；`--host`
 
 ## Bitwarden SSH ownership
 
-Capsulenv 不複製/重建/重新序列化 Bitwarden vault/app state。Setting patch只修改 source-verified top-level keys，保存 exact previous bytes/value state並在寫入前驗證 JSON。App selector同樣可指向 `capsule/`、`user/`、`global/` runtime package。
+Capsulenv 不複製/重建/重新序列化 Bitwarden vault/app state。Setting patch只修改 source-verified top-level keys，保存 exact previous bytes/value state並在寫入前驗證 JSON。App selector同樣以 `capsule/<app>` / `scoop/<app>` 表達 provider；`scoop:user/` / `scoop:global/` 只在 upstream roots 同名時消歧。
 
 ShellOnly Git/OpenSSH 設定使用 process overlay且不更改 Windows `ssh-agent` service；User integration才可進入明確備份/還原流程。
 

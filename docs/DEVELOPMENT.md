@@ -80,7 +80,7 @@ Where possible, test dangerous integration through isolated fixtures/static inva
 
 CLI help in `Show-CapsulenvHelp` is the command contract installed users query with `capsulenv.cmd help` and developers query with `scripts\capsulenv-dev.cmd help`. Keep dispatch/usage text in sync with the implementation and add tests through the same argument path used by the real launcher.
 
-When a feature consumes package metadata at runtime, use the installed app projection (`capsule/`, `user/`, `global/`) and its installed `manifest.json`/`install.json` as the source of truth. Bucket manifests are provisioning input and may have advanced since installation; they must not silently replace installed-version semantics.
+When a feature consumes package metadata at runtime, use the installed app projection (`capsule/<app>` or `scoop/<app>`; provider-local Scoop scope only when needed) and its installed `manifest.json`/`install.json` as the source of truth. Bucket manifests are provisioning input and may have advanced since installation; they must not silently replace installed-version semantics.
 
 For operations that mutate host/User state, first define an explicit ownership proof and reversible backup. If the original state cannot be established, do not invent a generic restore operation.
 

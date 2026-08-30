@@ -32,4 +32,9 @@ Unlike NyaModule, Capsulenv does not add a persistent CLI-preference store or TU
 
 `capsulenv app review` is an effect-oriented dependency review surface, not a script allow-list. The review graph keeps direct manifest classification separate from the effective boundary propagated through dependencies, and shows root-to-blocker paths so a declarative top-level package cannot hide a scripted descendant.
 
-For `user/<app>` and `global/<app>` updates, the default view compares the installed old closure with the current-bucket new closure before showing executable lifecycle fragments. Added/removed packages and dependency edges plus execution-relevant manifest effects are grouped first; incomplete old installed evidence is called out explicitly. `--raw` prints every source manifest in the resolved new DAG and `--json` exposes the graph, paths and diff for external review tooling.
+For upstream `scoop/<app>` updates, the default view compares the installed old closure with the current-bucket new closure before showing executable lifecycle fragments. Added/removed packages and dependency edges plus execution-relevant manifest effects are grouped first; incomplete old installed evidence is called out explicitly. `--raw` prints every source manifest in the resolved new DAG and `--json` exposes the graph, paths and diff for external review tooling.
+
+
+## Installed app selector model
+
+The primary selector namespace represents the runtime provider: `capsule/<app>` means Capsulenv-owned PortableSafe state, while `scoop/<app>` means an unmodified upstream Scoop install. Scoop's own user/global distinction is a provider-local scope, not a Capsulenv ownership mode. `scoop:user/<app>` and `scoop:global/<app>` are therefore disambiguation forms only. Legacy `user/<app>` and `global/<app>` inputs remain accepted and canonicalize to the new form. `app list` exposes `Provider` and `ScoopScope` as separate columns.

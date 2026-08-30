@@ -37,12 +37,12 @@ Planner 只接受刻意很小的 declarative subset，例如 `url/hash`、`archi
 ```powershell
 capsulenv.cmd app review some-app
 capsulenv.cmd app review some-app --raw   # 展開完整來源 manifest
-capsulenv.cmd app review user/some-app    # 審目前 bucket 中下一次 upstream update 會採用的 manifest
+capsulenv.cmd app review scoop/some-app   # 審目前 bucket 中下一次 upstream update 會採用的 manifest
 ```
 
 Review view 不只列出直接被擋的 package。它會建立 resolved dependency DAG，分開顯示每個 node 的 direct classification 與由 descendants 傳遞而來的 effective execution boundary，並列出實際 blocker path，例如 `main/app -> main/runtime -> extras/helper`。直接 blocker 仍會顯示來源 manifest 路徑與 SHA-256、實際 lifecycle script（帶行號）、阻擋原因，以及檢查 network／process／host writes／registry／services／credentials／update-uninstall symmetry 的指引；`--raw` 則展開整個 resolved DAG 的 source manifests，而不是只展開 blocker。
 
-對 `user/<app>` / `global/<app>` update，review 還會從已安裝 manifests 建立 old dependency closure，和目前 bucket 將要使用的 new closure 做 DAG/effect delta：新增／移除 package 與 dependency edge，以及 version、URL/hash、persist、bin、environment、shortcut、lifecycle 等 execution-relevant 變更會先分類呈現，再由你 drill down 到完整 manifest/script。若舊 dependency evidence 不完整，輸出會明示 diff 是 conservative，不會把未知舊狀態當成「已移除」。這仍只是人工審核輔助，不會把 script 判成「安全」。審核後若確實要接受 upstream semantics，才明示：
+對 upstream `scoop/<app>` update，review 還會從已安裝 manifests 建立 old dependency closure，和目前 bucket 將要使用的 new closure 做 DAG/effect delta：新增／移除 package 與 dependency edge，以及 version、URL/hash、persist、bin、environment、shortcut、lifecycle 等 execution-relevant 變更會先分類呈現，再由你 drill down 到完整 manifest/script。若舊 dependency evidence 不完整，輸出會明示 diff 是 conservative，不會把未知舊狀態當成「已移除」。這仍只是人工審核輔助，不會把 script 判成「安全」。審核後若確實要接受 upstream semantics，才明示：
 
 ```powershell
 capsulenv.cmd app install some-app --allow-trusted
@@ -96,7 +96,7 @@ UserIntegration = @{
 }
 ```
 
-這裡是 installed runtime app selector。Capsulenv-owned package 可寫 `capsule/librewolf`；upstream Scoop install 可寫 `user/firefox` 或 `global/librewolf`。`Browsers` 只補 Gecko-specific profile path／launch argument。Default-browser registration 是 Capsulenv 明確擁有的 HostIntegration；現代 Windows 仍要求使用者在 Settings 確認 `http/https` 的最後 `UserChoice`，Capsulenv 不偽造 association hash。
+這裡是 installed runtime app selector。Capsulenv-owned package 可寫 `capsule/librewolf`；upstream Scoop install 寫 `scoop/firefox`。只有同名 app 同時存在 Scoop user/global roots 時，才用 `scoop:user/firefox` 或 `scoop:global/firefox` 消歧。`Browsers` 只補 Gecko-specific profile path／launch argument。Default-browser registration 是 Capsulenv 明確擁有的 HostIntegration；現代 Windows 仍要求使用者在 Settings 確認 `http/https` 的最後 `UserChoice`，Capsulenv 不偽造 association hash。
 
 ## 安裝與啟動 app
 
@@ -120,18 +120,18 @@ capsulenv.cmd app install <app> --allow-trusted
 capsulenv.cmd app list
 capsulenv.cmd app run <app>
 capsulenv.cmd app run capsule/<app> "<shortcut name>"
-capsulenv.cmd app run user/<app> "<shortcut name>"
-capsulenv.cmd app run global/<app> "<shortcut name>"
+capsulenv.cmd app run scoop/<app> "<shortcut name>"
+capsulenv.cmd app run scoop:global/<app> "<shortcut name>"   # 只在需要消歧時
 ```
 
-Runtime selector 與 provisioning history 解耦：`capsule/` 表示 Capsulenv-owned PortableSafe package，`user/`／`global/` 表示 stock Scoop roots；不帶 scope 時若有同名 PortableSafe package會優先選它，legacy user/global 同名則要求明確 scope。
+Runtime selector 與 provisioning history 解耦：`capsule/` 表示 Capsulenv-owned PortableSafe provider，`scoop/` 表示 unmodified upstream Scoop provider。Scoop 的 `User`／`Global` 只是 provider-local root scope，不再和 `capsule/` 並列成 ownership 類型；只有同名 app 同時存在兩個 Scoop roots 時才要求 `scoop:user/`／`scoop:global/`。舊 `user/`／`global/` selector 仍作 compatibility alias。
 
 Gecko browser 使用同一套 selector：
 
 ```bat
 capsulenv.cmd browser firefox
 capsulenv.cmd browser capsule/librewolf
-capsulenv.cmd browser global/librewolf
+capsulenv.cmd browser scoop/librewolf
 ```
 
 `firefox`、`zen`、`librewolf` 三個短命令仍是 compatibility aliases。Browser integration 從該 installed app 的 manifest/runtime projection 找 executable 與 persisted profile；`--host` 只借用同一 browser product 的 machine executable，不會跨 product 猜測。
@@ -172,7 +172,8 @@ Capsulenv shell 會把它 prepend 到 `PSModulePath`，並把第一個 configure
 | `packages/` | Capsulenv-owned PortableSafe version trees | portable runtime；不要當 cache 清除 |
 | `package-persist/` | PortableSafe persisted app data | **需要保存** |
 | `shims/` | Capsulenv-owned relocation-safe package shims | 可由 installed state 重建 |
-| `scoop/`, `scoop-global/` | stock Scoop core/buckets、TrustedExecution/legacy installs | portable runtime/data；不屬 PortableSafe ownership |
+| `scoop/` | stock Scoop core/buckets、TrustedExecution/legacy installs | portable runtime/data；不屬 PortableSafe ownership |
+| `scoop-global/` | upstream Scoop `-g` compatibility root | **可選**；仍是 capsule-local，不代表 Capsulenv machine-global ownership |
 | `PowerShell/Modules/` | 私人 PowerShell modules | user data |
 | `tool-data/` | Git config、toolchains、global tools、package-manager persistent state | **需要保存**；可能含 token/credential |
 | `cache/` | package/tool/compiler reusable caches | 原則上可重建 |
@@ -202,7 +203,7 @@ Rehydrate 的 package 部分只做兩種事：重建 Capsulenv-owned `current`�
 ```bat
 capsulenv.cmd reset
 capsulenv.cmd reset capsule/<app>
-capsulenv.cmd reset user/<app>
+capsulenv.cmd reset scoop/<app>
 ```
 
 這裡的 `capsulenv reset` 是 projection reconcile，**不是 `scoop reset`**。舊的 `capsulenv hooks` 已移除；任意 lifecycle execution 只能經使用者明確選擇的 upstream Scoop。
@@ -233,7 +234,7 @@ ShellOnly 只使用 process-only Git SSH 設定且不改 Windows `ssh-agent` ser
 capsulenv.cmd bitwarden restore
 ```
 
-Capsulenv 不複製、重建或重新序列化 Bitwarden vault/app state；`Bitwarden.App` 可指向任何相容的 installed runtime app selector（`capsule/`、`user/`、`global/`）；executable 與 state path 由該 app 的 installed manifest/persist projection 決定。更精確的 safety contract 見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+Capsulenv 不複製、重建或重新序列化 Bitwarden vault/app state；`Bitwarden.App` 可指向任何相容的 installed runtime app selector（通常是 `capsule/<app>` 或 `scoop/<app>`；必要時用 `scoop:user/`／`scoop:global/` 消歧）；executable 與 state path 由該 app 的 installed manifest/persist projection 決定。更精確的 safety contract 見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ## sing-box 私有網絡
 

@@ -26,7 +26,7 @@ function Get-CapsulenvBrowserDisplayName {
     ) {
         return [string]$Definition.DisplayName
     }
-    $parsed = Split-CapsulenvScoopAppSelector -Selector $App
+    $parsed = Split-CapsulenvInstalledAppSelector -Selector $App
     return [string]$parsed.Name
 }
 

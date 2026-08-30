@@ -30,7 +30,7 @@ function Get-CapsulenvLegacyScoopLocation {
         throw "Legacy Scoop app is not installed in the capsule: $Selector"
     }
     if ($matches.Count -gt 1) {
-        throw "Legacy Scoop app '$($parsed.Name)' exists in both user and global roots. Use user/$($parsed.Name) or global/$($parsed.Name)."
+        throw "Legacy Scoop app '$($parsed.Name)' exists in both user and global roots. Use scoop:user/$($parsed.Name) or scoop:global/$($parsed.Name)."
     }
     return $matches[0]
 }
@@ -223,7 +223,7 @@ function Repair-CapsulenvLegacyScoopAppProjection {
         return $true
     }
     Set-CapsulenvPackageDirectoryLink -Path $location.CurrentRoot -Target $versionRoot
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $location.Selector
+    $installed = Get-CapsulenvInstalledApp -Selector $location.Selector
     Repair-CapsulenvLegacyPersistProjection -Installed $installed
     return $true
 }

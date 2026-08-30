@@ -124,7 +124,7 @@ Describe 'Capsulenv app command trust boundary' {
     It 'refreshes metadata and uses the Capsulenv updater for PortableSafe ownership' {
         Mock Update-CapsulenvAppMetadata {} -ModuleName Capsulenv
         Mock Resolve-CapsulenvAppUpdateTarget {
-            [pscustomobject]@{ Scope='Capsule'; Name='demo'; Reference='main/demo' }
+            [pscustomobject]@{ Provider='Capsulenv'; ProviderScope=$null; Scope='Capsule'; Name='demo'; Reference='main/demo' }
         } -ModuleName Capsulenv
         Mock Update-CapsulenvPortablePackage { @() } -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { throw 'app lifecycle must stay inside the PortableSafe executor' } -ModuleName Capsulenv
@@ -139,7 +139,7 @@ Describe 'Capsulenv app command trust boundary' {
     It 'supports local-only PortableSafe updates without refreshing bucket metadata' {
         Mock Update-CapsulenvAppMetadata {} -ModuleName Capsulenv
         Mock Resolve-CapsulenvAppUpdateTarget {
-            [pscustomobject]@{ Scope='Capsule'; Name='demo'; Reference='main/demo' }
+            [pscustomobject]@{ Provider='Capsulenv'; ProviderScope=$null; Scope='Capsule'; Name='demo'; Reference='main/demo' }
         } -ModuleName Capsulenv
         Mock Update-CapsulenvPortablePackage { @() } -ModuleName Capsulenv
 
@@ -152,33 +152,33 @@ Describe 'Capsulenv app command trust boundary' {
     It 'requires explicit trust before updating an upstream Scoop-owned app' {
         Mock Update-CapsulenvAppMetadata {} -ModuleName Capsulenv
         Mock Resolve-CapsulenvAppUpdateTarget {
-            [pscustomobject]@{ Scope='User'; Name='demo'; Reference='user/demo' }
+            [pscustomobject]@{ Provider='Scoop'; ProviderScope='User'; Scope='User'; Name='demo'; Reference='scoop:user/demo' }
         } -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { 0 } -ModuleName Capsulenv
 
         $errorRecord = $null
         try {
-            & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('update', 'user/demo', '--local') }
+            & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('update', 'scoop/demo', '--local') }
         } catch {
             $errorRecord = $_
         }
 
         $errorRecord.FullyQualifiedErrorId | Should -Be 'Capsulenv.Package.TrustedUpdateRequired'
         $remediation = & $script:Module { param($record) @(Get-CapsulenvDiagnosticRemediation -ErrorRecord $record) } $errorRecord
-        ($remediation -join ' ') | Should -Match 'app review user/demo'
+        ($remediation -join ' ') | Should -Match 'app review scoop:user/demo'
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
     }
 
     It 'delegates an explicit trusted global update with upstream Scoop semantics' {
         Mock Update-CapsulenvAppMetadata {} -ModuleName Capsulenv
         Mock Resolve-CapsulenvAppUpdateTarget {
-            [pscustomobject]@{ Scope='Global'; Name='demo'; Reference='global/demo' }
+            [pscustomobject]@{ Provider='Scoop'; ProviderScope='Global'; Scope='Global'; Name='demo'; Reference='scoop:global/demo' }
         } -ModuleName Capsulenv
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { 0 } -ModuleName Capsulenv
 
-        & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('update', 'global/demo', '--allow-trusted', '--local') }
+        & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('update', 'scoop:global/demo', '--allow-trusted', '--local') }
 
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
             $Arguments.Count -eq 3 -and $Arguments[0] -eq 'update' -and $Arguments[1] -eq 'demo' -and $Arguments[2] -eq '--global'

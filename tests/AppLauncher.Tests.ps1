@@ -44,7 +44,7 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
             @($shortcuts.Name) | Should -Not -Contain 'Generic Demo'
             $demo = $shortcuts | Where-Object Name -eq 'Demo'
             $demo.Scope | Should -Be 'User'
-            $demo.Selector | Should -Be 'user/demo'
+            $demo.Selector | Should -Be 'scoop:user/demo'
             $demo.Architecture | Should -Be '64bit'
             $demo.Target | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'demo.exe')))
             $demo.WorkingDirectory | Should -Be ([System.IO.Path]::GetFullPath($current))

@@ -310,10 +310,27 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Root' -Area 'Scoop' -N
     $exists = Test-Path -LiteralPath $root -PathType Container
     New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.Root' -Name 'Portable Scoop root' -Area 'Scoop' -Status $(if($exists){'Healthy'}else{'Failed'}) -Summary $root -Detail $root -Data ([ordered]@{ Path=$root; Exists=$exists }) -Remediation $(if($exists){@()}else{@('Bootstrap the capsule to create the configured portable Scoop root.')})
 }
-Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' -Area 'Scoop' -Name 'Portable Scoop global root' -Handler {
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' -Area 'Scoop' -Name 'Scoop -g compatibility root' -Importance Optional -Handler {
     $root = Get-CapsulenvScoopGlobalRoot
     $valid = -not [string]::IsNullOrWhiteSpace([string]$root)
-    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' -Name 'Portable Scoop global root' -Area 'Scoop' -Status $(if($valid){'Healthy'}else{'Failed'}) -Summary $root -Detail $root -Data ([ordered]@{ Path=$root })
+    $exists = $valid -and (Test-Path -LiteralPath $root -PathType Container)
+    $summary = if (-not $valid) {
+        'No compatibility root is configured.'
+    } elseif ($exists) {
+        "Available for unmodified upstream Scoop -g compatibility: $root"
+    } else {
+        "Not materialized; upstream Scoop -g will use this capsule-local compatibility path if needed: $root"
+    }
+    New-CapsulenvDoctorResult `
+        -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' `
+        -Name 'Scoop -g compatibility root' `
+        -Area 'Scoop' `
+        -Status $(if($valid){'Healthy'}else{'Failed'}) `
+        -Importance Optional `
+        -Summary $summary `
+        -Detail $summary `
+        -Data ([ordered]@{ Path=$root; Exists=$exists; Provider='Scoop'; ProviderScope='Global' }) `
+        -Remediation $(if($valid){@()}else{@('Configure Scoop.GlobalRoot only when upstream Scoop compatibility is required.')})
 }
 Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Command' -Area 'Scoop' -Name 'Scoop command' -Handler {
     $executable = Get-CapsulenvScoopExecutable

@@ -97,6 +97,12 @@ function Get-CapsulenvInstalledPackageState {
     }
 
     return [pscustomobject]@{
+        Provider = 'Capsulenv'
+        ProviderScope = $null
+        Ownership = 'PortableSafe'
+        Scope = 'Capsule'
+        Selector = ('capsule/{0}' -f [string]$state.Name)
+        DisplaySelector = ('capsule/{0}' -f [string]$state.Name)
         Path = $path
         State = $state
         Name = [string]$state.Name
@@ -937,7 +943,7 @@ function Update-CapsulenvPortablePackage {
             -TargetObject ([string]$existing.Reference) `
             -Remediation @(
                 "Run 'capsulenv app review $($existing.Reference)' to inspect why current metadata requires TrustedExecution.",
-                "Use 'capsulenv app update user/<app> --allow-trusted' only for an upstream Scoop-owned install; Capsulenv does not silently transfer ownership."
+                "Use 'capsulenv app update scoop/<app> --allow-trusted' only for an upstream Scoop-owned install; Capsulenv does not silently transfer ownership."
             ))
     }
 
@@ -1073,7 +1079,7 @@ function Get-CapsulenvPackageProcessPlan {
         [Parameter(Mandatory = $true)][string]$BinName
     )
 
-    $installed = Get-CapsulenvInstalledScoopApp -Selector $App
+    $installed = Get-CapsulenvInstalledApp -Selector $App
     if ([string]$installed.Scope -ne 'Capsule') {
         throw "app exec is reserved for Capsulenv-owned PortableSafe packages: $App"
     }

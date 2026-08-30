@@ -121,7 +121,7 @@ An uv workspace must contain `pyproject.toml` + `uv.lock`. A Pixi workspace must
 
 ## uv native repair
 
-The uv executable is preferably resolved from the installed Scoop app selected by `ToolStorage.Relocation.Uv.App` (default `uv`) and its manifest `bin` alias. `user/<app>` / `global/<app>` and custom bucket app names are supported; if that app is not installed, capsule-owned `tool-data`/`bin` fallbacks remain available. An installed-but-ambiguous or incompatible selected app fails rather than silently borrowing a host executable.
+The uv executable is preferably resolved from the installed Scoop app selected by `ToolStorage.Relocation.Uv.App` (default `uv`) and its manifest `bin` alias. `scoop/<app>` (plus `scoop:user/<app>` / `scoop:global/<app>` when disambiguation is needed) and custom bucket app names are supported; if that app is not installed, capsule-owned `tool-data`/`bin` fallbacks remain available. An installed-but-ambiguous or incompatible selected app fails rather than silently borrowing a host executable.
 
 Tool metadata/launchers may contain absolute paths even when the backing directories moved successfully. uv repair is therefore native rather than a recursive text rewrite:
 
@@ -145,7 +145,7 @@ uv sync --project <workspace> --locked --reinstall --no-progress
 
 ## Pixi native repair
 
-Pixi uses the same rule through `ToolStorage.Relocation.Pixi.App` (default `pixi`) plus its manifest `bin` alias, with capsule-owned `tool-data` fallback only when the selected Scoop app is absent. This removes the previous dependency on hard-coded `scoop/apps/pixi/current/...` paths and keeps explicit user/global scope meaningful.
+Pixi uses the same rule through `ToolStorage.Relocation.Pixi.App` (default `pixi`) plus its manifest `bin` alias, with capsule-owned `tool-data` fallback only when the selected Scoop app is absent. This removes the previous dependency on hard-coded `scoop/apps/pixi/current/...` paths and keeps the optional Scoop provider scope explicit without confusing it with Capsulenv ownership.
 
 Registered Pixi workspaces are rebuilt with:
 

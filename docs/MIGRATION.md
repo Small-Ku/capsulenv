@@ -264,3 +264,8 @@ capsulenv.cmd offline status
 0.14.1–0.16.x 曾以 Capsulenv Scoop gateway 阻擋/改寫 ShellOnly mutation；**0.17 已移除此架構**。若更早版本曾讓 upstream Scoop 把 capsule path 寫進 Windows User PATH 或 `Programs\Scoop Apps`，升級仍不能盲目刪除，因為 Capsulenv 無法證明 foreign Scoop 與舊 capsule shortcut/variable 的 ownership。
 
 只移除你能確認 target/path 落在此 capsule 的 historical host state；主機 Scoop 自己擁有的內容應由主機 Scoop 修復。既有 `scoop/apps`、`scoop/persist`、installed manifests 不需要因 0.17 migration 刪除。之後若你直接執行 `scoop ...`，它就是 upstream TrustedExecution，而不是 ShellOnly-safe command；安全 package install 請改用 `capsulenv.cmd app install`。
+
+
+## Installed app selector namespace migration
+
+Current Capsulenv separates package provider from Scoop's provider-local root scope. Prefer `capsule/<app>` for Capsulenv-owned PortableSafe packages and `scoop/<app>` for upstream Scoop installs. Existing `user/<app>` / `global/<app>` configuration remains accepted as a compatibility alias and does not require an immediate config rewrite; when the same app exists in both upstream roots, the explicit canonical forms are `scoop:user/<app>` and `scoop:global/<app>`. `scoop-global/` remains only the capsule-local compatibility path used by unmodified upstream `scoop -g`.

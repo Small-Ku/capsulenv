@@ -48,7 +48,7 @@ function Get-CapsulenvBrowserDefinitionFromConfiguration {
         [Parameter(Mandatory = $true)][string]$App
     )
 
-    $parsed = Split-CapsulenvScoopAppSelector -Selector $App
+    $parsed = Split-CapsulenvInstalledAppSelector -Selector $App
     $exact = New-Object System.Collections.Generic.List[object]
     $byName = New-Object System.Collections.Generic.List[object]
     foreach ($name in @($Configuration.Browsers.Keys)) {
@@ -60,14 +60,17 @@ function Get-CapsulenvBrowserDefinitionFromConfiguration {
         if ([string]::IsNullOrWhiteSpace($selector)) {
             continue
         }
-        if ([System.StringComparer]::OrdinalIgnoreCase.Equals($selector, $App)) {
+        if (
+            [System.StringComparer]::OrdinalIgnoreCase.Equals($selector, $App) -or
+            (Test-CapsulenvInstalledAppSelectorEquivalent -Left $selector -Right $App)
+        ) {
             $exact.Add($definition)
             continue
         }
         try {
-            $configured = Split-CapsulenvScoopAppSelector -Selector $selector
+            $configured = Split-CapsulenvInstalledAppSelector -Selector $selector
             if (
-                $null -eq $configured.Scope -and
+                $null -eq $configured.Provider -and
                 [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$configured.Name, [string]$parsed.Name)
             ) {
                 $byName.Add($definition)
@@ -196,7 +199,7 @@ function Assert-CapsulenvConfiguration {
         if ([string]::IsNullOrWhiteSpace($appName)) {
             throw 'Scoop.RelocationRepairs contains an empty application name.'
         }
-        [void](Split-CapsulenvScoopAppSelector -Selector $appName)
+        [void](Split-CapsulenvInstalledAppSelector -Selector $appName)
         foreach ($rule in @($Configuration.Scoop.RelocationRepairs[$app])) {
             if ($rule -isnot [hashtable]) {
                 throw "Scoop.RelocationRepairs rules for '$app' must be hashtables."
@@ -235,7 +238,7 @@ function Assert-CapsulenvConfiguration {
     }
     $defaultBrowser = [string]$Configuration.UserIntegration.DefaultBrowser
     if (-not [string]::IsNullOrWhiteSpace($defaultBrowser)) {
-        [void](Split-CapsulenvScoopAppSelector -Selector $defaultBrowser)
+        [void](Split-CapsulenvInstalledAppSelector -Selector $defaultBrowser)
         [void](Get-CapsulenvBrowserDefinitionFromConfiguration -Configuration $Configuration -App $defaultBrowser)
     }
 
@@ -245,7 +248,7 @@ function Assert-CapsulenvConfiguration {
             throw "Browsers.$browserName must be a hashtable."
         }
         $browserApp = if ($browser.ContainsKey('App')) { [string]$browser.App } else { [string]$browserName }
-        [void](Split-CapsulenvScoopAppSelector -Selector $browserApp)
+        [void](Split-CapsulenvInstalledAppSelector -Selector $browserApp)
         if (-not $browser.ContainsKey('ProfilePath') -or [string]::IsNullOrWhiteSpace([string]$browser.ProfilePath)) {
             throw "Browsers.$browserName.ProfilePath must be a non-empty path relative to the selected Scoop app persist root."
         }
@@ -275,9 +278,9 @@ function Assert-CapsulenvConfiguration {
         throw 'Bitwarden.Authorization must be always, never, or remember-until-lock.'
     }
     if (-not $Configuration.Bitwarden.ContainsKey('App') -or [string]::IsNullOrWhiteSpace([string]$Configuration.Bitwarden.App)) {
-        throw 'Bitwarden.App must select an installed Scoop manifest.'
+        throw 'Bitwarden.App must select an installed app.'
     }
-    [void](Split-CapsulenvScoopAppSelector -Selector ([string]$Configuration.Bitwarden.App))
+    [void](Split-CapsulenvInstalledAppSelector -Selector ([string]$Configuration.Bitwarden.App))
     if ($Configuration.Bitwarden.ContainsKey('StatePath') -and -not [string]::IsNullOrWhiteSpace([string]$Configuration.Bitwarden.StatePath)) {
         Assert-CapsulenvScoopIntegrationRelativePath -Name 'Bitwarden.StatePath' -Path ([string]$Configuration.Bitwarden.StatePath)
     }
@@ -291,9 +294,9 @@ function Assert-CapsulenvConfiguration {
         }
     }
     if (-not $Configuration.SingBox.ContainsKey('App') -or [string]::IsNullOrWhiteSpace([string]$Configuration.SingBox.App)) {
-        throw 'SingBox.App must select an installed Scoop manifest.'
+        throw 'SingBox.App must select an installed app.'
     }
-    [void](Split-CapsulenvScoopAppSelector -Selector ([string]$Configuration.SingBox.App))
+    [void](Split-CapsulenvInstalledAppSelector -Selector ([string]$Configuration.SingBox.App))
     if ($Configuration.SingBox.ContainsKey('ExecutablePath') -and -not [string]::IsNullOrWhiteSpace([string]$Configuration.SingBox.ExecutablePath)) {
         Assert-CapsulenvScoopIntegrationRelativePath -Name 'SingBox.ExecutablePath' -Path ([string]$Configuration.SingBox.ExecutablePath)
     }
@@ -386,9 +389,9 @@ function Assert-CapsulenvConfiguration {
         -not $Configuration.ToolStorage.Relocation.Uv.ContainsKey('App') -or
         [string]::IsNullOrWhiteSpace([string]$Configuration.ToolStorage.Relocation.Uv.App)
     ) {
-        throw 'ToolStorage.Relocation.Uv.App must select a Scoop app manifest.'
+        throw 'ToolStorage.Relocation.Uv.App must select an installed app.'
     }
-    [void](Split-CapsulenvScoopAppSelector -Selector ([string]$Configuration.ToolStorage.Relocation.Uv.App))
+    [void](Split-CapsulenvInstalledAppSelector -Selector ([string]$Configuration.ToolStorage.Relocation.Uv.App))
     if (
         $Configuration.ToolStorage.Relocation.Uv.ContainsKey('ExecutablePath') -and
         -not [string]::IsNullOrWhiteSpace([string]$Configuration.ToolStorage.Relocation.Uv.ExecutablePath)
@@ -417,9 +420,9 @@ function Assert-CapsulenvConfiguration {
         -not $Configuration.ToolStorage.Relocation.Pixi.ContainsKey('App') -or
         [string]::IsNullOrWhiteSpace([string]$Configuration.ToolStorage.Relocation.Pixi.App)
     ) {
-        throw 'ToolStorage.Relocation.Pixi.App must select a Scoop app manifest.'
+        throw 'ToolStorage.Relocation.Pixi.App must select an installed app.'
     }
-    [void](Split-CapsulenvScoopAppSelector -Selector ([string]$Configuration.ToolStorage.Relocation.Pixi.App))
+    [void](Split-CapsulenvInstalledAppSelector -Selector ([string]$Configuration.ToolStorage.Relocation.Pixi.App))
     if (
         $Configuration.ToolStorage.Relocation.Pixi.ContainsKey('ExecutablePath') -and
         -not [string]::IsNullOrWhiteSpace([string]$Configuration.ToolStorage.Relocation.Pixi.ExecutablePath)
