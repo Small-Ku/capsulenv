@@ -523,42 +523,6 @@ function Test-CapsulenvDesiredStateDecisionCompatibleWithActive {
     return $true
 }
 
-function Invoke-CapsulenvDesiredStateParallelBatch {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][object[]]$Decisions,
-        [Parameter(Mandatory = $true)][hashtable]$Context,
-        [ValidateRange(1, 32)][int]$ThrottleLimit = 4
-    )
-
-    if ($Decisions.Count -eq 0) { return @() }
-    if ($Decisions.Count -eq 1) { return @(Invoke-CapsulenvDesiredStateDecisionSequential -Decision $Decisions[0] -Context $Context) }
-
-    $workerPool = $null
-    $jobs = New-Object System.Collections.Generic.List[object]
-    try {
-        $workerPool = New-CapsulenvDesiredStateWorkerPool -ThrottleLimit ([Math]::Min($ThrottleLimit, $Decisions.Count))
-        foreach ($decision in $Decisions) {
-            $jobs.Add((Start-CapsulenvDesiredStateWorkerJob -WorkerPool $workerPool -Decision $decision -Context $Context))
-        }
-        $results = New-Object System.Collections.Generic.List[object]
-        foreach ($job in $jobs.ToArray()) {
-            $results.Add((Receive-CapsulenvDesiredStateWorkerJob -Job $job))
-            $job.PowerShell.Dispose()
-        }
-        $jobs.Clear()
-        return $results.ToArray()
-    } finally {
-        foreach ($job in @($jobs.ToArray())) {
-            if ($null -eq $job -or $null -eq $job.PowerShell) { continue }
-            try { if (-not $job.Async.IsCompleted) { $job.PowerShell.Stop() } } catch { }
-            try { $job.PowerShell.Dispose() } catch { }
-        }
-        if ($null -ne $workerPool -and $null -ne $workerPool.Pool) { $workerPool.Pool.Dispose() }
-        if ($null -ne $workerPool -and -not [string]::IsNullOrWhiteSpace([string]$workerPool.WorkerModuleRoot)) { try { [System.IO.Directory]::Delete([string]$workerPool.WorkerModuleRoot, $true) } catch { } }
-    }
-}
-
 function Invoke-CapsulenvDesiredStateReadyQueue {
     [CmdletBinding()]
     param(

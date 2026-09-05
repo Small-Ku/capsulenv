@@ -1,6 +1,11 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$dagStaticAnalysisLibrary = Join-Path $PSScriptRoot 'Capsulenv.DagStaticAnalysis.ps1'
+if (Test-Path -LiteralPath $dagStaticAnalysisLibrary -PathType Leaf) {
+    . $dagStaticAnalysisLibrary
+}
+
 function Get-CapsulenvStaticAst {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Path)

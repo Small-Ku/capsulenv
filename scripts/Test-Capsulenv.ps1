@@ -109,9 +109,9 @@ try {
         $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_RESULT_PATH'] = $resultPath
         $startInfo.EnvironmentVariables['CAPSULENV_TEST_ARTIFACT_ROOT'] = $suiteRoot
         $startInfo.EnvironmentVariables['CAPSULENV_BUILD_ROOT'] = $suiteBuildRoot
-        foreach ($tempVariable in @('TMP', 'TEMP', 'TMPDIR')) {
-            $startInfo.EnvironmentVariables[$tempVariable] = $suiteTempRoot
-        }
+        $startInfo.EnvironmentVariables['TMP'] = $suiteTempRoot
+        $startInfo.EnvironmentVariables['TEMP'] = $suiteTempRoot
+        $startInfo.EnvironmentVariables['TMPDIR'] = $suiteTempRoot
 
         $process = [System.Diagnostics.Process]::Start($startInfo)
         if ($null -eq $process) {

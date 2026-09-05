@@ -8,6 +8,7 @@ $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $settingsPath = Join-Path $root 'PSScriptAnalyzerSettings.psd1'
 $minimumAnalyzerVersion = [version]'1.25.0'
 $staticAnalysisLibrary = Join-Path $PSScriptRoot 'Capsulenv.StaticAnalysis.ps1'
+$dagStaticAnalysisLibrary = Join-Path $PSScriptRoot 'Capsulenv.DagStaticAnalysis.ps1'
 . $staticAnalysisLibrary
 
 $analyzer = Get-Module PSScriptAnalyzer -ListAvailable |
@@ -33,7 +34,7 @@ $runtimePaths = @(
         Select-Object -ExpandProperty FullName)
 )
 
-$analysisPaths = @($runtimePaths) + @($staticAnalysisLibrary)
+$analysisPaths = @($runtimePaths) + @($staticAnalysisLibrary, $dagStaticAnalysisLibrary)
 $diagnostics = @(
     foreach ($path in $analysisPaths) {
         Invoke-ScriptAnalyzer -Path $path -Settings $settingsPath
@@ -157,6 +158,46 @@ if ($desiredStateNodeBindingViolations.Count -gt 0) {
     throw "Capsulenv desired-state scriptblock binding analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
+$desiredStateNodeContractViolations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths $runtimePaths)
+if ($desiredStateNodeContractViolations.Count -gt 0) {
+    $detail = $desiredStateNodeContractViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv desired-state node contract analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$desiredStateSchedulerViolations = @(
+    Get-CapsulenvDesiredStateSchedulerBoundaryViolations -Path (Join-Path (Join-Path $root 'src') '01-DesiredStateCore.ps1')
+)
+if ($desiredStateSchedulerViolations.Count -gt 0) {
+    $detail = $desiredStateSchedulerViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv desired-state scheduler boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$portablePackageExecutionViolations = @(
+    Get-CapsulenvPortablePackageExecutionBoundaryViolations -Paths @(
+        Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName
+    )
+)
+if ($portablePackageExecutionViolations.Count -gt 0) {
+    $detail = $portablePackageExecutionViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv PortableSafe package execution boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$testHarnessIsolationViolations = @(
+    Get-CapsulenvTestHarnessIsolationViolations -Path (Join-Path (Join-Path $root 'scripts') 'Test-Capsulenv.ps1')
+)
+if ($testHarnessIsolationViolations.Count -gt 0) {
+    $detail = $testHarnessIsolationViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv test-harness isolation analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
 $loopArrayAppendViolations = @(Get-CapsulenvLoopArrayAppendViolations -Paths $runtimePaths)
 if ($loopArrayAppendViolations.Count -gt 0) {
     $detail = $loopArrayAppendViolations | ForEach-Object {
@@ -186,6 +227,10 @@ if ($diagnostics.Count -gt 0) {
     ExternalJsonUnsafeMemberAccess = $externalJsonViolations.Count
     MandatoryParameterBindingViolations = $mandatoryBindingViolations.Count
     DesiredStateNodeBindingViolations = $desiredStateNodeBindingViolations.Count
+    DesiredStateNodeContractViolations = $desiredStateNodeContractViolations.Count
+    DesiredStateSchedulerViolations = $desiredStateSchedulerViolations.Count
+    PortablePackageExecutionViolations = $portablePackageExecutionViolations.Count
+    TestHarnessIsolationViolations = $testHarnessIsolationViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }
 } finally {

@@ -229,4 +229,128 @@ foreach ($item in 1..3) {
         @(Get-CapsulenvLoopArrayAppendViolations -Paths @($fixture)).Count | Should -Be 0
     }
 
+
+    It 'rejects desired-state nodes with implicit execution or resource contracts' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-contract-implicit.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id demo -Plan { 1 } -Apply { 2 } -Verify { 3 })
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateExecutionAffinityRequired'
+        @($violations.Rule) | Should -Contain 'DesiredStateConcurrencyPolicyRequired'
+        @($violations.Rule) | Should -Contain 'DesiredStateReadResourcesRequired'
+        @($violations.Rule) | Should -Contain 'DesiredStateWriteResourcesRequired'
+    }
+
+    It 'rejects the legacy ParallelSafe shorthand in desired-state declarations' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-contract-legacy.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id demo -ParallelSafe -ReadResources @() -WriteResources @() -Plan { 1 } -Apply { 2 } -Verify { 3 })
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateLegacyParallelSafeUsage'
+    }
+
+    It 'rejects Auto or claim-free ResourceBound runtime node contracts' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-contract-auto-empty.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id auto -ExecutionAffinity MainRunspace -ConcurrencyPolicy Auto -ReadResources @() -WriteResources @() -Plan { 1 } -Apply { 2 } -Verify { 3 })
+(New-CapsulenvDesiredStateNode -Id empty -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound -ReadResources @() -WriteResources @() -Plan { 1 } -Apply { 2 } -Verify { 3 })
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateAutoConcurrencyForbidden'
+        @($violations.Rule) | Should -Contain 'DesiredStateResourceBoundClaimsRequired'
+    }
+
+    It 'rejects AnyRunspace nodes with exclusive or process-scoped contracts' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-contract-bad.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id exclusive -ExecutionAffinity AnyRunspace -ConcurrencyPolicy Exclusive -ReadResources @() -WriteResources @() -Plan { 1 } -Apply { 2 } -Verify { 3 })
+(New-CapsulenvDesiredStateNode -Id process -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @() -WriteResources @('process:///environment') -Plan { 1 } -Apply { 2 } -Verify { 3 })
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateAnyRunspaceMustBeResourceBound'
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerProcessResourceClaim'
+    }
+
+    It 'requires literal desired-state callbacks' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-callback-variable.ps1' -Source @'
+$apply = { 2 }
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound -ReadResources @() -WriteResources @() -Plan { 1 } -Apply $apply -Verify { 3 })
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateCallbackLiteralRequired'
+    }
+
+    It 'rejects process-global mutations inside AnyRunspace callbacks' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-global.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @() -WriteResources @('capsule:///demo') -Plan { 1 } -Apply {
+    $env:DEMO = 'bad'
+    Set-Location C:\
+    [Environment]::SetEnvironmentVariable('DEMO', 'bad', 'Process')
+} -Verify { $true })
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture))
+        @($violations.Rule | Where-Object { $_ -eq 'DesiredStateWorkerProcessGlobalMutation' }).Count |
+            Should -BeGreaterOrEqual 3
+    }
+
+    It 'accepts a fully explicit resource-bound worker node with child-local effects' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-safe.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvNativeTool -Executable demo.exe -Arguments @('--check')
+} -Verify { $true })
+'@
+        @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
+    It 'rejects wave-barrier scheduler regressions and legacy batch executors' {
+        $fixture = New-CapsulenvStaticFixture -Name 'scheduler-wave-regression.ps1' -Source @'
+function Invoke-CapsulenvDesiredStateParallelBatch { }
+function Invoke-CapsulenvDesiredStatePlan {
+    param($Plan)
+    foreach ($wave in $Plan.ExecutionWaves) {
+        $wave
+    }
+}
+'@
+        $violations = @(Get-CapsulenvDesiredStateSchedulerBoundaryViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'DesiredStateDynamicReadyQueueRequired'
+        @($violations.Rule) | Should -Contain 'DesiredStateRuntimeWaveBarrierForbidden'
+        @($violations.Rule) | Should -Contain 'DesiredStateLegacyWaveBatchHelperForbidden'
+    }
+
+    It 'accepts the authoritative dynamic ready-queue scheduler boundary' {
+        $core = Join-Path (Join-Path $script:Root 'src') '01-DesiredStateCore.ps1'
+        @(Get-CapsulenvDesiredStateSchedulerBoundaryViolations -Path $core).Count | Should -Be 0
+    }
+
+    It 'rejects PortableSafe package-node execution outside the DAG Apply boundary' {
+        $outside = New-CapsulenvStaticFixture -Name 'package-direct.ps1' -Source @'
+function Invoke-BadInstall {
+    Install-CapsulenvPortablePackageNode -Plan $plan
+}
+'@
+        $violations = @(Get-CapsulenvPortablePackageExecutionBoundaryViolations -Paths @($outside))
+        @($violations.Rule) | Should -Contain 'PortablePackageDirectExecutorForbidden'
+
+        $insideFile = New-CapsulenvStaticFixture -Name '45-PackageExecutionGraph.ps1' -Source @'
+function Invoke-StillBad {
+    Install-CapsulenvPortablePackageNode -Plan $plan
+}
+'@
+        $insideViolations = @(Get-CapsulenvPortablePackageExecutionBoundaryViolations -Paths @($insideFile))
+        @($insideViolations.Rule) | Should -Contain 'PortablePackageExecutorMustBeDagApply'
+    }
+
+    It 'accepts PortableSafe package-node execution from a desired-state Apply callback' {
+        $fixture = New-CapsulenvStaticFixture -Name '45-PackageExecutionGraph.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id package -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///source') -WriteResources @('capsule:///package') -Plan { 1 } -Apply {
+    Install-CapsulenvPortablePackageNode -Plan $plan
+} -Verify { $true })
+'@
+        @(Get-CapsulenvPortablePackageExecutionBoundaryViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
+    It 'keeps the canonical test runner child-environment isolated' {
+        $runner = Join-Path (Join-Path $script:Root 'scripts') 'Test-Capsulenv.ps1'
+        @(Get-CapsulenvTestHarnessIsolationViolations -Path $runner).Count | Should -Be 0
+    }
+
 }
