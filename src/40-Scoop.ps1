@@ -261,7 +261,8 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         $writeResources.Add(('capsule:///scoop/persist/{0}/{1}' -f $scopeToken, $nameToken))
         if ([string]$descriptor.Kind -eq 'Owned') {
             $readResources.Add(('capsule:///packages/installed-state/{0}' -f $nameToken))
-            $writeResources.Add(('capsule:///packages/projections/{0}' -f $nameToken))
+            $readResources.Add(('capsule:///packages/persist/{0}' -f $nameToken))
+            $writeResources.Add(('capsule:///packages/content/{0}' -f $nameToken))
             foreach ($alias in @($descriptor.Shims)) {
                 $writeResources.Add(('capsule:///packages/shims/{0}' -f [Uri]::EscapeDataString([string]$alias)))
             }

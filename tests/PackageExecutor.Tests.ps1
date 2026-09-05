@@ -49,6 +49,49 @@ Describe 'Capsulenv PortableSafe package executor' {
         @($plan.Packages.Reference) | Should -Be @('main/helper', 'main/demo')
     }
 
+    It 'maps and executes independent PortableSafe dependencies as resource-bound DAG workers' {
+        foreach ($name in @('helper-a', 'helper-b', 'demo')) {
+            $artifact = Join-Path $TestDrive ($name + '.cmd')
+            "@echo off`r`necho $name`r`n" | Set-Content -LiteralPath $artifact -Encoding ASCII
+            $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+            $manifest = @{
+                version = '1.0.0'
+                url = ([System.Uri]::new([System.IO.Path]::GetFullPath($artifact))).AbsoluteUri
+                hash = $hash
+                bin = @(,@(($name + '.cmd'), $name))
+            }
+            if ($name -eq 'demo') { $manifest.depends = @('helper-a', 'helper-b') }
+            $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $script:Capsule "scoop/buckets/main/bucket/$name.json") -Encoding UTF8
+        }
+
+        $installPlan = Get-CapsulenvPackageInstallPlan -Reference demo
+        $execution = & $script:Module {
+            param($InstallPlan)
+            Get-CapsulenvPortablePackageDesiredStatePlan -InstallPlan $InstallPlan
+        } $installPlan
+
+        $byId = @{}
+        foreach ($decision in @($execution.Plan.Nodes)) { $byId[[string]$decision.Id] = $decision }
+        $helperA = $byId['package-install:main/helper-a']
+        $helperB = $byId['package-install:main/helper-b']
+        $demo = $byId['package-install:main/demo']
+        $helperA.Node.ExecutionAffinity | Should -Be 'AnyRunspace'
+        $helperA.Node.ConcurrencyPolicy | Should -Be 'ResourceBound'
+        $helperB.Node.ExecutionAffinity | Should -Be 'AnyRunspace'
+        @($demo.Node.DependsOn | Sort-Object) | Should -Be @('package-install:main/helper-a', 'package-install:main/helper-b')
+        @($execution.Plan.ExecutionWaves[0].NodeIds | Sort-Object) | Should -Be @('package-install:main/helper-a', 'package-install:main/helper-b')
+        @($execution.Plan.ExecutionWaves[1].NodeIds) | Should -Be @('package-install:main/demo')
+        @($helperA.Node.WriteResources) | Should -Contain 'capsule:///packages/shims/helper-a'
+        @($helperB.Node.WriteResources) | Should -Contain 'capsule:///packages/shims/helper-b'
+
+        $installed = @(Install-CapsulenvPortablePackage -Reference demo)
+        @($installed.Reference) | Should -Be @('main/helper-a', 'main/helper-b', 'main/demo')
+        foreach ($name in @('helper-a', 'helper-b', 'demo')) {
+            Test-Path -LiteralPath (Join-Path $script:Capsule "shims/$name.cmd") -PathType Leaf | Should -BeTrue
+            (& $script:Module { param($Name) Get-CapsulenvInstalledPackageState -Name $Name } $name).Version | Should -Be '1.0.0'
+        }
+    }
+
     It 'installs files and records relocation-safe runtime projection and shims' {
         $artifact = Join-Path $TestDrive 'demo.cmd'
         '@echo off' | Set-Content -LiteralPath $artifact -Encoding ASCII

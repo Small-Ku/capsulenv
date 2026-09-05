@@ -895,14 +895,11 @@ function Install-CapsulenvPortablePackage {
         }) -join [Environment]::NewLine
         throw "PortableSafe installation is unavailable because trusted/unsupported package semantics are required:`n$blocked"
     }
-    $results = New-Object System.Collections.Generic.List[object]
-    foreach ($plan in @($installPlan.Packages)) {
-        $results.Add((Install-CapsulenvPortablePackageNode -Plan $plan))
-    }
+    $results = @(Invoke-CapsulenvPortablePackageInstallPlan -InstallPlan $installPlan)
     if ((Get-CapsulenvInstallMode) -eq 'User') {
         Sync-CapsulenvPackageStartMenuShortcuts
     }
-    return $results.ToArray()
+    return $results
 }
 
 function Update-CapsulenvPortablePackage {
@@ -947,14 +944,11 @@ function Update-CapsulenvPortablePackage {
             ))
     }
 
-    $results = New-Object System.Collections.Generic.List[object]
-    foreach ($plan in @($installPlan.Packages)) {
-        $results.Add((Install-CapsulenvPortablePackageNode -Plan $plan -AllowSourceManifestReplacement))
-    }
+    $results = @(Invoke-CapsulenvPortablePackageInstallPlan -InstallPlan $installPlan -AllowSourceManifestReplacement)
     if ((Get-CapsulenvInstallMode) -eq 'User') {
         Sync-CapsulenvPackageStartMenuShortcuts
     }
-    return $results.ToArray()
+    return $results
 }
 
 function Repair-CapsulenvPackageProjection {
