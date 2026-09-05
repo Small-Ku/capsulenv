@@ -94,6 +94,7 @@ try {
             'PSScriptAnalyzerSettings.psd1',
             'scripts/Analyze-Capsulenv.ps1',
             'scripts/Build-Capsulenv.ps1',
+            'scripts/Invoke-CapsulenvPesterSuite.ps1',
             'scripts/Test-Capsulenv.ps1'
         )) {
             $source = Join-Path $sourceRoot $fileName
@@ -152,6 +153,7 @@ try {
             'PSScriptAnalyzerSettings.psd1'
             'scripts/Analyze-Capsulenv.ps1'
             'scripts/Build-Capsulenv.ps1'
+            'scripts/Invoke-CapsulenvPesterSuite.ps1'
             'scripts/Test-Capsulenv.ps1'
             Get-ChildItem -LiteralPath (Join-Path $outputRoot 'src') -File -Recurse -Force | ForEach-Object {
                 $_.FullName.Substring($outputRoot.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')

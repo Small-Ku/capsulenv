@@ -114,7 +114,7 @@ old PC      -> new PC
 提交 build/installer/runtime packaging 改動前，執行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
+pwsh -NoProfile -File scripts\Test-Capsulenv.ps1
 ```
 
 Tests 必須持續驗證：release bundle 與 destination payload 分離、installed runtime 不依賴 bundle metadata/root scripts、舊 managed runtime 可退出 installed surface、update 保留 local config/mutable directories/unmanaged files，以及 failed mutation 可 rollback。

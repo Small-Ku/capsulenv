@@ -65,10 +65,18 @@ Detailed managed-file/update semantics are canonical in [`DEPLOYMENT.md`](DEPLOY
 `scripts/Test-Capsulenv.ps1` is the single test entrypoint. Development/test environments require **PSScriptAnalyzer 1.25.0+** and **Pester 6.1.0+**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-Capsulenv.ps1
+# Release gate: static analysis + real Windows PowerShell 5.1 contract (on Windows) + every Pester suite.
+pwsh -NoProfile -File scripts\Test-Capsulenv.ps1
+
+# Iteration gate: same static/5.1 contracts, then the architecture/diagnostic/desired-state/package/rehydrate core suites.
+pwsh -NoProfile -File scripts\Test-Capsulenv.ps1 -Profile Fast
 ```
 
-The entrypoint runs static analysis before Pester. `PSScriptAnalyzerSettings.psd1` enables `PSUseCompatibleSyntax` for PowerShell 5.1 and `PSUseCompatibleCommands` against a Windows PowerShell 5.1 compatibility profile over runtime/module/build scripts. Development-only analyzer/Pester drivers are excluded from that runtime command profile because their tooling APIs intentionally target the supplied modern development toolchain. A compatibility diagnostic is a test failure, not a warning.
+`Full` is the default and remains the release gate. Pester suites are launched in **separate child PowerShell processes**, with a per-suite timeout (`-SuiteTimeoutSeconds`, default 120), so module reloads, runspaces, mocks, or Pester state from one suite cannot poison the next suite. The runner prints the current suite and duration before moving on; a hang therefore identifies its owning suite instead of leaving the whole gate apparently idle.
+
+The entrypoint runs static analysis first. On Windows it then launches `tests/WindowsPowerShell51.Contract.ps1` through the real `powershell.exe` 5.1 runtime before Pester. That Pester-free contract clean-builds/imports Capsulenv, constructs the rehydrate DAG, and asserts that every desired-state `Plan`/`Apply`/`Verify` callback is actually a `ScriptBlock`; this specifically protects the Windows PowerShell 5.1 argument-binding boundary that modern `pwsh` alone cannot reproduce.
+
+`PSScriptAnalyzerSettings.psd1` enables `PSUseCompatibleSyntax` for PowerShell 5.1 and `PSUseCompatibleCommands` against a Windows PowerShell 5.1 compatibility profile over runtime/module/build scripts. A compatibility diagnostic is a test failure, not a warning.
 
 `Capsulenv.StaticAnalysis.ps1` adds fail-closed AST/source architecture gates for invariants that ordinary PSScriptAnalyzer cannot express. The current gates require the control bootstrap to remain command-free, forbid runtime `Import-PowerShellDataFile`, reject every `module-runtime/scoop-capsulenv-*` source adapter, prevent runtime code from targeting upstream Scoop's `Programs\Scoop Apps` namespace, reject every Scoop `shortcut_folder` override, require the public Scoop shim to dispatch directly to the installed upstream `bin/scoop.ps1`, require `Get-CapsulenvInstallMode` to stay command-free and select User only from process-scoped `CAPSULENV_MODE`, and reject direct member access on declared untrusted external JSON record variables such as uv's `$item`. It also rejects statically provable explicit null/empty arguments to mandatory local-function parameters unless the matching `Allow*` attribute is present, and rejects `+=` on a variable known to be a PowerShell array while inside a loop. When adding another external JSON ingestion boundary, register its record variable(s) in the analyzer rather than relying on StrictMode/runtime failures.
 

@@ -19,10 +19,13 @@ Describe 'Capsulenv install-mode isolation contracts' {
     It 'has one Pester-only test path with no duplicated smoke suite' {
         (Test-Path -LiteralPath (Join-Path $script:Root 'tests/smoke')) | Should -BeFalse
         $runner = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/Test-Capsulenv.ps1') -Raw
-        $runner | Should -Match 'Invoke-Pester'
+        $suiteRunner = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/Invoke-CapsulenvPesterSuite.ps1') -Raw
         $runner | Should -Match 'Get-ChildItem -LiteralPath \$testsRoot -Filter ''\*\.Tests\.ps1'''
-        $runner | Should -Match '\$config\.Run\.Path = \$testPath'
+        $runner | Should -Match 'System\.Diagnostics\.ProcessStartInfo'
+        $runner | Should -Match 'SuiteTimeoutSeconds'
+        $suiteRunner | Should -Match 'Invoke-Pester -Path \$testPath -PassThru'
         $runner | Should -Not -Match '\.Smoke\.ps1'
+        $suiteRunner | Should -Not -Match '\.Smoke\.ps1'
     }
 
     It 'keeps package repair bounded and reserves explicit host integration for User mode' {
@@ -37,7 +40,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:ScoopSource | Should -Not -Match 'Invoke-CapsulenvConfiguredHookReplay'
         $script:PackageExecutorSource | Should -Match 'PortableSafe'
         $script:PackageExecutorSource | Should -Match 'Get-CapsulenvPackageShimRoot'
-        $script:PackageHostIntegrationSource | Should -Match "Get-CapsulenvInstallMode\) -ne 'User'"
+        $script:PackageHostIntegrationSource | Should -Match '\$IntegrationMode -ne ''User'''
         $script:PackageHostIntegrationSource | Should -Match "'capsule/'"
         $script:PackageHostIntegrationSource | Should -Match "'app'"
         $script:PackageHostIntegrationSource | Should -Match "'run'"

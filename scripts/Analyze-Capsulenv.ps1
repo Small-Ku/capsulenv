@@ -19,6 +19,7 @@ if ($null -eq $analyzer) {
 }
 Import-Module $analyzer.Path -Force
 
+try {
 # Analyze code that can execute in the Windows PowerShell 5.1 control plane or
 # be merged into the runtime module.  Development-only test/analyzer drivers use
 # newer tooling APIs intentionally and are checked by the parser/Pester suite.
@@ -186,4 +187,11 @@ if ($diagnostics.Count -gt 0) {
     MandatoryParameterBindingViolations = $mandatoryBindingViolations.Count
     DesiredStateNodeBindingViolations = $desiredStateNodeBindingViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
+}
+} finally {
+    # PSScriptAnalyzer 1.25 can keep background analysis resources alive long
+    # enough to stall non-interactive pwsh process shutdown unless the module is
+    # explicitly unloaded.  Keep the analyzer lifecycle inside this script so
+    # the canonical test runner can supervise it deterministically.
+    Remove-Module PSScriptAnalyzer -Force -ErrorAction SilentlyContinue
 }
