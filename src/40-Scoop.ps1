@@ -268,7 +268,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         }
         $packageProjectionDescriptorMap[$nodeId] = $descriptor
         $packageProjectionNodeIds.Add($nodeId)
-        $packageProjectionNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ParallelSafe `
+        $packageProjectionNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn @('session-environment','user-environment-backup') `
             -ReadResources $readResources.ToArray() `
             -WriteResources $writeResources.ToArray() `
@@ -298,7 +298,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         $nodeId = ('project-cache-link:{0}' -f $recordToken)
         $projectCacheRecordMap[$nodeId] = $record
         $projectCacheNodeIds.Add($nodeId)
-        $projectCacheNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ParallelSafe `
+        $projectCacheNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'package-projections' `
             -ReadResources @(('capsule:///project-cache/store/{0}/{1}' -f $profileToken, $recordToken)) `
             -WriteResources @(('host:///project-cache-links/{0}' -f $recordToken)) `
@@ -337,14 +337,14 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) $results=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.PackageProjectionNodeIds)){ $results.Add($c.Outputs[[string]$nodeId]) }; Merge-CapsulenvPackageProjectionResults -Results $results.ToArray() } `
             -Verify { param($c,$d,$o) $null -ne $o -and $null -ne $o.PSObject.Properties['Complete'] })
-        (New-CapsulenvDesiredStateNode -Id 'package-host-integration' `
+        (New-CapsulenvDesiredStateNode -Id 'package-host-integration' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///packages/installed-state') `
             -WriteResources @('host:///start-menu/capsulenv') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvPackageStartMenuShortcuts -IntegrationMode $c.IntegrationMode } `
             -Verify { param($c,$d,$o) $true })
-        (New-CapsulenvDesiredStateNode -Id 'persist-relocation' -ParallelSafe `
+        (New-CapsulenvDesiredStateNode -Id 'persist-relocation' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///scoop/persist') `
@@ -359,7 +359,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) if($null -ne $c.ProjectCacheRegistryError){ return @([pscustomobject]@{ Profile=$null; ProjectPath=$null; LinkPath=$null; StorePath=$null; LinkType=$null; Changed=$false; Status='RegistryError'; Detail=[string]$c.ProjectCacheRegistryError }) }; $repairs=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.ProjectCacheNodeIds)){ $repairs.Add($c.Outputs[[string]$nodeId]) }; @(Complete-CapsulenvProjectCacheRepairBatch -Repairs $repairs.ToArray()) } `
             -Verify { param($c,$d,$o) $null -ne $o })
-        (New-CapsulenvDesiredStateNode -Id 'tool-relocation' `
+        (New-CapsulenvDesiredStateNode -Id 'tool-relocation' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'project-cache-links' `
             -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `
             -WriteResources @('capsule:///tool-data','capsule:///tool-storage','capsule:///state/tool-workspaces','host:///workspaces/registered') `
@@ -584,7 +584,7 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.DesiredState.RehydrateOwners
     $rehydrate = Get-CapsulenvScoopRehydratePlan
     $plan = $rehydrate.Plan
     $unorderedWriters = @($plan.OwnershipDiagnostics.UnorderedWriteWrite)
-    $parallelNodeIds = @($plan.ExecutionWaves | ForEach-Object { @($_.ParallelNodeIds) } | Select-Object -Unique)
+    $workerNodeIds = @($plan.ExecutionWaves | ForEach-Object { @($_.WorkerNodeIds) } | Select-Object -Unique)
     $status = if ($unorderedWriters.Count -eq 0) { 'Healthy' } else { 'Advisory' }
     New-CapsulenvDoctorResult `
         -Id 'Capsulenv.Doctor.DesiredState.RehydrateOwnership' `
@@ -592,8 +592,8 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.DesiredState.RehydrateOwners
         -Area 'DesiredState' `
         -Status $status `
         -Importance Optional `
-        -Summary ("{0} claim(s), {1} execution wave(s), {2} parallel-safe node(s), {3} unordered competing writer pair(s)" -f @($plan.ResourceClaims).Count, @($plan.ExecutionWaves).Count, $parallelNodeIds.Count, $unorderedWriters.Count) `
-        -Data ([ordered]@{ Claims=@($plan.ResourceClaims); Conflicts=@($plan.ResourceConflicts); ParallelNodeIds=$parallelNodeIds; UnorderedWriteWrite=$unorderedWriters }) `
+        -Summary ("{0} claim(s), {1} execution wave(s), {2} worker-capable resource-bound node(s), {3} unordered competing writer pair(s)" -f @($plan.ResourceClaims).Count, @($plan.ExecutionWaves).Count, $workerNodeIds.Count, $unorderedWriters.Count) `
+        -Data ([ordered]@{ Claims=@($plan.ResourceClaims); Conflicts=@($plan.ResourceConflicts); WorkerNodeIds=$workerNodeIds; ParallelNodeIds=$workerNodeIds; UnorderedWriteWrite=$unorderedWriters }) `
         -Remediation $(if($unorderedWriters.Count -eq 0){@()}else{@('Add an explicit dependency between competing writers, or narrow their write-resource claims before enabling parallel execution.')})
 }
 

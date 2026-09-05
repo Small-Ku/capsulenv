@@ -131,19 +131,43 @@ function Get-CapsulenvDesiredStateResourceConflicts {
     return $conflicts.ToArray()
 }
 
-function Assert-CapsulenvDesiredStateParallelSafety {
+function Test-CapsulenvDesiredStateWorkerEligible {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Node)
+
+    return (
+        [string]$Node.ExecutionAffinity -eq 'AnyRunspace' -and
+        [string]$Node.ConcurrencyPolicy -eq 'ResourceBound'
+    )
+}
+
+function Test-CapsulenvDesiredStateConcurrencyConflict {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Left, [Parameter(Mandatory = $true)]$Right)
+
+    if (
+        [string]$Left.ConcurrencyPolicy -eq 'Exclusive' -or
+        [string]$Right.ConcurrencyPolicy -eq 'Exclusive'
+    ) {
+        return $true
+    }
+    return Test-CapsulenvDesiredStateResourceConflict -Left $Left -Right $Right
+}
+
+function Assert-CapsulenvDesiredStateExecutionContract {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object[]]$Decisions)
 
     foreach ($decision in $Decisions) {
-        if (-not [bool]$decision.Node.ParallelSafe -or $decision.Operation -ne 'Apply' -or -not $decision.CanApply) { continue }
+        if ($decision.Operation -ne 'Apply' -or -not $decision.CanApply) { continue }
         $claims = @(Get-CapsulenvDesiredStateResourceClaims -Node $decision.Node)
-        if ($claims.Count -eq 0) {
-            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelClaimsRequired' -Message ("Parallel-safe desired-state node '{0}' must declare at least one resource claim." -f $decision.Id) -TargetObject $decision.Id -Remediation @('Declare every resource read/write used by the node, or leave the node sequential.'))
+        if ([string]$decision.Node.ConcurrencyPolicy -eq 'ResourceBound' -and $claims.Count -eq 0) {
+            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelClaimsRequired' -Message ("Resource-bound desired-state node '{0}' must declare at least one resource claim." -f $decision.Id) -TargetObject $decision.Id -Remediation @('Declare every resource read/write used by the node, or make the node Exclusive.'))
         }
+        if ([string]$decision.Node.ExecutionAffinity -ne 'AnyRunspace') { continue }
         $processClaims = @($claims | Where-Object { ([string]$_.ResourceUri).StartsWith('process:///', [System.StringComparison]::OrdinalIgnoreCase) })
         if ($processClaims.Count -gt 0) {
-            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelProcessResource' -Message ("Parallel-safe desired-state node '{0}' claims process-scoped state and cannot safely run in a worker runspace." -f $decision.Id) -TargetObject $decision.Id -Context ([ordered]@{ Resources=@($processClaims.ResourceUri) }) -Remediation @('Keep process-scoped mutations sequential.'))
+            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelProcessResource' -Message ("Any-runspace desired-state node '{0}' claims process-scoped state and cannot safely run in a worker runspace." -f $decision.Id) -TargetObject $decision.Id -Context ([ordered]@{ Resources=@($processClaims.ResourceUri) }) -Remediation @('Keep process-scoped mutations on the MainRunspace, or isolate them in child-process state.'))
         }
     }
 }
@@ -189,7 +213,7 @@ function Get-CapsulenvDesiredStateExecutionWaves {
             if (-not $ready) { continue }
             $conflict = $false
             foreach ($existing in $selected.ToArray()) {
-                if (Test-CapsulenvDesiredStateResourceConflict -Left $decision.Node -Right $existing.Node) { $conflict = $true; break }
+                if (Test-CapsulenvDesiredStateConcurrencyConflict -Left $decision.Node -Right $existing.Node) { $conflict = $true; break }
             }
             if (-not $conflict) { $selected.Add($decision) }
         }
@@ -198,7 +222,7 @@ function Get-CapsulenvDesiredStateExecutionWaves {
         }
         $claims = New-Object System.Collections.Generic.List[object]
         foreach ($decision in $selected.ToArray()) { foreach ($claim in @(Get-CapsulenvDesiredStateResourceClaims -Node $decision.Node)) { $claims.Add($claim) } }
-        $waves.Add([pscustomobject][ordered]@{ Index=$waveIndex; NodeIds=[string[]]@($selected.Id); ParallelNodeIds=[string[]]@($selected | Where-Object { [bool]$_.Node.ParallelSafe } | ForEach-Object { [string]$_.Id }); SequentialNodeIds=[string[]]@($selected | Where-Object { -not [bool]$_.Node.ParallelSafe } | ForEach-Object { [string]$_.Id }); ResourceClaims=$claims.ToArray() })
+        $waves.Add([pscustomobject][ordered]@{ Index=$waveIndex; NodeIds=[string[]]@($selected.Id); WorkerNodeIds=[string[]]@($selected | Where-Object { Test-CapsulenvDesiredStateWorkerEligible -Node $_.Node } | ForEach-Object { [string]$_.Id }); MainRunspaceNodeIds=[string[]]@($selected | Where-Object { [string]$_.Node.ExecutionAffinity -eq 'MainRunspace' } | ForEach-Object { [string]$_.Id }); ExclusiveNodeIds=[string[]]@($selected | Where-Object { [string]$_.Node.ConcurrencyPolicy -eq 'Exclusive' } | ForEach-Object { [string]$_.Id }); ParallelNodeIds=[string[]]@($selected | Where-Object { Test-CapsulenvDesiredStateWorkerEligible -Node $_.Node } | ForEach-Object { [string]$_.Id }); SequentialNodeIds=[string[]]@($selected | Where-Object { -not (Test-CapsulenvDesiredStateWorkerEligible -Node $_.Node) } | ForEach-Object { [string]$_.Id }); ResourceClaims=$claims.ToArray() })
         foreach ($decision in $selected.ToArray()) { [void]$completed.Add([string]$decision.Id); [void]$pending.Remove($decision) }
         $waveIndex++
     }
@@ -215,15 +239,29 @@ function New-CapsulenvDesiredStateNode {
         [string[]]$DependsOn = @(),
         [AllowEmptyCollection()][string[]]$ReadResources = @(),
         [AllowEmptyCollection()][string[]]$WriteResources = @(),
+        [ValidateSet('MainRunspace','AnyRunspace')][string]$ExecutionAffinity = 'MainRunspace',
+        [ValidateSet('Auto','Exclusive','ResourceBound')][string]$ConcurrencyPolicy = 'Auto',
         [switch]$ParallelSafe,
         [Parameter(Mandatory = $true)][scriptblock]$Plan,
         [Parameter(Mandatory = $true)][scriptblock]$Apply,
         [Parameter(Mandatory = $true)][scriptblock]$Verify
     )
     foreach ($resource in @($ReadResources) + @($WriteResources)) { [void](Normalize-CapsulenvDesiredStateResourceUri -ResourceUri ([string]$resource)) }
+    if ($ParallelSafe) {
+        if ($PSBoundParameters.ContainsKey('ExecutionAffinity') -or $PSBoundParameters.ContainsKey('ConcurrencyPolicy')) {
+            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.LegacyParallelSafeConflict' -Message ("Desired-state node '{0}' cannot combine -ParallelSafe with explicit execution affinity or concurrency policy." -f $Id) -TargetObject $Id -Remediation @('Use -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound instead of -ParallelSafe.'))
+        }
+        $ExecutionAffinity = 'AnyRunspace'
+        $ConcurrencyPolicy = 'ResourceBound'
+    } elseif ($ConcurrencyPolicy -eq 'Auto') {
+        $ConcurrencyPolicy = if (@($ReadResources).Count -gt 0 -or @($WriteResources).Count -gt 0) { 'ResourceBound' } else { 'Exclusive' }
+    }
+    $workerEligible = ($ExecutionAffinity -eq 'AnyRunspace' -and $ConcurrencyPolicy -eq 'ResourceBound')
     return [pscustomobject][ordered]@{
         Id=$Id; DependsOn=[string[]]@($DependsOn)
-        ReadResources=[string[]]@($ReadResources); WriteResources=[string[]]@($WriteResources); ParallelSafe=[bool]$ParallelSafe
+        ReadResources=[string[]]@($ReadResources); WriteResources=[string[]]@($WriteResources)
+        ExecutionAffinity=$ExecutionAffinity; ConcurrencyPolicy=$ConcurrencyPolicy
+        ParallelSafe=[bool]$workerEligible
         Plan=$Plan; Apply=$Apply; Verify=$Verify
     }
 }
@@ -287,7 +325,7 @@ function Get-CapsulenvDesiredStatePlan {
         $decisions[[string]$node.Id] = $decision
     }
     $items = @($decisions.Values)
-    Assert-CapsulenvDesiredStateParallelSafety -Decisions $items
+    Assert-CapsulenvDesiredStateExecutionContract -Decisions $items
     $resourceConflicts = @(Get-CapsulenvDesiredStateResourceConflicts -Decisions $items)
     $claims = New-Object System.Collections.Generic.List[object]
     foreach ($item in $items) { foreach ($claim in @(Get-CapsulenvDesiredStateResourceClaims -Node $item.Node)) { $claims.Add($claim) } }
@@ -459,7 +497,7 @@ function Invoke-CapsulenvDesiredStatePlan {
             $sequential = New-Object System.Collections.Generic.List[object]
             foreach ($nodeId in @($wave.NodeIds)) {
                 $decision = $decisionsById[[string]$nodeId]
-                if ([bool]$decision.Node.ParallelSafe) { $parallel.Add($decision) } else { $sequential.Add($decision) }
+                if (Test-CapsulenvDesiredStateWorkerEligible -Node $decision.Node) { $parallel.Add($decision) } else { $sequential.Add($decision) }
             }
 
             foreach ($decision in $sequential.ToArray()) {

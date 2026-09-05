@@ -126,6 +126,48 @@ Describe 'Capsulenv desired-state parallel execution' {
         $waves.Conflicts[0].OrderedByDependency | Should -BeFalse
     }
 
+    It 'separates execution affinity from concurrency policy' {
+        $shape = & $script:Module {
+            $main=New-CapsulenvDesiredStateNode -Id main -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///config/main') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $worker=New-CapsulenvDesiredStateNode -Id worker -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///config/worker') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $legacy=New-CapsulenvDesiredStateNode -Id legacy -ParallelSafe -ReadResources @('capsule:///config/legacy') -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($main,$worker,$legacy)
+            [pscustomobject]@{
+                MainAffinity=$main.ExecutionAffinity
+                MainPolicy=$main.ConcurrencyPolicy
+                MainParallelSafe=$main.ParallelSafe
+                WorkerAffinity=$worker.ExecutionAffinity
+                WorkerPolicy=$worker.ConcurrencyPolicy
+                WorkerParallelSafe=$worker.ParallelSafe
+                LegacyAffinity=$legacy.ExecutionAffinity
+                LegacyPolicy=$legacy.ConcurrencyPolicy
+                WaveWorkerIds=@($plan.ExecutionWaves[0].WorkerNodeIds)
+                WaveMainIds=@($plan.ExecutionWaves[0].MainRunspaceNodeIds)
+            }
+        }
+        $shape.MainAffinity | Should -Be 'MainRunspace'
+        $shape.MainPolicy | Should -Be 'ResourceBound'
+        $shape.MainParallelSafe | Should -BeFalse
+        $shape.WorkerAffinity | Should -Be 'AnyRunspace'
+        $shape.WorkerPolicy | Should -Be 'ResourceBound'
+        $shape.WorkerParallelSafe | Should -BeTrue
+        $shape.LegacyAffinity | Should -Be 'AnyRunspace'
+        $shape.LegacyPolicy | Should -Be 'ResourceBound'
+        @($shape.WaveWorkerIds) | Should -Contain 'worker'
+        @($shape.WaveMainIds) | Should -Contain 'main'
+    }
+
+    It 'serializes exclusive nodes even when their resources are disjoint' {
+        $waves = & $script:Module {
+            $exclusive=New-CapsulenvDesiredStateNode -Id exclusive -ExecutionAffinity MainRunspace -ConcurrencyPolicy Exclusive -WriteResources @('capsule:///exclusive/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $worker=New-CapsulenvDesiredStateNode -Id worker -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('capsule:///parallel/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            @(Get-CapsulenvDesiredStatePlan -Nodes @($exclusive,$worker)).ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }
+        }
+        @($waves) | Should -HaveCount 2
+        $waves[0] | Should -Be 'exclusive'
+        $waves[1] | Should -Be 'worker'
+    }
+
     It 'requires parallel-safe nodes to declare claims' {
         $record = & $script:Module {
             try {

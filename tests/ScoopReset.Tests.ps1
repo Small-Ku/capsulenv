@@ -34,6 +34,10 @@ Describe 'Capsulenv package projection repair boundary' {
         @($sessionNode.WriteResources) | Should -Contain 'capsule:///runtime-directories'
         @($toolNode.WriteResources) | Should -Not -Contain 'process:///environment'
         @($toolNode.WriteResources) | Should -Contain 'host:///workspaces/registered'
+        $toolNode.ExecutionAffinity | Should -Be 'AnyRunspace'
+        $toolNode.ConcurrencyPolicy | Should -Be 'ResourceBound'
+        $hostNode.ExecutionAffinity | Should -Be 'MainRunspace'
+        $hostNode.ConcurrencyPolicy | Should -Be 'ResourceBound'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/user-environment-backup'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/install-mode'
     }
@@ -55,7 +59,7 @@ Describe 'Capsulenv package projection repair boundary' {
         }
         $projectionNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'package-projection:*' })
         $projectionNodes | Should -HaveCount 3
-        @($projectionNodes | Where-Object { -not [bool]$_.Node.ParallelSafe }) | Should -HaveCount 0
+        @($projectionNodes | Where-Object { $_.Node.ExecutionAffinity -ne 'AnyRunspace' -or $_.Node.ConcurrencyPolicy -ne 'ResourceBound' }) | Should -HaveCount 0
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) } | Where-Object { $_ -eq 'capsule:///packages/shims' }) | Should -HaveCount 0
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/alpha'
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/beta'
@@ -82,7 +86,7 @@ Describe 'Capsulenv package projection repair boundary' {
         $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false }
         $linkNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'project-cache-link:*' })
         $linkNodes | Should -HaveCount 2
-        @($linkNodes | Where-Object { -not [bool]$_.Node.ParallelSafe }) | Should -HaveCount 0
+        @($linkNodes | Where-Object { $_.Node.ExecutionAffinity -ne 'AnyRunspace' -or $_.Node.ConcurrencyPolicy -ne 'ResourceBound' }) | Should -HaveCount 0
         @($linkNodes | ForEach-Object { @($_.Node.WriteResources) } | Select-Object -Unique) | Should -HaveCount 2
         $barrier = @($integration.Plan.Nodes | Where-Object Id -eq 'project-cache-links')[0]
         [bool]$barrier.Node.ParallelSafe | Should -BeFalse
