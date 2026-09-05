@@ -203,6 +203,38 @@ Describe 'Capsulenv desired-state parallel execution' {
         $result.Waves[0] | Should -Be 'a,b'
         $result.Outputs[-1] | Should -Be 'AB'
     }
+    It 'dispatches a newly-ready dependent without waiting for an unrelated slow peer' {
+        $result = & $script:Module {
+            $slowDone=[System.Threading.ManualResetEventSlim]::new($false)
+            try {
+                $fast=New-CapsulenvDesiredStateNode -Id fast -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('capsule:///dynamic/fast') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)[System.Threading.Thread]::Sleep(100);'F'} -Verify {param($c,$d,$o)$o -eq 'F'}
+                $slow=New-CapsulenvDesiredStateNode -Id slow -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('capsule:///dynamic/slow') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)[System.Threading.Thread]::Sleep(1200);$c.SlowDone.Set();'S'} -Verify {param($c,$d,$o)$o -eq 'S'}
+                $dependent=New-CapsulenvDesiredStateNode -Id dependent -DependsOn fast -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///dynamic/fast') -WriteResources @('capsule:///dynamic/dependent') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if($c.SlowDone.IsSet){throw 'dependent waited for unrelated slow peer'};([string]$c.Outputs['fast'])+'D'} -Verify {param($c,$d,$o)$o -eq 'FD'}
+                $ctx=@{SlowDone=$slowDone};$plan=Get-CapsulenvDesiredStatePlan -Nodes @($fast,$slow,$dependent) -Context $ctx
+                $runs=@(Invoke-CapsulenvDesiredStatePlan -Plan $plan -Context $ctx -ExecutionMode Auto -ThrottleLimit 2)
+                [pscustomobject]@{Dependent=($runs | Where-Object Id -eq dependent).Output;Slow=($runs | Where-Object Id -eq slow).Output;WaveCount=@($plan.ExecutionWaves).Count}
+            } finally { $slowDone.Dispose() }
+        }
+        $result.Dependent | Should -Be 'FD'
+        $result.Slow | Should -Be 'S'
+        $result.WaveCount | Should -Be 2
+    }
+
+    It 'overlaps main-runspace resource-bound work with a compatible worker' {
+        $result = & $script:Module {
+            $barrier=[System.Threading.Barrier]::new(2)
+            try {
+                $worker=New-CapsulenvDesiredStateNode -Id worker -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('capsule:///dynamic/worker') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if(-not $c.Barrier.SignalAndWait(5000)){throw 'worker did not overlap main'};'W'} -Verify {param($c,$d,$o)$o -eq 'W'}
+                $main=New-CapsulenvDesiredStateNode -Id main -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('host:///dynamic/main') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if(-not $c.Barrier.SignalAndWait(5000)){throw 'main did not overlap worker'};'M'} -Verify {param($c,$d,$o)$o -eq 'M'}
+                $ctx=@{Barrier=$barrier};$plan=Get-CapsulenvDesiredStatePlan -Nodes @($worker,$main) -Context $ctx
+                @(Invoke-CapsulenvDesiredStatePlan -Plan $plan -Context $ctx -ExecutionMode Auto -ThrottleLimit 1).Output
+            } finally { $barrier.Dispose() }
+        }
+        @($result) | Should -HaveCount 2
+        @($result) | Should -Contain 'W'
+        @($result) | Should -Contain 'M'
+    }
+
 }
 
 Describe 'Capsulenv desired-state module worker boundary' {

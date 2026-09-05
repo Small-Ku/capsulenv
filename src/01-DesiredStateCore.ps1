@@ -389,6 +389,140 @@ function Invoke-CapsulenvDesiredStateDecisionSequential {
     }
 }
 
+function New-CapsulenvDesiredStateWorkerPool {
+    [CmdletBinding()]
+    param([ValidateRange(1, 32)][int]$ThrottleLimit = 4)
+
+    $loadedModules = @(Get-Module Capsulenv)
+    $module = if ($loadedModules.Count -gt 0) { $loadedModules[0] } else { $null }
+    if ($null -eq $module -or [string]::IsNullOrWhiteSpace([string]$module.Path)) {
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelModuleUnavailable' -Message 'Parallel desired-state execution requires the loaded Capsulenv module to have a module path.' -Remediation @('Run desired-state execution through the built/imported Capsulenv module, or use sequential execution.'))
+    }
+
+    $moduleDirectory = Split-Path -Parent ([string]$module.Path)
+    $workerModuleRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-worker-' + [Guid]::NewGuid().ToString('N'))
+    [void][System.IO.Directory]::CreateDirectory($workerModuleRoot)
+    foreach ($sourceFile in [System.IO.Directory]::GetFiles($moduleDirectory, '*', [System.IO.SearchOption]::AllDirectories)) {
+        $relativePath = $sourceFile.Substring($moduleDirectory.Length).TrimStart([char[]]@('\','/'))
+        if ([System.IO.Path]::GetFileName($sourceFile) -eq [System.IO.Path]::GetFileName([string]$module.Path)) { continue }
+        $destinationFile = Join-Path $workerModuleRoot $relativePath
+        [void][System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($destinationFile))
+        [System.IO.File]::Copy($sourceFile, $destinationFile, $true)
+    }
+    $workerModulePath = Join-Path $workerModuleRoot ('CapsulenvWorker.' + [Guid]::NewGuid().ToString('N') + '.psm1')
+    [System.IO.File]::Copy([string]$module.Path, $workerModulePath, $true)
+
+    $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    $initialSessionState.ImportPSModule(@($workerModulePath))
+    $pool = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspacePool($ThrottleLimit, $ThrottleLimit, $initialSessionState, $Host)
+    try {
+        $pool.Open()
+    } catch {
+        $pool.Dispose()
+        try { [System.IO.Directory]::Delete($workerModuleRoot, $true) } catch { }
+        throw
+    }
+    $workerScript = @'
+param($ModuleName, $ApplyText, $VerifyText, $Context, $Decision)
+$workerModule = Get-Module -Name $ModuleName | Select-Object -First 1
+if ($null -eq $workerModule) {
+    throw "Desired-state worker module is unavailable: $ModuleName"
+}
+& $workerModule {
+    param($ApplyText, $VerifyText, $Context, $Decision)
+    try {
+        $apply = [scriptblock]::Create([string]$ApplyText)
+        $verify = [scriptblock]::Create([string]$VerifyText)
+        $output = & $apply $Context $Decision
+        $verified = [bool](& $verify $Context $Decision $output)
+        [pscustomobject][ordered]@{
+            Success = $verified
+            Output = $output
+            FailureId = if ($verified) { '' } else { 'Capsulenv.DesiredState.VerifyFailed' }
+            FailureMessage = if ($verified) { '' } else { "Verification returned false for desired-state node '$($Decision.Id)'." }
+        }
+    } catch {
+        [pscustomobject][ordered]@{
+            Success = $false
+            Output = $null
+            FailureId = [string]$_.FullyQualifiedErrorId
+            FailureMessage = [string]$_.Exception.Message
+        }
+    }
+} $ApplyText $VerifyText $Context $Decision
+'@
+    return [pscustomobject]@{ Pool=$pool; WorkerScript=$workerScript; WorkerModuleRoot=$workerModuleRoot; WorkerModulePath=$workerModulePath; WorkerModuleName=[System.IO.Path]::GetFileNameWithoutExtension($workerModulePath) }
+}
+
+function Start-CapsulenvDesiredStateWorkerJob {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$WorkerPool,
+        [Parameter(Mandatory = $true)]$Decision,
+        [Parameter(Mandatory = $true)][hashtable]$Context
+    )
+
+    $powershell = [PowerShell]::Create()
+    try {
+        $powershell.RunspacePool = $WorkerPool.Pool
+        $workerContext = Copy-CapsulenvDesiredStateWorkerContext -Context $Context
+        $applyText = [string]$Decision.Node.Apply.ToString()
+        $verifyText = [string]$Decision.Node.Verify.ToString()
+        [void]$powershell.AddScript([string]$WorkerPool.WorkerScript).AddArgument([string]$WorkerPool.WorkerModuleName).AddArgument($applyText).AddArgument($verifyText).AddArgument($workerContext).AddArgument($Decision)
+        $async = $powershell.BeginInvoke()
+        return [pscustomobject]@{ Decision=$Decision; PowerShell=$powershell; Async=$async }
+    } catch {
+        $powershell.Dispose()
+        throw
+    }
+}
+
+function Receive-CapsulenvDesiredStateWorkerJob {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Job)
+
+    try {
+        $workerOutput = @($Job.PowerShell.EndInvoke($Job.Async))
+        $worker = if ($workerOutput.Count -gt 0) { $workerOutput[$workerOutput.Count - 1] } else { $null }
+        if ($null -eq $worker) {
+            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelWorkerNoResult' -Message ("Parallel worker returned no result for desired-state node '{0}'." -f $Job.Decision.Id) -TargetObject $Job.Decision.Id)
+        }
+        if (-not [bool]$worker.Success) {
+            throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ApplyFailed' -Message ('[[CapsulenvText:DesiredState.ApplyFailed]]' -f $Job.Decision.Id) -TargetObject $Job.Decision.Id -Context ([ordered]@{ NodeId=[string]$Job.Decision.Id; WorkerFailureId=[string]$worker.FailureId; WorkerFailureMessage=[string]$worker.FailureMessage }))
+        }
+        return [pscustomobject][ordered]@{ Id=$Job.Decision.Id; Operation='Apply'; Applied=$true; Verified=$true; Output=$worker.Output }
+    } finally {
+        # Disposal is intentionally owned by the scheduler after EndInvoke returns.
+        # Disposing from inside this helper can perturb the caller's module-scoped command resolution; the coordinator owns disposal after publication.
+    }
+}
+
+function Test-CapsulenvDesiredStateDecisionReady {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Decision,
+        [Parameter(Mandatory = $true)]$CompletedNodeIds
+    )
+
+    foreach ($dependency in @($Decision.Node.DependsOn)) {
+        if (-not $CompletedNodeIds.Contains([string]$dependency)) { return $false }
+    }
+    return $true
+}
+
+function Test-CapsulenvDesiredStateDecisionCompatibleWithActive {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Decision,
+        [AllowEmptyCollection()][object[]]$ActiveNodes = @()
+    )
+
+    foreach ($node in @($ActiveNodes)) {
+        if (Test-CapsulenvDesiredStateConcurrencyConflict -Left $Decision.Node -Right $node) { return $false }
+    }
+    return $true
+}
+
 function Invoke-CapsulenvDesiredStateParallelBatch {
     [CmdletBinding()]
     param(
@@ -400,67 +534,156 @@ function Invoke-CapsulenvDesiredStateParallelBatch {
     if ($Decisions.Count -eq 0) { return @() }
     if ($Decisions.Count -eq 1) { return @(Invoke-CapsulenvDesiredStateDecisionSequential -Decision $Decisions[0] -Context $Context) }
 
-    $loadedModules = @(Get-Module Capsulenv)
-    $module = if ($loadedModules.Count -gt 0) { $loadedModules[0] } else { $null }
-    if ($null -eq $module -or [string]::IsNullOrWhiteSpace([string]$module.Path)) {
-        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelModuleUnavailable' -Message 'Parallel desired-state execution requires the loaded Capsulenv module to have a module path.' -Remediation @('Run desired-state execution through the built/imported Capsulenv module, or use sequential execution.'))
-    }
-
-    $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-    $initialSessionState.ImportPSModule(@([string]$module.Path))
-    $maximum = [Math]::Min($ThrottleLimit, $Decisions.Count)
-    $pool = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspacePool(1, $maximum, $initialSessionState, $Host)
+    $workerPool = $null
     $jobs = New-Object System.Collections.Generic.List[object]
-    $workerScript = @'
-param($Node, $Context, $Decision)
-try {
-    $output = & $Node.Apply $Context $Decision
-    $verified = [bool](& $Node.Verify $Context $Decision $output)
-    [pscustomobject][ordered]@{
-        Success = $verified
-        Output = $output
-        FailureId = if ($verified) { '' } else { 'Capsulenv.DesiredState.VerifyFailed' }
-        FailureMessage = if ($verified) { '' } else { "Verification returned false for desired-state node '$($Decision.Id)'." }
-    }
-} catch {
-    [pscustomobject][ordered]@{
-        Success = $false
-        Output = $null
-        FailureId = [string]$_.FullyQualifiedErrorId
-        FailureMessage = [string]$_.Exception.Message
-    }
-}
-'@
     try {
-        $pool.Open()
+        $workerPool = New-CapsulenvDesiredStateWorkerPool -ThrottleLimit ([Math]::Min($ThrottleLimit, $Decisions.Count))
         foreach ($decision in $Decisions) {
-            $powershell = [PowerShell]::Create()
-            $powershell.RunspacePool = $pool
-            $workerContext = Copy-CapsulenvDesiredStateWorkerContext -Context $Context
-            [void]$powershell.AddScript($workerScript).AddArgument($decision.Node).AddArgument($workerContext).AddArgument($decision)
-            $async = $powershell.BeginInvoke()
-            $jobs.Add([pscustomobject]@{ Decision=$decision; PowerShell=$powershell; Async=$async })
+            $jobs.Add((Start-CapsulenvDesiredStateWorkerJob -WorkerPool $workerPool -Decision $decision -Context $Context))
         }
-
         $results = New-Object System.Collections.Generic.List[object]
         foreach ($job in $jobs.ToArray()) {
-            $workerOutput = @($job.PowerShell.EndInvoke($job.Async))
-            $worker = if ($workerOutput.Count -gt 0) { $workerOutput[$workerOutput.Count - 1] } else { $null }
-            if ($null -eq $worker) {
-                throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelWorkerNoResult' -Message ("Parallel worker returned no result for desired-state node '{0}'." -f $job.Decision.Id) -TargetObject $job.Decision.Id)
-            }
-            if (-not [bool]$worker.Success) {
-                throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ApplyFailed' -Message ('[[CapsulenvText:DesiredState.ApplyFailed]]' -f $job.Decision.Id) -TargetObject $job.Decision.Id -Context ([ordered]@{ NodeId=[string]$job.Decision.Id; WorkerFailureId=[string]$worker.FailureId; WorkerFailureMessage=[string]$worker.FailureMessage }))
-            }
-            $results.Add([pscustomobject][ordered]@{ Id=$job.Decision.Id; Operation='Apply'; Applied=$true; Verified=$true; Output=$worker.Output })
+            $results.Add((Receive-CapsulenvDesiredStateWorkerJob -Job $job))
+            $job.PowerShell.Dispose()
         }
+        $jobs.Clear()
         return $results.ToArray()
     } finally {
-        foreach ($job in $jobs.ToArray()) {
-            if ($null -ne $job.PowerShell) { $job.PowerShell.Dispose() }
+        foreach ($job in @($jobs.ToArray())) {
+            if ($null -eq $job -or $null -eq $job.PowerShell) { continue }
+            try { if (-not $job.Async.IsCompleted) { $job.PowerShell.Stop() } } catch { }
+            try { $job.PowerShell.Dispose() } catch { }
         }
-        if ($null -ne $pool) { $pool.Dispose() }
+        if ($null -ne $workerPool -and $null -ne $workerPool.Pool) { $workerPool.Pool.Dispose() }
+        if ($null -ne $workerPool -and -not [string]::IsNullOrWhiteSpace([string]$workerPool.WorkerModuleRoot)) { try { [System.IO.Directory]::Delete([string]$workerPool.WorkerModuleRoot, $true) } catch { } }
     }
+}
+
+function Invoke-CapsulenvDesiredStateReadyQueue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Plan,
+        [Parameter(Mandatory = $true)][hashtable]$Context,
+        [ValidateRange(1, 32)][int]$ThrottleLimit = 4
+    )
+
+    $pendingApply = New-Object System.Collections.Generic.List[object]
+    $pendingNoOp = New-Object System.Collections.Generic.List[object]
+    foreach ($decision in @($Plan.Nodes)) {
+        if ($decision.Operation -eq 'Apply') { $pendingApply.Add($decision) }
+        elseif ($decision.Operation -eq 'NoOp') { $pendingNoOp.Add($decision) }
+    }
+
+    $completed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $resultsById = @{}
+    $activeWorkers = New-Object System.Collections.Generic.List[object]
+    $workerPool = $null
+
+    try {
+        while ($pendingApply.Count -gt 0 -or $pendingNoOp.Count -gt 0 -or $activeWorkers.Count -gt 0) {
+            $madeProgress = $false
+
+            foreach ($job in @($activeWorkers.ToArray())) {
+                if (-not $job.Async.IsCompleted) { continue }
+                $result = Receive-CapsulenvDesiredStateWorkerJob -Job $job
+                $job.PowerShell.Dispose()
+                [void]$activeWorkers.Remove($job)
+                $Context.Outputs[[string]$result.Id] = $result.Output
+                $resultsById[[string]$result.Id] = $result
+                [void]$completed.Add([string]$result.Id)
+                $madeProgress = $true
+            }
+
+            $advancedNoOp = $true
+            while ($advancedNoOp) {
+                $advancedNoOp = $false
+                foreach ($decision in @($pendingNoOp.ToArray())) {
+                    if (-not (Test-CapsulenvDesiredStateDecisionReady -Decision $decision -CompletedNodeIds $completed)) { continue }
+                    $result = [pscustomobject][ordered]@{ Id=$decision.Id; Operation='NoOp'; Applied=$false; Verified=$true; Output=$null }
+                    $resultsById[[string]$decision.Id] = $result
+                    [void]$completed.Add([string]$decision.Id)
+                    [void]$pendingNoOp.Remove($decision)
+                    $advancedNoOp = $true
+                    $madeProgress = $true
+                }
+            }
+
+            if ($pendingApply.Count -eq 0 -and $pendingNoOp.Count -eq 0 -and $activeWorkers.Count -eq 0) { break }
+
+            $ready = @($pendingApply.ToArray() | Where-Object { Test-CapsulenvDesiredStateDecisionReady -Decision $_ -CompletedNodeIds $completed })
+            $activeNodes = New-Object System.Collections.Generic.List[object]
+            foreach ($job in $activeWorkers.ToArray()) { $activeNodes.Add($job.Decision.Node) }
+            $selectedWorkers = New-Object System.Collections.Generic.List[object]
+            $selectedMain = $null
+            $workerCapacity = [Math]::Max(0, $ThrottleLimit - $activeWorkers.Count)
+
+            foreach ($decision in $ready) {
+                $candidateNodes = @($activeNodes.ToArray())
+                if (-not (Test-CapsulenvDesiredStateDecisionCompatibleWithActive -Decision $decision -ActiveNodes $candidateNodes)) { continue }
+
+                if ([string]$decision.Node.ConcurrencyPolicy -eq 'Exclusive') {
+                    if ($activeWorkers.Count -eq 0 -and $selectedWorkers.Count -eq 0 -and $null -eq $selectedMain) {
+                        $selectedMain = $decision
+                    }
+                    break
+                }
+
+                if ([string]$decision.Node.ExecutionAffinity -eq 'MainRunspace') {
+                    if ($null -eq $selectedMain) {
+                        $selectedMain = $decision
+                        $activeNodes.Add($decision.Node)
+                    }
+                    continue
+                }
+
+                if ($workerCapacity -gt $selectedWorkers.Count) {
+                    $selectedWorkers.Add($decision)
+                    $activeNodes.Add($decision.Node)
+                }
+            }
+
+            if ($selectedWorkers.Count -gt 0) {
+                if ($null -eq $workerPool) { $workerPool = New-CapsulenvDesiredStateWorkerPool -ThrottleLimit $ThrottleLimit }
+                foreach ($decision in $selectedWorkers.ToArray()) {
+                    $activeWorkers.Add((Start-CapsulenvDesiredStateWorkerJob -WorkerPool $workerPool -Decision $decision -Context $Context))
+                    [void]$pendingApply.Remove($decision)
+                    $madeProgress = $true
+                }
+            }
+
+            if ($null -ne $selectedMain) {
+                [void]$pendingApply.Remove($selectedMain)
+                $result = Invoke-CapsulenvDesiredStateDecisionSequential -Decision $selectedMain -Context $Context
+                $Context.Outputs[[string]$result.Id] = $result.Output
+                $resultsById[[string]$result.Id] = $result
+                [void]$completed.Add([string]$result.Id)
+                $madeProgress = $true
+                continue
+            }
+
+            if (-not $madeProgress) {
+                if ($activeWorkers.Count -gt 0) {
+                    [System.Threading.Thread]::Sleep(10)
+                    continue
+                }
+                throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ReadyQueueStalled' -Message 'Desired-state ready queue could not make progress.' -Context ([ordered]@{ PendingApplyNodeIds=@($pendingApply.Id); PendingNoOpNodeIds=@($pendingNoOp.Id); CompletedNodeIds=@($completed) }))
+            }
+        }
+    } finally {
+        foreach ($job in @($activeWorkers.ToArray())) {
+            if ($null -eq $job -or $null -eq $job.PowerShell) { continue }
+            try { if (-not $job.Async.IsCompleted) { $job.PowerShell.Stop() } } catch { }
+            try { $job.PowerShell.Dispose() } catch { }
+        }
+        if ($null -ne $workerPool -and $null -ne $workerPool.Pool) { $workerPool.Pool.Dispose() }
+        if ($null -ne $workerPool -and -not [string]::IsNullOrWhiteSpace([string]$workerPool.WorkerModuleRoot)) { try { [System.IO.Directory]::Delete([string]$workerPool.WorkerModuleRoot, $true) } catch { } }
+    }
+
+    $orderedResults = New-Object System.Collections.Generic.List[object]
+    foreach ($decision in @($Plan.Nodes)) {
+        if ($resultsById.ContainsKey([string]$decision.Id)) { $orderedResults.Add($resultsById[[string]$decision.Id]) }
+    }
+    return $orderedResults.ToArray()
 }
 
 function Invoke-CapsulenvDesiredStatePlan {
@@ -478,46 +701,18 @@ function Invoke-CapsulenvDesiredStatePlan {
         throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.Blocked' -Message ('[[CapsulenvText:DesiredState.PlanBlocked]]' -f $blocked.Count) -Context ([ordered]@{ NodeIds=@($blocked.Id) }))
     }
 
+    if ($ExecutionMode -ne 'Sequential') {
+        return @(Invoke-CapsulenvDesiredStateReadyQueue -Plan $Plan -Context $Context -ThrottleLimit $ThrottleLimit)
+    }
+
     $resultsById = @{}
     foreach ($decision in @($Plan.Nodes | Where-Object { $_.Operation -eq 'NoOp' })) {
         $resultsById[[string]$decision.Id] = [pscustomobject][ordered]@{ Id=$decision.Id; Operation='NoOp'; Applied=$false; Verified=$true; Output=$null }
     }
-
-    if ($ExecutionMode -eq 'Sequential') {
-        foreach ($decision in @($Plan.Nodes | Where-Object { $_.Operation -eq 'Apply' })) {
-            $result = Invoke-CapsulenvDesiredStateDecisionSequential -Decision $decision -Context $Context
-            $Context.Outputs[[string]$decision.Id] = $result.Output
-            $resultsById[[string]$decision.Id] = $result
-        }
-    } else {
-        $decisionsById = @{}
-        foreach ($decision in @($Plan.Nodes)) { $decisionsById[[string]$decision.Id] = $decision }
-        foreach ($wave in @($Plan.ExecutionWaves)) {
-            $parallel = New-Object System.Collections.Generic.List[object]
-            $sequential = New-Object System.Collections.Generic.List[object]
-            foreach ($nodeId in @($wave.NodeIds)) {
-                $decision = $decisionsById[[string]$nodeId]
-                if (Test-CapsulenvDesiredStateWorkerEligible -Node $decision.Node) { $parallel.Add($decision) } else { $sequential.Add($decision) }
-            }
-
-            foreach ($decision in $sequential.ToArray()) {
-                $result = Invoke-CapsulenvDesiredStateDecisionSequential -Decision $decision -Context $Context
-                $Context.Outputs[[string]$decision.Id] = $result.Output
-                $resultsById[[string]$decision.Id] = $result
-            }
-
-            if ($parallel.Count -gt 0) {
-                $batchResults = if ($ExecutionMode -eq 'Parallel' -or $parallel.Count -gt 1) {
-                    @(Invoke-CapsulenvDesiredStateParallelBatch -Decisions $parallel.ToArray() -Context $Context -ThrottleLimit $ThrottleLimit)
-                } else {
-                    @(Invoke-CapsulenvDesiredStateDecisionSequential -Decision $parallel[0] -Context $Context)
-                }
-                foreach ($result in $batchResults) {
-                    $Context.Outputs[[string]$result.Id] = $result.Output
-                    $resultsById[[string]$result.Id] = $result
-                }
-            }
-        }
+    foreach ($decision in @($Plan.Nodes | Where-Object { $_.Operation -eq 'Apply' })) {
+        $result = Invoke-CapsulenvDesiredStateDecisionSequential -Decision $decision -Context $Context
+        $Context.Outputs[[string]$decision.Id] = $result.Output
+        $resultsById[[string]$decision.Id] = $result
     }
 
     $orderedResults = New-Object System.Collections.Generic.List[object]

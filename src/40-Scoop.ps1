@@ -592,7 +592,7 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.DesiredState.RehydrateOwners
         -Area 'DesiredState' `
         -Status $status `
         -Importance Optional `
-        -Summary ("{0} claim(s), {1} execution wave(s), {2} worker-capable resource-bound node(s), {3} unordered competing writer pair(s)" -f @($plan.ResourceClaims).Count, @($plan.ExecutionWaves).Count, $workerNodeIds.Count, $unorderedWriters.Count) `
+        -Summary ("{0} claim(s), {1} diagnostic concurrency wave(s), {2} worker-capable resource-bound node(s), {3} unordered competing writer pair(s)" -f @($plan.ResourceClaims).Count, @($plan.ExecutionWaves).Count, $workerNodeIds.Count, $unorderedWriters.Count) `
         -Data ([ordered]@{ Claims=@($plan.ResourceClaims); Conflicts=@($plan.ResourceConflicts); WorkerNodeIds=$workerNodeIds; ParallelNodeIds=$workerNodeIds; UnorderedWriteWrite=$unorderedWriters }) `
         -Remediation $(if($unorderedWriters.Count -eq 0){@()}else{@('Add an explicit dependency between competing writers, or narrow their write-resource claims before enabling parallel execution.')})
 }
