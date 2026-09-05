@@ -229,18 +229,24 @@ function Save-CapsulenvRehydrationState {
     }
 }
 
-function Get-CapsulenvScoopRehydratePlan {
+function Get-CapsulenvIntegrationDesiredStatePlan {
     [CmdletBinding()]
     param(
         [switch]$SkipPersistRepairs,
         [switch]$SkipToolRepairs,
         [switch]$StrictToolRepairs,
-        [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode)
+        [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode),
+        [bool]$RehydrationRequired = $false
     )
 
     $relocationContext = Get-CapsulenvRelocationContext
     $toolRelocation = Get-CapsulenvToolRelocationConfiguration
-    $context = @{ RelocationContext=$relocationContext; IntegrationMode=$IntegrationMode; StrictToolRepairs=[bool]$StrictToolRepairs }
+    $context = @{
+        RelocationContext=$relocationContext
+        IntegrationMode=$IntegrationMode
+        StrictToolRepairs=[bool]$StrictToolRepairs
+        RehydrationRequired=[bool]$RehydrationRequired
+    }
     # Keep each constructor behind an explicit expression boundary. Windows PowerShell 5.1
     # can otherwise mis-bind adjacent array-subexpression statements into the trailing
     # [scriptblock] Verify parameter and surface it as System.Object[].
@@ -248,13 +254,13 @@ function Get-CapsulenvScoopRehydratePlan {
         (New-CapsulenvDesiredStateNode -Id 'session-environment' `
             -WriteResources @('process:///environment','capsule:///tool-storage','capsule:///runtime-directories') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
-            -Apply { param($c,$d) Set-CapsulenvSessionEnvironment } `
+            -Apply { param($c,$d) Set-CapsulenvSessionEnvironment -IntegrationMode $c.IntegrationMode } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-environment-backup' `
             -DependsOn 'session-environment' `
             -ReadResources @('host:///environment/user') `
             -WriteResources @('capsule:///state/user-environment-backup') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) $plan=Get-CapsulenvEnvironmentPlan; $name=Get-CapsulenvScoopPathEnvironmentVariable; Ensure-CapsulenvUserEnvironmentBackupEntries -Names (@($plan.Variables.Keys)+@('PATH',$name)) } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'package-projections' `
@@ -275,39 +281,109 @@ function Get-CapsulenvScoopRehydratePlan {
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///scoop/persist') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipPersistRepairs)-and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and (-not $SkipPersistRepairs) -and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvPersistRelocationRepair -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'project-cache-links' -ParallelSafe `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///project-cache/registry') `
             -WriteResources @('capsule:///project-cache','host:///project-cache-links') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipToolRepairs)-and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) Repair-CapsulenvProjectCacheLinks -Strict:$c.StrictToolRepairs -Quiet } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'tool-relocation' `
             -DependsOn 'project-cache-links' `
             -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `
             -WriteResources @('process:///environment','capsule:///tool-data','capsule:///tool-storage','capsule:///state/tool-workspaces','host:///workspaces/registered') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipToolRepairs)-and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and (-not $SkipToolRepairs) -and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepair -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-integration' `
             -DependsOn @('persist-relocation','tool-relocation','package-host-integration') `
             -ReadResources @('capsule:///packages/installed-state','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
             -WriteResources @('host:///environment/user','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvUserEnvironment -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'rehydration-state' `
             -DependsOn @('persist-relocation','tool-relocation','user-integration') `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///state/rehydration') `
-            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) $repair=$c.Outputs['persist-relocation']; $projection=$c.Outputs['package-projections']; $complete=[bool]$projection.Complete; $retryRequired=[bool]$projection.RetryRequired; $issues=@($projection.Issues); Save-CapsulenvRehydrationState -RelocationContext $c.RelocationContext -PersistRepairResult $repair -PendingProjectionRepair:$retryRequired -ProjectionRepairIssues $issues; [pscustomobject]@{ ProjectionRepairComplete=$complete; ProjectionRepairRetryRequired=$retryRequired; ProjectionRepairIssues=$issues } } `
             -Verify { param($c,$d,$o) $true })
     )
-    return [pscustomobject][ordered]@{ Context=$context; Plan=(Get-CapsulenvDesiredStatePlan -Nodes $nodes -Context $context); RelocationContext=$relocationContext }
+    return [pscustomobject][ordered]@{
+        Context=$context
+        Plan=(Get-CapsulenvDesiredStatePlan -Nodes $nodes -Context $context)
+        RelocationContext=$relocationContext
+        RehydrationRequired=[bool]$RehydrationRequired
+    }
+}
+
+function Get-CapsulenvScoopRehydratePlan {
+    [CmdletBinding()]
+    param(
+        [switch]$SkipPersistRepairs,
+        [switch]$SkipToolRepairs,
+        [switch]$StrictToolRepairs,
+        [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode)
+    )
+
+    return Get-CapsulenvIntegrationDesiredStatePlan `
+        -SkipPersistRepairs:$SkipPersistRepairs `
+        -SkipToolRepairs:$SkipToolRepairs `
+        -StrictToolRepairs:$StrictToolRepairs `
+        -IntegrationMode $IntegrationMode `
+        -RehydrationRequired $true
+}
+
+function Write-CapsulenvRehydrationResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Results,
+        [Parameter(Mandatory = $true)][ValidateSet('ShellOnly', 'User')][string]$IntegrationMode
+    )
+
+    $state = @($Results | Where-Object Id -eq 'rehydration-state' | Select-Object -Last 1).Output
+    if ($null -ne $state -and [bool]$state.ProjectionRepairComplete) {
+        Write-CapsulenvMessage -Level Success -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode."
+        return
+    }
+    $issueCount = if ($null -ne $state) { @($state.ProjectionRepairIssues).Count } else { 0 }
+    $retryRequired = ($null -ne $state -and [bool]$state.ProjectionRepairRetryRequired)
+    if ($retryRequired) {
+        Write-CapsulenvMessage -Level Warning -Message ("Capsulenv package projection rehydration completed in {0} mode with {1} deferred legacy Scoop projection issue(s); retryable state will be checked again on the next activation." -f $IntegrationMode, $issueCount)
+    } else {
+        Write-CapsulenvMessage -Level Warning -Message ("Capsulenv package projection rehydration completed in {0} mode with {1} unresolved legacy Scoop projection issue(s); ambiguous or foreign-owned state was left unchanged. Run 'capsulenv.cmd doctor' for remediation." -f $IntegrationMode, $issueCount)
+    }
+}
+
+function Invoke-CapsulenvIntegrationDesiredState {
+    [CmdletBinding()]
+    param(
+        [switch]$SkipPersistRepairs,
+        [switch]$SkipToolRepairs,
+        [switch]$StrictToolRepairs,
+        [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode)
+    )
+
+    $rehydrationRequired = [bool](Test-CapsulenvScoopRehydrationRequired)
+    if ($rehydrationRequired) {
+        Write-CapsulenvMessage -Level Info -Message 'Capsule root or host changed; rehydrating installed package projections...'
+    }
+    $integration = Get-CapsulenvIntegrationDesiredStatePlan `
+        -SkipPersistRepairs:$SkipPersistRepairs `
+        -SkipToolRepairs:$SkipToolRepairs `
+        -StrictToolRepairs:$StrictToolRepairs `
+        -IntegrationMode $IntegrationMode `
+        -RehydrationRequired $rehydrationRequired
+    $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $integration.Plan -Context $integration.Context)
+    if ($rehydrationRequired) {
+        Write-CapsulenvRehydrationResult -Results $results -IntegrationMode $IntegrationMode
+        [void](Invoke-CapsulenvRoutines -Trigger OnRehydrate)
+    }
+    return $results
 }
 
 function Invoke-CapsulenvScoopRehydrate {
@@ -322,18 +398,7 @@ function Invoke-CapsulenvScoopRehydrate {
     $rehydrate = Get-CapsulenvScoopRehydratePlan -SkipPersistRepairs:$SkipPersistRepairs -SkipToolRepairs:$SkipToolRepairs -StrictToolRepairs:$StrictToolRepairs -IntegrationMode $IntegrationMode
     if (-not $SkipHooks) { Write-CapsulenvMessage -Level Detail -Message 'Automatic Scoop lifecycle replay has been removed; arbitrary manifest code is available only through explicit upstream Scoop execution.' }
     $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $rehydrate.Plan -Context $rehydrate.Context)
-    $state = @($results | Where-Object Id -eq 'rehydration-state' | Select-Object -Last 1).Output
-    if ($null -ne $state -and [bool]$state.ProjectionRepairComplete) {
-        Write-CapsulenvMessage -Level Success -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode."
-    } else {
-        $issueCount = if ($null -ne $state) { @($state.ProjectionRepairIssues).Count } else { 0 }
-        $retryRequired = ($null -ne $state -and [bool]$state.ProjectionRepairRetryRequired)
-        if ($retryRequired) {
-            Write-CapsulenvMessage -Level Warning -Message ("Capsulenv package projection rehydration completed in {0} mode with {1} deferred legacy Scoop projection issue(s); retryable state will be checked again on the next activation." -f $IntegrationMode, $issueCount)
-        } else {
-            Write-CapsulenvMessage -Level Warning -Message ("Capsulenv package projection rehydration completed in {0} mode with {1} unresolved legacy Scoop projection issue(s); ambiguous or foreign-owned state was left unchanged. Run 'capsulenv.cmd doctor' for remediation." -f $IntegrationMode, $issueCount)
-        }
-    }
+    Write-CapsulenvRehydrationResult -Results $results -IntegrationMode $IntegrationMode
     [void](Invoke-CapsulenvRoutines -Trigger OnRehydrate)
     return $results
 }

@@ -36,6 +36,27 @@ Describe 'Capsulenv package projection repair boundary' {
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/install-mode'
     }
 
+    It 'uses the same desired-state graph for steady activation without relocation-only mutations' {
+        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+
+        $integration = & $script:Module {
+            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false
+        }
+        $operations = @{}
+        foreach ($decision in @($integration.Plan.Nodes)) { $operations[[string]$decision.Id] = [string]$decision.Operation }
+
+        $operations['session-environment'] | Should -Be 'Apply'
+        $operations['package-projections'] | Should -Be 'Apply'
+        $operations['project-cache-links'] | Should -Be 'Apply'
+        $operations['user-environment-backup'] | Should -Be 'NoOp'
+        $operations['package-host-integration'] | Should -Be 'NoOp'
+        $operations['persist-relocation'] | Should -Be 'NoOp'
+        $operations['tool-relocation'] | Should -Be 'NoOp'
+        $operations['user-integration'] | Should -Be 'NoOp'
+        $operations['rehydration-state'] | Should -Be 'NoOp'
+    }
+
     It 'delegates the compatibility reset command to bounded projection repair only' {
         Mock Repair-CapsulenvInstalledAppProjections { $true } -ModuleName Capsulenv
         Mock Invoke-CapsulenvScoopCommand { throw 'upstream Scoop must not be invoked by Capsulenv projection repair' } -ModuleName Capsulenv

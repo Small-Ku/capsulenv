@@ -884,7 +884,6 @@ function Invoke-CapsulenvChildShell {
         [switch]$SkipUserIntegrationSync
     )
 
-    [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
     Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode
     if (-not $SkipUserIntegrationSync -and $IntegrationMode -eq 'User') {
         # A normal `capsulenv.cmd` activation must observe persistent User
@@ -917,7 +916,6 @@ function Invoke-CapsulenvExternalCommand {
         [string[]]$Arguments = @()
     )
 
-    [void](Set-CapsulenvSessionEnvironment)
     Initialize-CapsulenvIntegrations
     $plan = New-CapsulenvProcessPlan -Executable $Command -Arguments $Arguments
     Invoke-CapsulenvProcessPlan -Plan $plan

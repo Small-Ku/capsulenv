@@ -322,20 +322,12 @@ function Initialize-CapsulenvIntegrations {
     )
 
     [void](Initialize-CapsulenvScoopBootstrap)
-    Repair-CapsulenvPackageProjections
     $configuration = Get-CapsulenvConfiguration
-    $didRehydrate = $false
-    if (
-        $configuration.Scoop.RehydrateOnRelocation -and
-        (Test-CapsulenvScoopRehydrationRequired)
-    ) {
-        Write-CapsulenvMessage -Level Info -Message 'Capsule root or host changed; rehydrating installed package projections...'
-        Invoke-CapsulenvScoopRehydrate -IntegrationMode $IntegrationMode
-        $didRehydrate = $true
-    }
-    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
-    if ($IntegrationMode -eq 'User' -and -not $didRehydrate) {
-        Sync-CapsulenvPackageStartMenuShortcuts
+    if ($configuration.Scoop.RehydrateOnRelocation) {
+        [void](Invoke-CapsulenvIntegrationDesiredState -IntegrationMode $IntegrationMode)
+    } else {
+        $integration = Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode $IntegrationMode -RehydrationRequired $false
+        [void](Invoke-CapsulenvDesiredStatePlan -Plan $integration.Plan -Context $integration.Context)
     }
     Initialize-CapsulenvBitwarden
 }
@@ -350,14 +342,12 @@ function Initialize-Capsulenv {
     )
 
     [void](Get-CapsulenvConfiguration -Refresh)
-    [void](Set-CapsulenvSessionEnvironment)
     [void](Initialize-CapsulenvScoopBootstrap)
     Invoke-CapsulenvScoopRehydrate `
         -SkipHooks:$SkipHooks `
         -SkipPersistRepairs:$SkipPersistRepairs `
         -SkipToolRepairs:$SkipToolRepairs `
         -StrictToolRepairs:$StrictToolRepairs
-    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
     Initialize-CapsulenvBitwarden
 
     $context = Get-CapsulenvContext

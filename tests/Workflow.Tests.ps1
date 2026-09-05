@@ -150,6 +150,7 @@ Describe 'Capsulenv portable workflow contracts' {
         $environmentSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/30-Environment.ps1') -Raw
         $commandsSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/90-Commands.ps1') -Raw
         $lifecycleSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/72-Lifecycle.ps1') -Raw
+        $doctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
 
         $environmentSource | Should -Match '\$ledgerWasUser = \(\$backupExists -and \$null -ne \$ledgerState -and \[string\]\$ledgerState\.Mode -eq ''User''\)'
         $environmentSource | Should -Match '\$alreadyUser = \(\$backupExists -and \$currentMode -eq ''User''\)'
@@ -170,6 +171,9 @@ Describe 'Capsulenv portable workflow contracts' {
         $lifecycleSource | Should -Match "'download', '--no-update-scoop'"
         $lifecycleSource | Should -Not -Match "arguments \+= '-g'"
         $lifecycleSource | Should -Not -Match 'Restore-CapsulenvUserEnvironment\s*(-|\()'
+        $doctorSource | Should -Match 'Invoke-CapsulenvIntegrationDesiredState'
+        $doctorSource | Should -Not -Match 'Repair-CapsulenvPackageProjections\s*(?:$|\r?\n)'
+        $doctorSource | Should -Not -Match 'Repair-CapsulenvProjectCacheLinks\s+-Quiet'
     }
 
     It 'synchronizes configured persistent browser integration on ordinary User shell activation only once' {
