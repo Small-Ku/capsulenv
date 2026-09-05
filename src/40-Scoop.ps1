@@ -362,9 +362,9 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         (New-CapsulenvDesiredStateNode -Id 'tool-relocation' `
             -DependsOn 'project-cache-links' `
             -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `
-            -WriteResources @('process:///environment','capsule:///tool-data','capsule:///tool-storage','capsule:///state/tool-workspaces','host:///workspaces/registered') `
+            -WriteResources @('capsule:///tool-data','capsule:///tool-storage','capsule:///state/tool-workspaces','host:///workspaces/registered') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and (-not $SkipToolRepairs) -and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
-            -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepair -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
+            -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepair -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs -SessionEnvironmentReady } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-integration' `
             -DependsOn @('persist-relocation','tool-relocation','package-host-integration') `

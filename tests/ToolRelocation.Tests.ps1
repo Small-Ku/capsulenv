@@ -102,4 +102,70 @@ Describe 'Capsulenv tool relocation parsing' {
         $result = @(& $script:Module { Get-CapsulenvUvManagedPythonInstallations -UvExecutable 'uv.exe' })
         $result.Count | Should -Be 0
     }
+
+    It 'runs native tools with child-local environment and working directory' {
+        $pwshName = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { 'pwsh.exe' } else { 'pwsh' }
+        $pwshPath = Join-Path $PSHOME $pwshName
+        $workRoot = Join-Path $script:Root '.build/test-native-child-context'
+        [void](New-Item -ItemType Directory -Path $workRoot -Force)
+        $originalLocation = (Get-Location).Path
+        $originalValue = [Environment]::GetEnvironmentVariable('CAPSULENV_CHILD_TEST', 'Process')
+        try {
+            [Environment]::SetEnvironmentVariable('CAPSULENV_CHILD_TEST', 'parent', 'Process')
+            $result = & $script:Module {
+                param($exe, $cwd)
+                Invoke-CapsulenvNativeToolCapture `
+                    -Executable $exe `
+                    -Arguments @('-NoLogo', '-NoProfile', '-Command', '[Console]::Out.Write(($env:CAPSULENV_CHILD_TEST + "|" + (Get-Location).Path))') `
+                    -WorkingDirectory $cwd `
+                    -Environment @{ CAPSULENV_CHILD_TEST = 'child' }
+            } $pwshPath $workRoot
+
+            $result.ExitCode | Should -Be 0
+            $parts = $result.StdOut -split '\|', 2
+            $parts[0] | Should -Be 'child'
+            [System.IO.Path]::GetFullPath($parts[1]) | Should -Be ([System.IO.Path]::GetFullPath($workRoot))
+            [Environment]::GetEnvironmentVariable('CAPSULENV_CHILD_TEST', 'Process') | Should -Be 'parent'
+            (Get-Location).Path | Should -Be $originalLocation
+        } finally {
+            [Environment]::SetEnvironmentVariable('CAPSULENV_CHILD_TEST', $originalValue, 'Process')
+            Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'quotes arguments for the Windows PowerShell 5.1 ProcessStartInfo fallback' {
+        $quoted = & $script:Module {
+            @(
+                ConvertTo-CapsulenvNativeCommandLineArgument -Argument 'plain'
+                ConvertTo-CapsulenvNativeCommandLineArgument -Argument ''
+                ConvertTo-CapsulenvNativeCommandLineArgument -Argument 'two words'
+                ConvertTo-CapsulenvNativeCommandLineArgument -Argument 'C:\path with space\'
+            )
+        }
+        $quoted[0] | Should -Be 'plain'
+        $quoted[1] | Should -Be '""'
+        $quoted[2] | Should -Be '"two words"'
+        $quoted[3] | Should -Be '"C:\path with space\\"'
+    }
+
+    It 'can skip parent session environment mutation when the lifecycle DAG already prepared it' {
+        Mock Set-CapsulenvSessionEnvironment { throw 'must not run' } -ModuleName Capsulenv
+        Mock Repair-CapsulenvUvRelocation { @() } -ModuleName Capsulenv
+        Mock Repair-CapsulenvPixiRelocation { @() } -ModuleName Capsulenv
+
+        { Invoke-CapsulenvToolRelocationRepair `
+            -RelocationContext ([pscustomobject]@{}) `
+            -SkipWorkspaces `
+            -SessionEnvironmentReady } | Should -Not -Throw
+        Should -Invoke Set-CapsulenvSessionEnvironment -ModuleName Capsulenv -Times 0
+    }
+
+
+    It 'does not mutate UV_PROJECT_ENVIRONMENT or process working directory inside workspace repair' {
+        $workspaceSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/39-ToolWorkspaceRelocation.ps1') -Raw
+        $nativeSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/37-ToolRelocation.ps1') -Raw
+        $workspaceSource | Should -Not -Match "SetEnvironmentVariable\('UV_PROJECT_ENVIRONMENT'"
+        $nativeSource | Should -Not -Match 'Set-Location -LiteralPath \$WorkingDirectory'
+    }
+
 }

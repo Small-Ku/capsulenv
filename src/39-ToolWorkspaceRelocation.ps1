@@ -128,9 +128,8 @@ function Repair-CapsulenvUvWorkspace {
         $movedOriginal = $true
     }
 
-    $previousProjectEnvironment = [Environment]::GetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', 'Process')
+    $childEnvironment = @{ UV_PROJECT_ENVIRONMENT = $environmentPath }
     try {
-        [Environment]::SetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', $environmentPath, 'Process')
         $venvArguments = New-Object System.Collections.Generic.List[string]
         foreach ($argument in @('venv', $environmentPath, '--project', [string]$Workspace.ProjectPath)) {
             $venvArguments.Add($argument)
@@ -139,7 +138,7 @@ function Repair-CapsulenvUvWorkspace {
             $venvArguments.Add('--relocatable')
         }
         $venvArguments.Add('--no-progress')
-        [void](Invoke-CapsulenvNativeTool -Executable $UvExecutable -Arguments $venvArguments.ToArray())
+        [void](Invoke-CapsulenvNativeTool -Executable $UvExecutable -Arguments $venvArguments.ToArray() -Environment $childEnvironment)
         [void](Invoke-CapsulenvNativeTool `
             -Executable $UvExecutable `
             -Arguments @(
@@ -148,7 +147,8 @@ function Repair-CapsulenvUvWorkspace {
                 '--locked',
                 '--reinstall',
                 '--no-progress'
-            ))
+            ) `
+            -Environment $childEnvironment)
     } catch {
         $repairError = $_
         try {
@@ -161,8 +161,6 @@ function Repair-CapsulenvUvWorkspace {
             throw "uv workspace repair failed: $($repairError.Exception.Message) Restoring the previous environment also failed: $($_.Exception.Message) Recovery data remains at: $rollbackPath"
         }
         throw $repairError
-    } finally {
-        [Environment]::SetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', $previousProjectEnvironment, 'Process')
     }
 
     if ($movedOriginal -and $null -ne (Get-Item -LiteralPath $rollbackPath -Force -ErrorAction SilentlyContinue)) {

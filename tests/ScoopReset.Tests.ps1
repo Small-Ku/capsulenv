@@ -32,7 +32,7 @@ Describe 'Capsulenv package projection repair boundary' {
         $userNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'user-integration')[0].Node
         @($sessionNode.WriteResources) | Should -Contain 'capsule:///tool-storage'
         @($sessionNode.WriteResources) | Should -Contain 'capsule:///runtime-directories'
-        @($toolNode.WriteResources) | Should -Contain 'process:///environment'
+        @($toolNode.WriteResources) | Should -Not -Contain 'process:///environment'
         @($toolNode.WriteResources) | Should -Contain 'host:///workspaces/registered'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/user-environment-backup'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/install-mode'

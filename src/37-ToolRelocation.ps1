@@ -92,29 +92,117 @@ function Get-CapsulenvUvExecutable {
         -CommandNames @('uv.exe', 'uv')
 }
 
+function ConvertTo-CapsulenvNativeCommandLineArgument {
+    [CmdletBinding()]
+    param([AllowEmptyString()][string]$Argument)
+
+    if ($Argument.Length -gt 0 -and $Argument -notmatch '[\s"]') {
+        return $Argument
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Argument.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashCount++
+            continue
+        }
+        if ($character -eq '"') {
+            if ($backslashCount -gt 0) {
+                [void]$builder.Append(('\' * ($backslashCount * 2)))
+            }
+            [void]$builder.Append('\"')
+            $backslashCount = 0
+            continue
+        }
+        if ($backslashCount -gt 0) {
+            [void]$builder.Append(('\' * $backslashCount))
+            $backslashCount = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashCount -gt 0) {
+        [void]$builder.Append(('\' * ($backslashCount * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function New-CapsulenvNativeProcessStartInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [System.Collections.IDictionary]$Environment,
+        [switch]$Capture
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $Executable
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $false
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $startInfo.WorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
+    }
+
+    $argumentListProperty = $startInfo.PSObject.Properties['ArgumentList']
+    if ($null -ne $argumentListProperty) {
+        foreach ($argument in $Arguments) {
+            [void]$startInfo.ArgumentList.Add([string]$argument)
+        }
+    } else {
+        $quotedArguments = foreach ($argument in $Arguments) {
+            ConvertTo-CapsulenvNativeCommandLineArgument -Argument ([string]$argument)
+        }
+        $startInfo.Arguments = $quotedArguments -join ' '
+    }
+
+    if ($null -ne $Environment) {
+        foreach ($keyObject in $Environment.Keys) {
+            $name = [string]$keyObject
+            $value = $Environment[$keyObject]
+            if ($null -eq $value) {
+                [void]$startInfo.EnvironmentVariables.Remove($name)
+            } else {
+                $startInfo.EnvironmentVariables[$name] = [string]$value
+            }
+        }
+    }
+
+    if ($Capture) {
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+    }
+    return $startInfo
+}
+
 function Invoke-CapsulenvNativeTool {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$Executable,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
         [string]$WorkingDirectory,
+        [System.Collections.IDictionary]$Environment,
         [switch]$AllowFailure
     )
 
-    $previous = $null
-    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
-        $previous = Get-Location
-        Set-Location -LiteralPath $WorkingDirectory
-    }
+    $startInfo = New-CapsulenvNativeProcessStartInfo `
+        -Executable $Executable `
+        -Arguments $Arguments `
+        -WorkingDirectory $WorkingDirectory `
+        -Environment $Environment
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
     try {
-        Clear-CapsulenvLastExitCode
-        & $Executable @Arguments
-        $succeeded = $?
-        $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
-    } finally {
-        if ($null -ne $previous) {
-            Set-Location -LiteralPath $previous.Path
+        if (-not $process.Start()) {
+            throw "Native tool could not be started: $Executable"
         }
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+    } finally {
+        $process.Dispose()
     }
     if ($exitCode -ne 0 -and -not $AllowFailure) {
         throw "Native tool failed with exit code ${exitCode}: $Executable $($Arguments -join ' ')"
@@ -128,33 +216,30 @@ function Invoke-CapsulenvNativeToolCapture {
         [Parameter(Mandatory = $true)][string]$Executable,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
         [string]$WorkingDirectory,
+        [System.Collections.IDictionary]$Environment,
         [switch]$AllowFailure
     )
 
-    $token = [Guid]::NewGuid().ToString('N')
-    $stdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-native-$token.stdout")
-    $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) ("capsulenv-native-$token.stderr")
-    $previous = $null
+    $startInfo = New-CapsulenvNativeProcessStartInfo `
+        -Executable $Executable `
+        -Arguments $Arguments `
+        -WorkingDirectory $WorkingDirectory `
+        -Environment $Environment `
+        -Capture
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
     try {
-        if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
-            $previous = Get-Location
-            Set-Location -LiteralPath $WorkingDirectory
+        if (-not $process.Start()) {
+            throw "Native tool could not be started: $Executable"
         }
-        Clear-CapsulenvLastExitCode
-        & $Executable @Arguments 1> $stdoutPath 2> $stderrPath
-        $succeeded = $?
-        $exitCode = Get-CapsulenvLastExitCode -Succeeded $succeeded
-        $stdout = if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) {
-            [System.IO.File]::ReadAllText($stdoutPath)
-        } else { '' }
-        $stderr = if (Test-Path -LiteralPath $stderrPath -PathType Leaf) {
-            [System.IO.File]::ReadAllText($stderrPath)
-        } else { '' }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $exitCode = $process.ExitCode
     } finally {
-        if ($null -ne $previous) {
-            Set-Location -LiteralPath $previous.Path
-        }
-        Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+        $process.Dispose()
     }
 
     if ($exitCode -ne 0 -and -not $AllowFailure) {
@@ -560,10 +645,13 @@ function Invoke-CapsulenvToolRelocationRepair {
         [switch]$DryRun,
         [switch]$Strict,
         [switch]$SkipWorkspaces,
-        [switch]$IncludePixiGlobal
+        [switch]$IncludePixiGlobal,
+        [switch]$SessionEnvironmentReady
     )
 
-    [void](Set-CapsulenvSessionEnvironment)
+    if (-not $SessionEnvironmentReady) {
+        [void](Set-CapsulenvSessionEnvironment)
+    }
     $results = New-Object System.Collections.Generic.List[object]
 
     if ($Tool -in @('uv', 'all')) {
