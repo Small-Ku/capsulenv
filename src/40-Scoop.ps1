@@ -247,6 +247,43 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         StrictToolRepairs=[bool]$StrictToolRepairs
         RehydrationRequired=[bool]$RehydrationRequired
     }
+    $packageProjectionDescriptors = @(Get-CapsulenvPackageProjectionRepairDescriptors -Apps @('*'))
+    $packageProjectionDescriptorMap = @{}
+    $packageProjectionNodeIds = New-Object System.Collections.Generic.List[string]
+    $packageProjectionNodes = New-Object System.Collections.Generic.List[object]
+    foreach ($descriptor in $packageProjectionDescriptors) {
+        $scopeToken = [Uri]::EscapeDataString(([string]$descriptor.Scope).ToLowerInvariant())
+        $nameToken = [Uri]::EscapeDataString([string]$descriptor.Name)
+        $nodeId = ('package-projection:{0}:{1}' -f $scopeToken, $nameToken)
+        $readResources = New-Object System.Collections.Generic.List[string]
+        $writeResources = New-Object System.Collections.Generic.List[string]
+        $writeResources.Add(('capsule:///scoop/apps/{0}/{1}' -f $scopeToken, $nameToken))
+        $writeResources.Add(('capsule:///scoop/persist/{0}/{1}' -f $scopeToken, $nameToken))
+        if ([string]$descriptor.Kind -eq 'Owned') {
+            $readResources.Add(('capsule:///packages/installed-state/{0}' -f $nameToken))
+            $writeResources.Add(('capsule:///packages/projections/{0}' -f $nameToken))
+            foreach ($alias in @($descriptor.Shims)) {
+                $writeResources.Add(('capsule:///packages/shims/{0}' -f [Uri]::EscapeDataString([string]$alias)))
+            }
+        }
+        $packageProjectionDescriptorMap[$nodeId] = $descriptor
+        $packageProjectionNodeIds.Add($nodeId)
+        $packageProjectionNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ParallelSafe `
+            -DependsOn @('session-environment','user-environment-backup') `
+            -ReadResources $readResources.ToArray() `
+            -WriteResources $writeResources.ToArray() `
+            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
+            -Apply { param($c,$d) Invoke-CapsulenvPackageProjectionDescriptor -Descriptor $c.PackageProjectionDescriptors[[string]$d.Id] -DeferRunningApps -DeferUnsafeLegacyProjectionFailures } `
+            -Verify { param($c,$d,$o) $null -ne $o -and $null -ne $o.PSObject.Properties['Repaired'] }))
+    }
+    $context.PackageProjectionDescriptors = $packageProjectionDescriptorMap
+    $context.PackageProjectionNodeIds = [string[]]$packageProjectionNodeIds.ToArray()
+    $packageProjectionBarrierDependencies = if ($packageProjectionNodeIds.Count -gt 0) {
+        [string[]]$packageProjectionNodeIds.ToArray()
+    } else {
+        [string[]]@('session-environment','user-environment-backup')
+    }
+
     # Keep each constructor behind an explicit expression boundary. Windows PowerShell 5.1
     # can otherwise mis-bind adjacent array-subexpression statements into the trailing
     # [scriptblock] Verify parameter and surface it as System.Object[].
@@ -263,12 +300,11 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) $plan=Get-CapsulenvEnvironmentPlan; $name=Get-CapsulenvScoopPathEnvironmentVariable; Ensure-CapsulenvUserEnvironmentBackupEntries -Names (@($plan.Variables.Keys)+@('PATH',$name)) } `
             -Verify { param($c,$d,$o) $true })
+        $packageProjectionNodes.ToArray()
         (New-CapsulenvDesiredStateNode -Id 'package-projections' `
-            -DependsOn @('session-environment','user-environment-backup') `
-            -ReadResources @('capsule:///packages/installed-state') `
-            -WriteResources @('capsule:///packages/projections','capsule:///scoop/apps','capsule:///scoop/persist','capsule:///packages/shims') `
+            -DependsOn $packageProjectionBarrierDependencies `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
-            -Apply { param($c,$d) Invoke-CapsulenvInstalledAppProjectionRepair -IntegrationMode $c.IntegrationMode -DeferRunningApps -DeferUnsafeLegacyProjectionFailures } `
+            -Apply { param($c,$d) $results=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.PackageProjectionNodeIds)){ $results.Add($c.Outputs[[string]$nodeId]) }; Merge-CapsulenvPackageProjectionResults -Results $results.ToArray() } `
             -Verify { param($c,$d,$o) $null -ne $o -and $null -ne $o.PSObject.Properties['Complete'] })
         (New-CapsulenvDesiredStateNode -Id 'package-host-integration' `
             -DependsOn 'package-projections' `

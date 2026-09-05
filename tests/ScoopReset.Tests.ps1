@@ -14,11 +14,12 @@ Describe 'Capsulenv package projection repair boundary' {
     It 'builds the rehydrate desired-state DAG without binding adjacent nodes into Verify' {
         Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProjectionRepairDescriptors { @() } -ModuleName Capsulenv
 
         $rehydrate = Get-CapsulenvScoopRehydratePlan -IntegrationMode ShellOnly
 
-        @($rehydrate.Plan.Nodes).Count | Should -Be 9
-        @($rehydrate.Plan.Nodes | ForEach-Object { $_.Node.Verify }).Count | Should -Be 9
+        @($rehydrate.Plan.Nodes).Count | Should -BeGreaterOrEqual 9
+        @($rehydrate.Plan.Nodes | ForEach-Object { $_.Node.Verify }).Count | Should -Be @($rehydrate.Plan.Nodes).Count
         @($rehydrate.Plan.Nodes | Where-Object { $_.Node.Verify -isnot [scriptblock] }).Count | Should -Be 0
         @($rehydrate.Plan.Nodes.Id) | Should -Contain 'package-host-integration'
         $projectionNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'package-projections')[0].Node
@@ -36,9 +37,37 @@ Describe 'Capsulenv package projection repair boundary' {
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/install-mode'
     }
 
+    It 'expands package projections into claim-safe parallel nodes with an aggregate barrier' {
+        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProjectionRepairDescriptors {
+            @(
+                [pscustomobject]@{ Kind='Owned'; Selector='capsule/alpha'; Name='alpha'; Scope='Capsule'; Shims=@('alpha') },
+                [pscustomobject]@{ Kind='Owned'; Selector='capsule/beta'; Name='beta'; Scope='Capsule'; Shims=@('beta') },
+                [pscustomobject]@{ Kind='Legacy'; Selector='user/tool'; Name='tool'; Scope='User'; Shims=@() }
+            )
+        } -ModuleName Capsulenv
+
+        $integration = & $script:Module {
+            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false
+        }
+        $projectionNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'package-projection:*' })
+        $projectionNodes | Should -HaveCount 3
+        @($projectionNodes | Where-Object { -not [bool]$_.Node.ParallelSafe }) | Should -HaveCount 0
+        @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) } | Where-Object { $_ -eq 'capsule:///packages/shims' }) | Should -HaveCount 0
+        @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/alpha'
+        @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/beta'
+        $aggregate = @($integration.Plan.Nodes | Where-Object Id -eq 'package-projections')[0]
+        @($aggregate.Node.DependsOn) | Should -HaveCount 3
+        foreach ($node in $projectionNodes) { @($aggregate.Node.DependsOn) | Should -Contain ([string]$node.Id) }
+        $projectionWave = @($integration.Plan.ExecutionWaves | Where-Object { @($_.NodeIds | Where-Object { $_ -like 'package-projection:*' }).Count -gt 0 })[0]
+        @($projectionWave.ParallelNodeIds | Where-Object { $_ -like 'package-projection:*' }) | Should -HaveCount 3
+    }
+
     It 'uses the same desired-state graph for steady activation without relocation-only mutations' {
         Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProjectionRepairDescriptors { @() } -ModuleName Capsulenv
 
         $integration = & $script:Module {
             Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false

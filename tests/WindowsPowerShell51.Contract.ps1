@@ -28,8 +28,11 @@ try {
 
     $rehydrate = Get-CapsulenvScoopRehydratePlan -IntegrationMode ShellOnly
     $nodes = @($rehydrate.Plan.Nodes)
-    if ($nodes.Count -ne 9) {
-        throw "Windows PowerShell rehydrate contract expected 9 nodes; found $($nodes.Count)."
+    if ($nodes.Count -lt 9) {
+        throw "Windows PowerShell rehydrate contract expected at least 9 nodes; found $($nodes.Count)."
+    }
+    if (@($nodes | Where-Object Id -eq 'package-projections').Count -ne 1) {
+        throw 'Windows PowerShell rehydrate contract requires exactly one package-projections aggregate node.'
     }
 
     foreach ($decision in $nodes) {

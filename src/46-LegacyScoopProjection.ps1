@@ -289,22 +289,14 @@ function New-CapsulenvLegacyProjectionIssue {
     }
 }
 
-function Invoke-CapsulenvInstalledAppProjectionRepair {
+function Get-CapsulenvPackageProjectionRepairDescriptors {
     [CmdletBinding()]
-    param(
-        [string[]]$Apps = @('*'),
-        [switch]$DeferRunningApps,
-        [switch]$DeferUnsafeLegacyProjectionFailures,
-        [ValidateSet('ShellOnly', 'User')]
-        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
-    )
+    param([string[]]$Apps = @('*'))
 
     $requested = @($Apps)
     if ($requested.Count -eq 0) { $requested = @('*') }
     $repairAll = $requested -contains '*'
-    $issues = New-Object System.Collections.Generic.List[object]
-    $ownedRepairCount = 0
-    $legacyRepairCount = 0
+    $descriptors = New-Object System.Collections.Generic.List[object]
 
     $safeStates = @(Get-CapsulenvInstalledPackageStates -Strict)
     $safeNames = @($safeStates | ForEach-Object { [string]$_.Name })
@@ -320,9 +312,13 @@ function Invoke-CapsulenvInstalledAppProjectionRepair {
     }
     foreach ($name in @($safeRequested)) {
         $state = Get-CapsulenvInstalledPackageState -Name $name
-        Repair-CapsulenvPackageProjection -State $state
-        [void](Sync-CapsulenvPackageShims -Name $name)
-        $ownedRepairCount++
+        $descriptors.Add([pscustomobject][ordered]@{
+            Kind = 'Owned'
+            Selector = ('capsule/{0}' -f $name)
+            Name = $name
+            Scope = 'Capsule'
+            Shims = [string[]]@($state.Shims)
+        })
     }
 
     $legacyRequested = if ($repairAll) {
@@ -338,51 +334,108 @@ function Invoke-CapsulenvInstalledAppProjectionRepair {
         )
     }
     foreach ($selector in @($legacyRequested)) {
-        try {
-            $completed = Repair-CapsulenvLegacyScoopAppProjection -Selector $selector -DeferRunningApps:$DeferRunningApps
-            if ($completed) {
-                $legacyRepairCount++
-                continue
-            }
-            $issues.Add((New-CapsulenvLegacyProjectionIssue `
-                -Selector $selector `
-                -ErrorId 'Capsulenv.LegacyScoopProjection.AppRunning' `
-                -Summary "Legacy Scoop app is running; projection repair was deferred: $selector" `
-                -Remediation @('Close the app; automatic User-mode rehydration will retry the projection on the next session.') `
-                -Retryable $true))
-        } catch {
-            $isLegacySafetyBoundary = (
-                (Test-CapsulenvDiagnosticErrorRecord -ErrorRecord $_) -and
-                ([string]$_.FullyQualifiedErrorId -like 'Capsulenv.LegacyScoopProjection.*')
-            )
-            if (-not $DeferUnsafeLegacyProjectionFailures -or -not $isLegacySafetyBoundary) {
-                throw
-            }
-            $summary = if ($null -ne $_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace([string]$_.ErrorDetails.Message)) {
-                [string]$_.ErrorDetails.Message
-            } else {
-                [string]$_.Exception.Message
-            }
-            $remediation = @(Get-CapsulenvDiagnosticRemediation -ErrorRecord $_)
-            $issues.Add((New-CapsulenvLegacyProjectionIssue `
-                -Selector $selector `
-                -ErrorId ([string]$_.FullyQualifiedErrorId) `
-                -Summary $summary `
-                -Remediation $remediation))
-            Write-CapsulenvMessage -Level Warning -Message ("Legacy Scoop projection was left unchanged for '{0}': {1}" -f $selector, $summary)
-            if ($remediation.Count -gt 0) {
-                Write-CapsulenvMessage -Level Detail -Message ([string]$remediation[0])
-            }
+        $parsed = Split-CapsulenvScoopAppSelector -Selector ([string]$selector)
+        $scope = if ($null -ne $parsed.Scope) { [string]$parsed.Scope } else { 'Legacy' }
+        $descriptors.Add([pscustomobject][ordered]@{
+            Kind = 'Legacy'
+            Selector = [string]$selector
+            Name = [string]$parsed.Name
+            Scope = $scope
+            Shims = [string[]]@()
+        })
+    }
+    return $descriptors.ToArray()
+}
+
+function Invoke-CapsulenvPackageProjectionDescriptor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Descriptor,
+        [switch]$DeferRunningApps,
+        [switch]$DeferUnsafeLegacyProjectionFailures
+    )
+
+    if ([string]$Descriptor.Kind -eq 'Owned') {
+        $state = Get-CapsulenvInstalledPackageState -Name ([string]$Descriptor.Name)
+        Repair-CapsulenvPackageProjection -State $state
+        [void](Sync-CapsulenvPackageShims -Name ([string]$Descriptor.Name))
+        return [pscustomobject][ordered]@{
+            Kind='Owned'; Selector=[string]$Descriptor.Selector; Repaired=$true; Issue=$null
         }
     }
 
+    $selector = [string]$Descriptor.Selector
+    try {
+        $completed = Repair-CapsulenvLegacyScoopAppProjection -Selector $selector -DeferRunningApps:$DeferRunningApps
+        if ($completed) {
+            return [pscustomobject][ordered]@{ Kind='Legacy'; Selector=$selector; Repaired=$true; Issue=$null }
+        }
+        $issue = New-CapsulenvLegacyProjectionIssue `
+            -Selector $selector `
+            -ErrorId 'Capsulenv.LegacyScoopProjection.AppRunning' `
+            -Summary "Legacy Scoop app is running; projection repair was deferred: $selector" `
+            -Remediation @('Close the app; automatic User-mode rehydration will retry the projection on the next session.') `
+            -Retryable $true
+        return [pscustomobject][ordered]@{ Kind='Legacy'; Selector=$selector; Repaired=$false; Issue=$issue }
+    } catch {
+        $isLegacySafetyBoundary = (
+            (Test-CapsulenvDiagnosticErrorRecord -ErrorRecord $_) -and
+            ([string]$_.FullyQualifiedErrorId -like 'Capsulenv.LegacyScoopProjection.*')
+        )
+        if (-not $DeferUnsafeLegacyProjectionFailures -or -not $isLegacySafetyBoundary) {
+            throw
+        }
+        $summary = if ($null -ne $_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace([string]$_.ErrorDetails.Message)) {
+            [string]$_.ErrorDetails.Message
+        } else {
+            [string]$_.Exception.Message
+        }
+        $remediation = @(Get-CapsulenvDiagnosticRemediation -ErrorRecord $_)
+        $issue = New-CapsulenvLegacyProjectionIssue `
+            -Selector $selector `
+            -ErrorId ([string]$_.FullyQualifiedErrorId) `
+            -Summary $summary `
+            -Remediation $remediation
+        Write-CapsulenvMessage -Level Warning -Message ("Legacy Scoop projection was left unchanged for '{0}': {1}" -f $selector, $summary)
+        if ($remediation.Count -gt 0) {
+            Write-CapsulenvMessage -Level Detail -Message ([string]$remediation[0])
+        }
+        return [pscustomobject][ordered]@{ Kind='Legacy'; Selector=$selector; Repaired=$false; Issue=$issue }
+    }
+}
+
+function Merge-CapsulenvPackageProjectionResults {
+    [CmdletBinding()]
+    param([AllowEmptyCollection()][object[]]$Results = @())
+
+    $issues = @($Results | ForEach-Object { if ($null -ne $_ -and $null -ne $_.Issue) { $_.Issue } })
     return [pscustomobject][ordered]@{
         Complete = ($issues.Count -eq 0)
-        RetryRequired = (@($issues.ToArray() | Where-Object { [bool]$_.Retryable }).Count -gt 0)
-        OwnedPackagesRepaired = $ownedRepairCount
-        LegacyAppsRepaired = $legacyRepairCount
-        Issues = $issues.ToArray()
+        RetryRequired = (@($issues | Where-Object { [bool]$_.Retryable }).Count -gt 0)
+        OwnedPackagesRepaired = @($Results | Where-Object { $_.Kind -eq 'Owned' -and [bool]$_.Repaired }).Count
+        LegacyAppsRepaired = @($Results | Where-Object { $_.Kind -eq 'Legacy' -and [bool]$_.Repaired }).Count
+        Issues = $issues
     }
+}
+
+function Invoke-CapsulenvInstalledAppProjectionRepair {
+    [CmdletBinding()]
+    param(
+        [string[]]$Apps = @('*'),
+        [switch]$DeferRunningApps,
+        [switch]$DeferUnsafeLegacyProjectionFailures,
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+    )
+
+    $results = New-Object System.Collections.Generic.List[object]
+    foreach ($descriptor in @(Get-CapsulenvPackageProjectionRepairDescriptors -Apps $Apps)) {
+        $results.Add((Invoke-CapsulenvPackageProjectionDescriptor `
+            -Descriptor $descriptor `
+            -DeferRunningApps:$DeferRunningApps `
+            -DeferUnsafeLegacyProjectionFailures:$DeferUnsafeLegacyProjectionFailures))
+    }
+    return Merge-CapsulenvPackageProjectionResults -Results $results.ToArray()
 }
 
 function Repair-CapsulenvInstalledAppProjections {
