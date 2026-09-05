@@ -2,6 +2,7 @@ Describe 'Capsulenv test harness isolation' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $script:Pwsh = [string](Get-Process -Id $PID).Path
+        . (Join-Path (Join-Path $script:Root 'scripts') 'Capsulenv.TestHarness.ps1')
     }
 
     It 'routes implicit module builds through the per-suite build root' {
@@ -37,5 +38,64 @@ Describe 'Capsulenv test harness isolation' {
             $env:CAPSULENV_TEST_SUITE_PATH = $oldSuite
             $env:CAPSULENV_TEST_SUITE_RESULT_PATH = $oldResult
         }
+    }
+
+    It 'selects explicit fast and concurrency suite contracts' {
+        $paths = @(
+            'Z:\tests\ArchitectureAnalysis.Tests.ps1',
+            'Z:\tests\DesiredState.Tests.ps1',
+            'Z:\tests\Diagnostics.Tests.ps1',
+            'Z:\tests\PackageExecutor.Tests.ps1',
+            'Z:\tests\ScoopReset.Tests.ps1',
+            'Z:\tests\Static.Tests.ps1',
+            'Z:\tests\TestHarness.Tests.ps1',
+            'Z:\tests\ToolRelocation.Tests.ps1',
+            'Z:\tests\Other.Tests.ps1'
+        )
+
+        $fast = @(Select-CapsulenvTestPaths -AllTestPaths $paths -Profile Fast)
+        @($fast | ForEach-Object { Split-Path -Leaf $_ }) | Should -Be @(
+            'ArchitectureAnalysis.Tests.ps1',
+            'DesiredState.Tests.ps1',
+            'Diagnostics.Tests.ps1',
+            'PackageExecutor.Tests.ps1',
+            'ScoopReset.Tests.ps1',
+            'Static.Tests.ps1',
+            'TestHarness.Tests.ps1'
+        )
+
+        $concurrency = @(Select-CapsulenvTestPaths -AllTestPaths $paths -Profile Concurrency)
+        @($concurrency | ForEach-Object { Split-Path -Leaf $_ }) | Should -Be @(
+            'DesiredState.Tests.ps1',
+            'PackageExecutor.Tests.ps1',
+            'ScoopReset.Tests.ps1',
+            'ToolRelocation.Tests.ps1',
+            'TestHarness.Tests.ps1'
+        )
+    }
+
+    It 'builds deterministic repeated concurrency case plans' {
+        $paths = @(
+            'Z:\tests\DesiredState.Tests.ps1',
+            'Z:\tests\PackageExecutor.Tests.ps1'
+        )
+        $cases = @(New-CapsulenvTestCasePlan -TestPaths $paths -Repeat 3)
+        $cases.Count | Should -Be 6
+        @($cases.RepeatIndex) | Should -Be @(1, 1, 2, 2, 3, 3)
+        @($cases.SuiteName) | Should -Be @(
+            'DesiredState.Tests.ps1',
+            'PackageExecutor.Tests.ps1',
+            'DesiredState.Tests.ps1',
+            'PackageExecutor.Tests.ps1',
+            'DesiredState.Tests.ps1',
+            'PackageExecutor.Tests.ps1'
+        )
+        @($cases.Index) | Should -Be @(0, 1, 2, 3, 4, 5)
+    }
+
+    It 'fails closed when a named profile suite disappears' {
+        {
+            Select-CapsulenvTestPaths -AllTestPaths @('Z:\tests\DesiredState.Tests.ps1') -Profile Concurrency
+        } | Should -Throw "*references missing suite(s)*"
     }
 }

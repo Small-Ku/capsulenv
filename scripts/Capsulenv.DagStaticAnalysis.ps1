@@ -302,6 +302,7 @@ function Get-CapsulenvTestHarnessIsolationViolations {
     $requiredNames = @(
         'CAPSULENV_TEST_SUITE_PATH',
         'CAPSULENV_TEST_SUITE_RESULT_PATH',
+        'CAPSULENV_TEST_ARTIFACT_ROOT',
         'CAPSULENV_BUILD_ROOT',
         'TMP',
         'TEMP',

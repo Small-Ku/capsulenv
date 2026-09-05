@@ -353,4 +353,15 @@ function Invoke-StillBad {
         @(Get-CapsulenvTestHarnessIsolationViolations -Path $runner).Count | Should -Be 0
     }
 
+    It 'requires a dedicated child artifact root in the canonical test runner' {
+        $runner = Join-Path (Join-Path $script:Root 'scripts') 'Test-Capsulenv.ps1'
+        $source = [System.IO.File]::ReadAllText($runner)
+        $fixture = New-CapsulenvStaticFixture -Name 'Test-Capsulenv.ps1' -Source (
+            $source -replace '(?m)^.*CAPSULENV_TEST_ARTIFACT_ROOT.*\r?\n?', ''
+        )
+        $violations = @(Get-CapsulenvTestHarnessIsolationViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'TestHarnessChildIsolationVariableRequired'
+        ($violations.Detail -join "`n") | Should -Match 'CAPSULENV_TEST_ARTIFACT_ROOT'
+    }
+
 }
