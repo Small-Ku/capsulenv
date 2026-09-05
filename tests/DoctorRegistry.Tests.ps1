@@ -15,12 +15,14 @@ Describe 'Capsulenv doctor registry' {
             'Capsulenv.Doctor.Package.OwnershipRoots',
             'Capsulenv.Doctor.Scoop.Root',
             'Capsulenv.Doctor.Scoop.Command',
+            'Capsulenv.Doctor.Scoop.ProjectionRepairState',
             'Capsulenv.Doctor.Relocation.Rehydration',
             'Capsulenv.Doctor.Relocation.PersistRepair',
             'Capsulenv.Doctor.HostIntegration.PackageLauncher'
         ) })
-        $results.Count | Should -Be 8
+        $results.Count | Should -Be 9
         @($results.Id) | Should -Contain 'Capsulenv.Doctor.Package.OwnershipRoots'
+        @($results.Id) | Should -Contain 'Capsulenv.Doctor.Scoop.ProjectionRepairState'
         @($results.Id) | Should -Contain 'Capsulenv.Doctor.Relocation.PersistRepair'
         @($results.Id) | Should -Contain 'Capsulenv.Doctor.HostIntegration.PackageLauncher'
         @($results.Status | Where-Object { $_ -notin @('Healthy','Advisory','Unavailable','Failed','Skipped') }).Count | Should -Be 0

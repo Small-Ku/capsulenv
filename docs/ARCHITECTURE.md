@@ -204,7 +204,9 @@ File persist repair只在 ownership 可證明時替換 projection：reparse/hard
 - 沒有 current evidence但只有一個 metadata-bearing version -> 可修
 - app root 外部/reparse version target、多個候選 version、normal `current` directory、diverged persisted file 等 ownership 不足 -> fail closed
 
-最後一種情況要求使用者明確執行 upstream `scoop reset <app>`、reinstall 或 migrate；Capsulenv 不猜 active version。
+這裡的 **fail closed 是 mutation boundary，不等於整個 capsule activation 必須失敗**。Automatic relocation rehydrate 遇到可辨識的 legacy ownership ambiguity 時，不修改該 upstream Scoop app，將 selector / stable diagnostic ID / remediation 寫入 rehydration state，發出 warning，然後繼續 Capsulenv-owned projection 與 session activation；running app 亦可安全 defer。只有 running-app 這類可自行消失的 retryable issue 會令下一次 activation 自動重試；ambiguous/foreign-owned state 會保留給 `doctor`，不會每次啟動都重跑相同無法安全解決的 repair。若是 Capsulenv-owned package projection 損壞，或出現不屬已知 legacy safety boundary 的錯誤，仍立即失敗。
+
+對同一狀態，使用者明確執行 `capsulenv reset` 時維持嚴格 fail-closed：要求使用者先明確執行 upstream `scoop reset <app>`、reinstall 或 migrate；Capsulenv 不猜 active version。`capsulenv doctor` 的 `Package projection repair state` check 會呈現 automatic rehydrate 留下的 unresolved legacy issue。
 
 `capsulenv reset` 是 projection reconcile compatibility command，**不是 `scoop reset`**。舊 automatic lifecycle replay / `capsulenv hooks` 已移除。
 

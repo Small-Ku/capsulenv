@@ -10,12 +10,15 @@ function ConvertTo-CapsulenvLauncherArgument {
 
 function Sync-CapsulenvPackageStartMenuShortcuts {
     [CmdletBinding()]
-    param()
+    param(
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+    )
 
     if (-not (Test-CapsulenvWindows)) {
         return
     }
-    if ((Get-CapsulenvInstallMode) -ne 'User') {
+    if ($IntegrationMode -ne 'User') {
         return
     }
 

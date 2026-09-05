@@ -14,6 +14,25 @@ Describe 'Capsulenv desired-state graph' {
         }
         $result.Ids -join ',' | Should -Be 'a,b'; $result.Log -join ',' | Should -Be 'a,b'; @($result.Verified | Where-Object { -not $_ }).Count | Should -Be 0
     }
+    It 'adds actionable remediation when an unexpected node apply error is wrapped' {
+        $record = & $script:Module {
+            $node = New-CapsulenvDesiredStateNode `
+                -Id broken `
+                -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
+                -Apply { param($c,$d) throw 'raw fixture failure' } `
+                -Verify { param($c,$d,$o) $true }
+            $plan = Get-CapsulenvDesiredStatePlan -Nodes @($node)
+            try { Invoke-CapsulenvDesiredStatePlan -Plan $plan | Out-Null } catch { $_ }
+        }
+
+        $record.FullyQualifiedErrorId | Should -Be 'Capsulenv.DesiredState.ApplyFailed'
+        $record.ErrorDetails.Message | Should -Match 'broken'
+        $remediation = @(& $script:Module { param($Record) Get-CapsulenvDiagnosticRemediation -ErrorRecord $Record } $record)
+        $remediation -join ' ' | Should -Match 'doctor'
+        $remediation -join ' ' | Should -Match 'CAPSULENV_DEBUG=1'
+        $record.Exception.Message | Should -Not -Match 'raw fixture failure'
+    }
+
     It 'blocks dependents when a dependency cannot apply' {
         $plan=& $script:Module {
             $a=New-CapsulenvDesiredStateNode -Id a -Plan {param($c)[pscustomobject]@{Operation='Blocked';CanApply=$false;Reason='no'}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}

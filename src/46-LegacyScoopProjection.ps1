@@ -4,7 +4,11 @@ function Get-CapsulenvLegacyScoopLocation {
 
     $parsed = Split-CapsulenvScoopAppSelector -Selector $Selector
     if ([string]$parsed.Scope -eq 'Capsule') {
-        throw "Legacy Scoop projection does not own Capsulenv package selector '$Selector'."
+        throw (New-CapsulenvDiagnosticErrorRecord `
+            -Id 'Capsulenv.LegacyScoopProjection.SelectorNotOwned' `
+            -Message "Legacy Scoop projection does not own Capsulenv package selector '$Selector'." `
+            -TargetObject $Selector `
+            -Remediation @('Use capsule/<app> for a Capsulenv-owned package, or an explicit scoop/user or scoop/global selector for upstream Scoop state.'))
     }
 
     $candidateScopes = if ($null -ne $parsed.Scope) { @([string]$parsed.Scope) } else { @('User', 'Global') }
@@ -27,10 +31,19 @@ function Get-CapsulenvLegacyScoopLocation {
     }
 
     if ($matches.Count -eq 0) {
-        throw "Legacy Scoop app is not installed in the capsule: $Selector"
+        throw (New-CapsulenvDiagnosticErrorRecord `
+            -Id 'Capsulenv.LegacyScoopProjection.NotInstalled' `
+            -Message "Legacy Scoop app is not installed in the capsule: $Selector" `
+            -Category ([System.Management.Automation.ErrorCategory]::ObjectNotFound) `
+            -TargetObject $Selector)
     }
     if ($matches.Count -gt 1) {
-        throw "Legacy Scoop app '$($parsed.Name)' exists in both user and global roots. Use scoop:user/$($parsed.Name) or scoop:global/$($parsed.Name)."
+        throw (New-CapsulenvDiagnosticErrorRecord `
+            -Id 'Capsulenv.LegacyScoopProjection.AmbiguousScope' `
+            -Message "Legacy Scoop app '$($parsed.Name)' exists in both user and global roots." `
+            -TargetObject $Selector `
+            -Context ([ordered]@{ App = [string]$parsed.Name }) `
+            -Remediation @("Use scoop:user/$($parsed.Name) or scoop:global/$($parsed.Name) explicitly."))
     }
     return $matches[0]
 }
@@ -125,9 +138,19 @@ function Resolve-CapsulenvLegacyScoopVersionRoot {
         return [string]$candidates[0].FullName
     }
     if ($candidates.Count -eq 0) {
-        throw "No installed version metadata is available for legacy Scoop app '$($Location.Selector)'."
+        throw (New-CapsulenvDiagnosticErrorRecord `
+            -Id 'Capsulenv.LegacyScoopProjection.NoVersionEvidence' `
+            -Message "No installed version metadata is available for legacy Scoop app '$($Location.Selector)'." `
+            -TargetObject $Location.Selector `
+            -Context ([ordered]@{ Selector = [string]$Location.Selector; AppRoot = [string]$Location.AppRoot }) `
+            -Remediation @("Run upstream 'scoop reset $($Location.Name)' explicitly, or reinstall/migrate the package."))
     }
-    throw "Cannot prove the active version for legacy Scoop app '$($Location.Selector)' because current is stale and multiple versions exist. Run upstream 'scoop reset $($Location.Name)' explicitly, or reinstall/migrate the package."
+    throw (New-CapsulenvDiagnosticErrorRecord `
+        -Id 'Capsulenv.LegacyScoopProjection.AmbiguousVersion' `
+        -Message "Cannot prove the active version for legacy Scoop app '$($Location.Selector)' because current is stale and multiple versions exist." `
+        -TargetObject $Location.Selector `
+        -Context ([ordered]@{ Selector = [string]$Location.Selector; CandidateCount = [int]$candidates.Count }) `
+        -Remediation @("Run upstream 'scoop reset $($Location.Name)' explicitly, or reinstall/migrate the package."))
 }
 
 function Test-CapsulenvLegacyScoopAppHasBlockingProcesses {
@@ -189,13 +212,28 @@ function Repair-CapsulenvLegacyPersistProjection {
                 Set-CapsulenvPackageDirectoryLink -Path $source -Target $target
                 continue
             }
-            throw "Refusing to replace a normal directory while repairing legacy Scoop persist projection: $source"
+            throw (New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.LegacyScoopProjection.PersistConflict' `
+                -Message "Refusing to replace a normal directory while repairing legacy Scoop persist projection: $source" `
+                -TargetObject $source `
+                -Context ([ordered]@{ Source = $source; Target = $target }) `
+                -Remediation @('Resolve the upstream Scoop persist projection explicitly before retrying Capsulenv relocation repair.'))
         }
 
-        Repair-CapsulenvPackageFileProjection `
-            -Path $source `
-            -Target $target `
-            -OwnershipLabel 'legacy Scoop persist projection'
+        try {
+            Repair-CapsulenvPackageFileProjection `
+                -Path $source `
+                -Target $target `
+                -OwnershipLabel 'legacy Scoop persist projection'
+        } catch {
+            throw (ConvertTo-CapsulenvDiagnosticErrorRecord `
+                -ErrorRecord $_ `
+                -Id 'Capsulenv.LegacyScoopProjection.PersistConflict' `
+                -Message "Capsulenv cannot safely repair the legacy Scoop persist file projection: $source" `
+                -TargetObject $source `
+                -Context ([ordered]@{ Source = $source; Target = $target }) `
+                -Remediation @('Resolve the upstream Scoop persist projection explicitly before retrying Capsulenv relocation repair.'))
+        }
     }
 }
 
@@ -212,7 +250,11 @@ function Repair-CapsulenvLegacyScoopAppProjection {
             Write-CapsulenvMessage -Level Warning -Message "Deferring legacy Scoop projection repair for '$($location.Selector)' until its running processes exit."
             return $false
         }
-        throw "Legacy Scoop app is running; close it before repairing its projection: $($location.Selector)"
+        throw (New-CapsulenvDiagnosticErrorRecord `
+            -Id 'Capsulenv.LegacyScoopProjection.AppRunning' `
+            -Message "Legacy Scoop app is running; close it before repairing its projection: $($location.Selector)" `
+            -TargetObject $location.Selector `
+            -Remediation @('Close the app and retry; automatic User-mode rehydration will retry deferred running apps on the next session.'))
     }
 
     $versionRoot = Resolve-CapsulenvLegacyScoopVersionRoot -Location $location
@@ -228,11 +270,31 @@ function Repair-CapsulenvLegacyScoopAppProjection {
     return $true
 }
 
-function Repair-CapsulenvInstalledAppProjections {
+function New-CapsulenvLegacyProjectionIssue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Selector,
+        [Parameter(Mandatory = $true)][string]$ErrorId,
+        [Parameter(Mandatory = $true)][string]$Summary,
+        [AllowEmptyCollection()][string[]]$Remediation = @(),
+        [bool]$Retryable = $false
+    )
+
+    return [pscustomobject][ordered]@{
+        Selector = $Selector
+        ErrorId = $ErrorId
+        Summary = $Summary
+        Remediation = [string[]]@($Remediation)
+        Retryable = $Retryable
+    }
+}
+
+function Invoke-CapsulenvInstalledAppProjectionRepair {
     [CmdletBinding()]
     param(
         [string[]]$Apps = @('*'),
         [switch]$DeferRunningApps,
+        [switch]$DeferUnsafeLegacyProjectionFailures,
         [ValidateSet('ShellOnly', 'User')]
         [string]$IntegrationMode = (Get-CapsulenvInstallMode)
     )
@@ -240,7 +302,9 @@ function Repair-CapsulenvInstalledAppProjections {
     $requested = @($Apps)
     if ($requested.Count -eq 0) { $requested = @('*') }
     $repairAll = $requested -contains '*'
-    $deferred = $false
+    $issues = New-Object System.Collections.Generic.List[object]
+    $ownedRepairCount = 0
+    $legacyRepairCount = 0
 
     $safeStates = @(Get-CapsulenvInstalledPackageStates -Strict)
     $safeNames = @($safeStates | ForEach-Object { [string]$_.Name })
@@ -258,6 +322,7 @@ function Repair-CapsulenvInstalledAppProjections {
         $state = Get-CapsulenvInstalledPackageState -Name $name
         Repair-CapsulenvPackageProjection -State $state
         [void](Sync-CapsulenvPackageShims -Name $name)
+        $ownedRepairCount++
     }
 
     $legacyRequested = if ($repairAll) {
@@ -273,14 +338,70 @@ function Repair-CapsulenvInstalledAppProjections {
         )
     }
     foreach ($selector in @($legacyRequested)) {
-        $completed = Repair-CapsulenvLegacyScoopAppProjection -Selector $selector -DeferRunningApps:$DeferRunningApps
-        if (-not $completed) { $deferred = $true }
+        try {
+            $completed = Repair-CapsulenvLegacyScoopAppProjection -Selector $selector -DeferRunningApps:$DeferRunningApps
+            if ($completed) {
+                $legacyRepairCount++
+                continue
+            }
+            $issues.Add((New-CapsulenvLegacyProjectionIssue `
+                -Selector $selector `
+                -ErrorId 'Capsulenv.LegacyScoopProjection.AppRunning' `
+                -Summary "Legacy Scoop app is running; projection repair was deferred: $selector" `
+                -Remediation @('Close the app; automatic User-mode rehydration will retry the projection on the next session.') `
+                -Retryable $true))
+        } catch {
+            $isLegacySafetyBoundary = (
+                (Test-CapsulenvDiagnosticErrorRecord -ErrorRecord $_) -and
+                ([string]$_.FullyQualifiedErrorId -like 'Capsulenv.LegacyScoopProjection.*')
+            )
+            if (-not $DeferUnsafeLegacyProjectionFailures -or -not $isLegacySafetyBoundary) {
+                throw
+            }
+            $summary = if ($null -ne $_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace([string]$_.ErrorDetails.Message)) {
+                [string]$_.ErrorDetails.Message
+            } else {
+                [string]$_.Exception.Message
+            }
+            $remediation = @(Get-CapsulenvDiagnosticRemediation -ErrorRecord $_)
+            $issues.Add((New-CapsulenvLegacyProjectionIssue `
+                -Selector $selector `
+                -ErrorId ([string]$_.FullyQualifiedErrorId) `
+                -Summary $summary `
+                -Remediation $remediation))
+            Write-CapsulenvMessage -Level Warning -Message ("Legacy Scoop projection was left unchanged for '{0}': {1}" -f $selector, $summary)
+            if ($remediation.Count -gt 0) {
+                Write-CapsulenvMessage -Level Detail -Message ([string]$remediation[0])
+            }
+        }
     }
 
-    if ($IntegrationMode -eq 'User') {
-        Sync-CapsulenvPackageStartMenuShortcuts
+    return [pscustomobject][ordered]@{
+        Complete = ($issues.Count -eq 0)
+        RetryRequired = (@($issues.ToArray() | Where-Object { [bool]$_.Retryable }).Count -gt 0)
+        OwnedPackagesRepaired = $ownedRepairCount
+        LegacyAppsRepaired = $legacyRepairCount
+        Issues = $issues.ToArray()
     }
-    return (-not $deferred)
+}
+
+function Repair-CapsulenvInstalledAppProjections {
+    [CmdletBinding()]
+    param(
+        [string[]]$Apps = @('*'),
+        [switch]$DeferRunningApps,
+        [ValidateSet('ShellOnly', 'User')]
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+    )
+
+    $report = Invoke-CapsulenvInstalledAppProjectionRepair `
+        -Apps $Apps `
+        -DeferRunningApps:$DeferRunningApps `
+        -IntegrationMode $IntegrationMode
+    if ($IntegrationMode -eq 'User') {
+        Sync-CapsulenvPackageStartMenuShortcuts -IntegrationMode $IntegrationMode
+    }
+    return [bool]$report.Complete
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Repair-CapsulenvInstalledAppProjections

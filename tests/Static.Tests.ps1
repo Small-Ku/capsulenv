@@ -469,7 +469,7 @@ Describe 'Capsulenv static and relocation' {
                 Get-Content -LiteralPath (Get-CapsulenvRehydrationStatePath) -Raw | ConvertFrom-Json
             }
             Assert-CapsulenvTest `
-                -Condition ([int]$savedState.SchemaVersion -eq 4) `
+                -Condition ([int]$savedState.SchemaVersion -eq 5) `
                 -Message 'Rehydration state must support replacing an existing state file atomically.'
             $rehydrationRollbacks = @(Get-ChildItem -LiteralPath (Join-Path $tempRoot '.capsulenv') -Filter '.capsulenv-rehydration-*.rollback' -ErrorAction SilentlyContinue)
             Assert-CapsulenvTest `

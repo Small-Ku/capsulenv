@@ -157,15 +157,28 @@ function Save-CapsulenvRehydrationState {
     param(
         $RelocationContext,
         $PersistRepairResult,
-        [bool]$PendingProjectionRepair = $false
+        [bool]$PendingProjectionRepair = $false,
+        [AllowEmptyCollection()][object[]]$ProjectionRepairIssues = @()
     )
 
     $statePath = Get-CapsulenvRehydrationStatePath
     $stateDirectory = Split-Path -Parent $statePath
     [void](New-Item -ItemType Directory -Path $stateDirectory -Force)
     $state = Get-CapsulenvRelocationFingerprint
-    $state.Insert(0, 'SchemaVersion', 4)
+    $state.Insert(0, 'SchemaVersion', 5)
     $state['PendingProjectionRepair'] = $PendingProjectionRepair
+    $state['ProjectionRepairIssues'] = @(
+        foreach ($issue in @($ProjectionRepairIssues)) {
+            if ($null -eq $issue) { continue }
+            [ordered]@{
+                Selector = [string]$issue.Selector
+                ErrorId = [string]$issue.ErrorId
+                Summary = [string]$issue.Summary
+                Remediation = [string[]]@($issue.Remediation)
+                Retryable = [bool]$issue.Retryable
+            }
+        }
+    )
     $state['CompletedAtUtc'] = [DateTime]::UtcNow.ToString('o')
     if ($null -ne $RelocationContext -and $RelocationContext.HasPathChanges) {
         $state['LastRelocation'] = [ordered]@{
@@ -247,10 +260,17 @@ function Get-CapsulenvScoopRehydratePlan {
         (New-CapsulenvDesiredStateNode -Id 'package-projections' `
             -DependsOn @('session-environment','user-environment-backup') `
             -ReadResources @('capsule:///packages/installed-state') `
-            -WriteResources @('capsule:///packages/projections','capsule:///scoop/apps','capsule:///scoop/persist','capsule:///packages/shims','host:///start-menu/capsulenv') `
+            -WriteResources @('capsule:///packages/projections','capsule:///scoop/apps','capsule:///scoop/persist','capsule:///packages/shims') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
-            -Apply { param($c,$d) [bool](Repair-CapsulenvInstalledAppProjections -IntegrationMode $c.IntegrationMode -DeferRunningApps:($c.IntegrationMode -eq 'User')) } `
-            -Verify { param($c,$d,$o) $null -ne $o })
+            -Apply { param($c,$d) Invoke-CapsulenvInstalledAppProjectionRepair -IntegrationMode $c.IntegrationMode -DeferRunningApps -DeferUnsafeLegacyProjectionFailures } `
+            -Verify { param($c,$d,$o) $null -ne $o -and $null -ne $o.PSObject.Properties['Complete'] })
+        (New-CapsulenvDesiredStateNode -Id 'package-host-integration' `
+            -DependsOn 'package-projections' `
+            -ReadResources @('capsule:///packages/installed-state') `
+            -WriteResources @('host:///start-menu/capsulenv') `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Apply { param($c,$d) Sync-CapsulenvPackageStartMenuShortcuts -IntegrationMode $c.IntegrationMode } `
+            -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'persist-relocation' -ParallelSafe `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///state/rehydration') `
@@ -273,9 +293,9 @@ function Get-CapsulenvScoopRehydratePlan {
             -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepair -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-integration' `
-            -DependsOn @('persist-relocation','tool-relocation') `
+            -DependsOn @('persist-relocation','tool-relocation','package-host-integration') `
             -ReadResources @('capsule:///packages/installed-state') `
-            -WriteResources @('host:///environment/user','host:///start-menu/capsulenv') `
+            -WriteResources @('host:///environment/user') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvUserEnvironment -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })
@@ -284,7 +304,7 @@ function Get-CapsulenvScoopRehydratePlan {
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///state/rehydration') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
-            -Apply { param($c,$d) $repair=$c.Outputs['persist-relocation']; $projection=[bool]$c.Outputs['package-projections']; Save-CapsulenvRehydrationState -RelocationContext $c.RelocationContext -PersistRepairResult $repair -PendingProjectionRepair:(-not $projection); [pscustomobject]@{ ProjectionRepairComplete=$projection } } `
+            -Apply { param($c,$d) $repair=$c.Outputs['persist-relocation']; $projection=$c.Outputs['package-projections']; $complete=[bool]$projection.Complete; $retryRequired=[bool]$projection.RetryRequired; $issues=@($projection.Issues); Save-CapsulenvRehydrationState -RelocationContext $c.RelocationContext -PersistRepairResult $repair -PendingProjectionRepair:$retryRequired -ProjectionRepairIssues $issues; [pscustomobject]@{ ProjectionRepairComplete=$complete; ProjectionRepairRetryRequired=$retryRequired; ProjectionRepairIssues=$issues } } `
             -Verify { param($c,$d,$o) $true })
     )
     return [pscustomobject][ordered]@{ Context=$context; Plan=(Get-CapsulenvDesiredStatePlan -Nodes $nodes -Context $context); RelocationContext=$relocationContext }
@@ -303,8 +323,17 @@ function Invoke-CapsulenvScoopRehydrate {
     if (-not $SkipHooks) { Write-CapsulenvMessage -Level Detail -Message 'Automatic Scoop lifecycle replay has been removed; arbitrary manifest code is available only through explicit upstream Scoop execution.' }
     $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $rehydrate.Plan -Context $rehydrate.Context)
     $state = @($results | Where-Object Id -eq 'rehydration-state' | Select-Object -Last 1).Output
-    if ($null -ne $state -and [bool]$state.ProjectionRepairComplete) { Write-CapsulenvMessage -Level Success -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode." }
-    else { Write-CapsulenvMessage -Level Warning -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode with a deferred legacy app projection; it will be retried automatically." }
+    if ($null -ne $state -and [bool]$state.ProjectionRepairComplete) {
+        Write-CapsulenvMessage -Level Success -Message "Capsulenv package projection rehydration completed in $IntegrationMode mode."
+    } else {
+        $issueCount = if ($null -ne $state) { @($state.ProjectionRepairIssues).Count } else { 0 }
+        $retryRequired = ($null -ne $state -and [bool]$state.ProjectionRepairRetryRequired)
+        if ($retryRequired) {
+            Write-CapsulenvMessage -Level Warning -Message ("Capsulenv package projection rehydration completed in {0} mode with {1} deferred legacy Scoop projection issue(s); retryable state will be checked again on the next activation." -f $IntegrationMode, $issueCount)
+        } else {
+            Write-CapsulenvMessage -Level Warning -Message ("Capsulenv package projection rehydration completed in {0} mode with {1} unresolved legacy Scoop projection issue(s); ambiguous or foreign-owned state was left unchanged. Run 'capsulenv.cmd doctor' for remediation." -f $IntegrationMode, $issueCount)
+        }
+    }
     [void](Invoke-CapsulenvRoutines -Trigger OnRehydrate)
     return $results
 }
@@ -341,6 +370,72 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Command' -Area 'Scoop'
     $available = $null -ne $executable
     New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.Command' -Name 'Scoop command' -Area 'Scoop' -Status $(if($available){'Healthy'}else{'Unavailable'}) -Summary $(if($available){[string]$executable}else{'Not found; bootstrap will install it on first session'}) -Detail $(if($available){[string]$executable}else{'Not found; bootstrap will install it on first session'}) -Data ([ordered]@{ Executable=$executable }) -Remediation $(if($available){@()}else{@('Bootstrap the capsule before running explicit TrustedExecution Scoop commands.')})
 }
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.ProjectionRepairState' -Area 'Scoop' -Name 'Package projection repair state' -Importance Optional -Handler {
+    $statePath = Get-CapsulenvRehydrationStatePath
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        return New-CapsulenvDoctorResult `
+            -Id 'Capsulenv.Doctor.Scoop.ProjectionRepairState' `
+            -Name 'Package projection repair state' `
+            -Area 'Scoop' `
+            -Status Healthy `
+            -Importance Optional `
+            -Summary 'No persisted relocation repair issues.' `
+            -Data ([ordered]@{ StatePath=$statePath; Pending=$false; Issues=@() })
+    }
+    try {
+        $saved = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    } catch {
+        return New-CapsulenvDoctorResult `
+            -Id 'Capsulenv.Doctor.Scoop.ProjectionRepairState' `
+            -Name 'Package projection repair state' `
+            -Area 'Scoop' `
+            -Status Advisory `
+            -Importance Optional `
+            -Summary "The rehydration state is unreadable and will be regenerated: $statePath" `
+            -Data ([ordered]@{ StatePath=$statePath; Pending=$true; Issues=@() }) `
+            -Remediation @('Run capsulenv rehydrate after resolving any filesystem or media errors affecting the capsule state directory.')
+    }
+    $pendingProperty = $saved.PSObject.Properties['PendingProjectionRepair']
+    $pending = ($null -ne $pendingProperty -and [bool]$pendingProperty.Value)
+    $issuesProperty = $saved.PSObject.Properties['ProjectionRepairIssues']
+    $issues = if ($null -ne $issuesProperty) { @($issuesProperty.Value) } else { @() }
+    $status = if ($pending -or $issues.Count -gt 0) { 'Advisory' } else { 'Healthy' }
+    $summary = if ($issues.Count -gt 0) {
+        "Legacy Scoop projection repair has $($issues.Count) unresolved issue(s); foreign or ambiguous state was left unchanged."
+    } elseif ($pending) {
+        'Package projection repair is pending and will be retried on the next rehydrate.'
+    } else {
+        'No persisted relocation repair issues.'
+    }
+    $remediation = New-Object System.Collections.Generic.List[string]
+    foreach ($issue in $issues) {
+        if ($null -eq $issue) { continue }
+        $selectorProperty = $issue.PSObject.Properties['Selector']
+        $errorIdProperty = $issue.PSObject.Properties['ErrorId']
+        $remediationProperty = $issue.PSObject.Properties['Remediation']
+        $selector = if ($null -ne $selectorProperty) { [string]$selectorProperty.Value } else { '' }
+        $errorId = if ($null -ne $errorIdProperty) { [string]$errorIdProperty.Value } else { '' }
+        if (-not [string]::IsNullOrWhiteSpace($selector)) {
+            $remediation.Add(("Inspect legacy Scoop projection '{0}' ({1})." -f $selector, $errorId))
+        }
+        $issueRemediation = if ($null -ne $remediationProperty) { @($remediationProperty.Value) } else { @() }
+        foreach ($line in $issueRemediation) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$line) -and -not $remediation.Contains([string]$line)) {
+                $remediation.Add([string]$line)
+            }
+        }
+    }
+    New-CapsulenvDoctorResult `
+        -Id 'Capsulenv.Doctor.Scoop.ProjectionRepairState' `
+        -Name 'Package projection repair state' `
+        -Area 'Scoop' `
+        -Status $status `
+        -Importance Optional `
+        -Summary $summary `
+        -Data ([ordered]@{ StatePath=$statePath; Pending=$pending; Issues=$issues }) `
+        -Remediation $remediation.ToArray()
+}
+
 Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Config' -Area 'Scoop' -Name 'Portable Scoop config' -Importance Optional -Handler {
     $path = Join-Path (Get-CapsulenvScoopRoot) 'config.json'
     $exists = Test-Path -LiteralPath $path -PathType Leaf

@@ -17,9 +17,14 @@ Describe 'Capsulenv package projection repair boundary' {
 
         $rehydrate = Get-CapsulenvScoopRehydratePlan -IntegrationMode ShellOnly
 
-        @($rehydrate.Plan.Nodes).Count | Should -Be 8
-        @($rehydrate.Plan.Nodes | ForEach-Object { $_.Node.Verify }).Count | Should -Be 8
+        @($rehydrate.Plan.Nodes).Count | Should -Be 9
+        @($rehydrate.Plan.Nodes | ForEach-Object { $_.Node.Verify }).Count | Should -Be 9
         @($rehydrate.Plan.Nodes | Where-Object { $_.Node.Verify -isnot [scriptblock] }).Count | Should -Be 0
+        @($rehydrate.Plan.Nodes.Id) | Should -Contain 'package-host-integration'
+        $projectionNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'package-projections')[0].Node
+        $hostNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'package-host-integration')[0].Node
+        @($projectionNode.WriteResources) | Should -Not -Contain 'host:///start-menu/capsulenv'
+        @($hostNode.WriteResources) | Should -Contain 'host:///start-menu/capsulenv'
     }
 
     It 'delegates the compatibility reset command to bounded projection repair only' {
@@ -81,8 +86,13 @@ $global:LASTEXITCODE = 0
             CurrentRoot = (Join-Path $appRoot 'current')
         }
 
-        { & $script:Module { param($Location) Resolve-CapsulenvLegacyScoopVersionRoot -Location $Location } $location } |
-            Should -Throw '*Cannot prove the active version*upstream*'
+        $record = & $script:Module {
+            param($Location)
+            try { Resolve-CapsulenvLegacyScoopVersionRoot -Location $Location } catch { $_ }
+        } $location
+        $record.FullyQualifiedErrorId | Should -Be 'Capsulenv.LegacyScoopProjection.AmbiguousVersion'
+        $record.ErrorDetails.Message | Should -Match 'Cannot prove the active version'
+        @(& $script:Module { param($Record) Get-CapsulenvDiagnosticRemediation -ErrorRecord $Record } $record) -join ' ' | Should -Match 'upstream.*scoop reset'
     }
 
     It 'rejects legacy selectors that could escape the Scoop app root' {
@@ -114,4 +124,107 @@ $global:LASTEXITCODE = 0
         { & $script:Module { param($Location) Resolve-CapsulenvLegacyScoopVersionRoot -Location $Location } $location } |
             Should -Throw '*No installed version metadata*'
     }
+
+    It 'defers a known legacy ownership ambiguity during automatic rehydrate repair' {
+        $script:LegacyAmbiguityRecord = & $script:Module {
+            New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.LegacyScoopProjection.AmbiguousVersion' `
+                -Message 'Cannot prove active version for test fixture.' `
+                -TargetObject 'user/tool' `
+                -Remediation @("Run upstream 'scoop reset tool'.")
+        }
+        Mock Get-CapsulenvInstalledPackageStates { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvLegacyScoopSelectors { @('user/tool') } -ModuleName Capsulenv
+        Mock Repair-CapsulenvLegacyScoopAppProjection { throw $script:LegacyAmbiguityRecord } -ModuleName Capsulenv
+
+        $report = & $script:Module {
+            Invoke-CapsulenvInstalledAppProjectionRepair `
+                -IntegrationMode ShellOnly `
+                -DeferRunningApps `
+                -DeferUnsafeLegacyProjectionFailures
+        }
+
+        $report.Complete | Should -BeFalse
+        $report.RetryRequired | Should -BeFalse
+        $report.Issues | Should -HaveCount 1
+        $report.Issues[0].Selector | Should -Be 'user/tool'
+        $report.Issues[0].ErrorId | Should -Be 'Capsulenv.LegacyScoopProjection.AmbiguousVersion'
+        $report.Issues[0].Summary | Should -Match 'Cannot prove active version'
+        Should -Invoke Repair-CapsulenvLegacyScoopAppProjection -ModuleName Capsulenv -Times 1 -Exactly
+    }
+
+    It 'keeps explicit reset fail-closed for the same legacy ownership ambiguity' {
+        $script:LegacyAmbiguityRecord = & $script:Module {
+            New-CapsulenvDiagnosticErrorRecord `
+                -Id 'Capsulenv.LegacyScoopProjection.AmbiguousVersion' `
+                -Message 'Cannot prove active version for test fixture.' `
+                -TargetObject 'user/tool'
+        }
+        Mock Get-CapsulenvInstalledPackageStates { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvLegacyScoopSelectors { @('user/tool') } -ModuleName Capsulenv
+        Mock Repair-CapsulenvLegacyScoopAppProjection { throw $script:LegacyAmbiguityRecord } -ModuleName Capsulenv
+
+        { Repair-CapsulenvInstalledAppProjections -IntegrationMode ShellOnly } |
+            Should -Throw -ErrorId 'Capsulenv.LegacyScoopProjection.AmbiguousVersion'
+    }
+
+    It 'persists sanitized projection issues in rehydration state schema 5' {
+        $statePath = Join-Path $TestDrive 'state/scoop-rehydration.json'
+        Mock Get-CapsulenvRehydrationStatePath { $statePath } -ModuleName Capsulenv
+        Mock Get-CapsulenvRelocationFingerprint {
+            [ordered]@{
+                CapsuleId='test'; Root='X:\\cap'; ScoopRoot='X:\\cap\\scoop'; ScoopGlobalRoot='X:\\cap\\scoop-global'
+                ComputerName='host'; User='domain\\user'
+            }
+        } -ModuleName Capsulenv
+        $issue = [pscustomobject]@{
+            Selector='user/tool'; ErrorId='Capsulenv.LegacyScoopProjection.AmbiguousVersion'
+            Summary='ambiguous'; Remediation=@('use upstream reset'); Retryable=$false
+        }
+
+        & $script:Module {
+            param($Issue)
+            Save-CapsulenvRehydrationState `
+                -RelocationContext $null `
+                -PersistRepairResult $null `
+                -PendingProjectionRepair $true `
+                -ProjectionRepairIssues @($Issue)
+        } $issue
+
+        $saved = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        $saved.SchemaVersion | Should -Be 5
+        $saved.PendingProjectionRepair | Should -BeTrue
+        @($saved.ProjectionRepairIssues) | Should -HaveCount 1
+        $saved.ProjectionRepairIssues[0].Selector | Should -Be 'user/tool'
+        $saved.ProjectionRepairIssues[0].ErrorId | Should -Be 'Capsulenv.LegacyScoopProjection.AmbiguousVersion'
+    }
+
+    It 'does not force every activation to retry a non-retryable legacy ownership issue' {
+        $statePath = Join-Path $TestDrive 'state/nonretryable-rehydration.json'
+        Mock Get-CapsulenvRehydrationStatePath { $statePath } -ModuleName Capsulenv
+        Mock Get-CapsulenvRelocationFingerprint {
+            [ordered]@{
+                CapsuleId='test'; Root='X:\cap'; ScoopRoot='X:\cap\scoop'; ScoopGlobalRoot='X:\cap\scoop-global'
+                ComputerName='host'; User='domain\user'
+            }
+        } -ModuleName Capsulenv
+        $issue = [pscustomobject]@{
+            Selector='user/tool'; ErrorId='Capsulenv.LegacyScoopProjection.AmbiguousVersion'
+            Summary='ambiguous'; Remediation=@('use upstream reset'); Retryable=$false
+        }
+
+        $required = & $script:Module {
+            param($Issue)
+            Save-CapsulenvRehydrationState `
+                -RelocationContext $null `
+                -PersistRepairResult $null `
+                -PendingProjectionRepair $false `
+                -ProjectionRepairIssues @($Issue)
+            Test-CapsulenvScoopRehydrationRequired
+        } $issue
+
+        $required | Should -BeFalse
+    }
+
+
 }

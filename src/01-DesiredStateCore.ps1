@@ -338,7 +338,16 @@ function Invoke-CapsulenvDesiredStateDecisionSequential {
         }
         return [pscustomobject][ordered]@{ Id=$Decision.Id; Operation='Apply'; Applied=$true; Verified=$true; Output=$output }
     } catch {
-        throw (ConvertTo-CapsulenvDiagnosticErrorRecord -ErrorRecord $_ -Id 'Capsulenv.DesiredState.ApplyFailed' -Message ('[[CapsulenvText:DesiredState.ApplyFailed]]' -f $Decision.Id) -TargetObject $Decision.Id -Context ([ordered]@{ NodeId=$Decision.Id }))
+        throw (ConvertTo-CapsulenvDiagnosticErrorRecord `
+            -ErrorRecord $_ `
+            -Id 'Capsulenv.DesiredState.ApplyFailed' `
+            -Message ('[[CapsulenvText:DesiredState.ApplyFailed]]' -f $Decision.Id) `
+            -TargetObject $Decision.Id `
+            -Context ([ordered]@{ NodeId=$Decision.Id }) `
+            -Remediation @(
+                "Run 'capsulenv.cmd doctor' to inspect the affected ownership boundary.",
+                "Set CAPSULENV_DEBUG=1 and rerun the command to expose the underlying PowerShell error record."
+            ))
     }
 }
 
