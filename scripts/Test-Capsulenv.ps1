@@ -4,7 +4,8 @@ param(
     [string]$Profile = 'Full',
     [ValidateRange(10, 900)]
     [int]$SuiteTimeoutSeconds = 120,
-    [switch]$SkipWindowsPowerShell51Contract
+    [switch]$SkipWindowsPowerShell51Contract,
+    [switch]$KeepArtifacts
 )
 
 Set-StrictMode -Version Latest
@@ -59,7 +60,8 @@ $fastSuites = @(
     'Diagnostics.Tests.ps1',
     'PackageExecutor.Tests.ps1',
     'ScoopReset.Tests.ps1',
-    'Static.Tests.ps1'
+    'Static.Tests.ps1',
+    'TestHarness.Tests.ps1'
 )
 $testPaths = if ($Profile -eq 'Fast') {
     @($allTestPaths | Where-Object { $fastSuites -contains (Split-Path -Leaf $_) })
@@ -79,26 +81,38 @@ Write-Host ("[3/3] Pester ({0}: {1} isolated suite process(es), timeout {2}s eac
 $passedCount = 0
 $failedCount = 0
 $notRunCount = 0
+$infrastructureFailedCount = 0
 $totalCount = 0
 $suiteResults = New-Object System.Collections.Generic.List[object]
 $gateStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $resultRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-test-' + [Guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $resultRoot -Force)
-$oldSuitePath = $env:CAPSULENV_TEST_SUITE_PATH
-$oldSuiteResultPath = $env:CAPSULENV_TEST_SUITE_RESULT_PATH
+$completedGate = $false
 try {
     for ($index = 0; $index -lt $testPaths.Count; $index++) {
         $testPath = $testPaths[$index]
         $suiteName = Split-Path -Leaf $testPath
-        $resultPath = Join-Path $resultRoot (('{0:D3}-{1}.json' -f $index, $suiteName))
+        $suiteToken = ('{0:D3}-{1}' -f $index, ([System.IO.Path]::GetFileNameWithoutExtension($suiteName)))
+        $suiteRoot = Join-Path $resultRoot $suiteToken
+        $suiteTempRoot = Join-Path $suiteRoot 'tmp'
+        $suiteBuildRoot = Join-Path $suiteRoot 'build'
+        $resultPath = Join-Path $suiteRoot 'result.json'
+        [void](New-Item -ItemType Directory -Path $suiteTempRoot -Force)
+        [void](New-Item -ItemType Directory -Path $suiteBuildRoot -Force)
         Write-Host ("  [{0}/{1}] {2}" -f ($index + 1), $testPaths.Count, $suiteName)
 
-        $env:CAPSULENV_TEST_SUITE_PATH = $testPath
-        $env:CAPSULENV_TEST_SUITE_RESULT_PATH = $resultPath
         $startInfo = New-Object System.Diagnostics.ProcessStartInfo
         $startInfo.FileName = $hostExecutable
         $startInfo.Arguments = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $suiteRunner.Replace('"', '\"'))
         $startInfo.UseShellExecute = $false
+        $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_PATH'] = $testPath
+        $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_RESULT_PATH'] = $resultPath
+        $startInfo.EnvironmentVariables['CAPSULENV_TEST_ARTIFACT_ROOT'] = $suiteRoot
+        $startInfo.EnvironmentVariables['CAPSULENV_BUILD_ROOT'] = $suiteBuildRoot
+        foreach ($tempVariable in @('TMP', 'TEMP', 'TMPDIR')) {
+            $startInfo.EnvironmentVariables[$tempVariable] = $suiteTempRoot
+        }
+
         $process = [System.Diagnostics.Process]::Start($startInfo)
         if ($null -eq $process) {
             throw "Failed to start isolated Pester process for $suiteName."
@@ -106,40 +120,56 @@ try {
         $completed = $process.WaitForExit($SuiteTimeoutSeconds * 1000)
         if (-not $completed) {
             try { $process.Kill() } catch {}
-            throw "Pester suite timed out after $SuiteTimeoutSeconds seconds: $suiteName"
+            $process.Dispose()
+            throw "Pester suite timed out after $SuiteTimeoutSeconds seconds: $suiteName. Artifacts: $suiteRoot"
         }
         $exitCode = $process.ExitCode
         $process.Dispose()
 
         if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
-            throw "Pester suite process exited with code $exitCode without writing a result: $suiteName"
+            throw "Pester suite process exited with code $exitCode without writing a result: $suiteName. Artifacts: $suiteRoot"
         }
         $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
         $passedCount += [int]$result.Passed
         $failedCount += [int]$result.Failed
         $notRunCount += [int]$result.NotRun
         $totalCount += [int]$result.Total
+        $infrastructureFailed = if ($null -ne $result.PSObject.Properties['InfrastructureFailed']) {
+            [int]$result.InfrastructureFailed
+        } else {
+            0
+        }
+        $infrastructureFailedCount += $infrastructureFailed
         $suiteResults.Add([pscustomobject][ordered]@{
             Suite = $suiteName
             Passed = [int]$result.Passed
             Failed = [int]$result.Failed
             NotRun = [int]$result.NotRun
+            InfrastructureFailed = $infrastructureFailed
             DurationSeconds = [double]$result.DurationSeconds
             ExitCode = $exitCode
         })
-        Write-Host ("        {0}/{1} passed; {2} failed; {3:N2}s" -f $result.Passed, $result.Total, $result.Failed, [double]$result.DurationSeconds)
+        Write-Host ("        {0}/{1} passed; {2} failed; infra {3}; {4:N2}s" -f $result.Passed, $result.Total, $result.Failed, $infrastructureFailed, [double]$result.DurationSeconds)
+        if ($infrastructureFailed -gt 0 -and $null -ne $result.PSObject.Properties['InfrastructureError']) {
+            Write-Warning ("{0}: {1}" -f $suiteName, [string]$result.InfrastructureError)
+        }
     }
+    $completedGate = $true
 } finally {
-    if ($null -eq $oldSuitePath) { Remove-Item Env:CAPSULENV_TEST_SUITE_PATH -ErrorAction SilentlyContinue } else { $env:CAPSULENV_TEST_SUITE_PATH = $oldSuitePath }
-    if ($null -eq $oldSuiteResultPath) { Remove-Item Env:CAPSULENV_TEST_SUITE_RESULT_PATH -ErrorAction SilentlyContinue } else { $env:CAPSULENV_TEST_SUITE_RESULT_PATH = $oldSuiteResultPath }
-    Remove-Item -LiteralPath $resultRoot -Recurse -Force -ErrorAction SilentlyContinue
+    $gateStopwatch.Stop()
+    if ($KeepArtifacts) {
+        Write-Host ("Test artifacts retained at: {0}" -f $resultRoot)
+    } elseif ($completedGate) {
+        Remove-Item -LiteralPath $resultRoot -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        Write-Warning ("Test gate aborted; artifacts retained at: {0}" -f $resultRoot)
+    }
 }
-$gateStopwatch.Stop()
 
 Write-Host ''
 $suiteResults.ToArray() | Format-Table -AutoSize | Out-Host
-Write-Host ("Capsulenv Pester gate ({0}): {1}/{2} passed, {3} failed, {4} not run in {5:N2}s." -f $Profile, $passedCount, $totalCount, $failedCount, $notRunCount, $gateStopwatch.Elapsed.TotalSeconds)
-if ($failedCount -gt 0 -or $notRunCount -gt 0) {
+Write-Host ("Capsulenv Pester gate ({0}): {1}/{2} passed, {3} failed, {4} not run, {5} infrastructure failure(s) in {6:N2}s." -f $Profile, $passedCount, $totalCount, $failedCount, $notRunCount, $infrastructureFailedCount, $gateStopwatch.Elapsed.TotalSeconds)
+if ($failedCount -gt 0 -or $notRunCount -gt 0 -or $infrastructureFailedCount -gt 0) {
     exit 1
 }
 exit 0

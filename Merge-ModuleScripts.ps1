@@ -3,7 +3,7 @@ param(
     [string]$ModuleName = 'Capsulenv',
     [string]$SourcePath = (Join-Path $PSScriptRoot 'src'),
     [string]$ManifestPath = (Join-Path $PSScriptRoot 'Capsulenv.psd1'),
-    [string]$OutputRoot = (Join-Path $PSScriptRoot '.build'),
+    [string]$OutputRoot = '',
     [string]$RuntimePath = (Join-Path $PSScriptRoot 'module-runtime'),
     [string]$Language = 'en-US',
     [switch]$Clean
@@ -11,6 +11,16 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+    $configuredBuildRoot = [Environment]::GetEnvironmentVariable('CAPSULENV_BUILD_ROOT', 'Process')
+    $OutputRoot = if ([string]::IsNullOrWhiteSpace($configuredBuildRoot)) {
+        Join-Path $PSScriptRoot '.build'
+    } else {
+        $configuredBuildRoot
+    }
+}
+$OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 
 $textResourceLibrary = Join-Path (Join-Path $PSScriptRoot 'build') 'CapsulenvTextResource.ps1'
 . $textResourceLibrary
