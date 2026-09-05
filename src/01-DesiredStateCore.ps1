@@ -299,7 +299,7 @@ function Get-CapsulenvDesiredStatePlan {
         ResourceConflicts=$resourceConflicts
         OwnershipDiagnostics=[pscustomobject][ordered]@{
             UnorderedWriteWrite=@($resourceConflicts | Where-Object { $_.Kind -eq 'WriteWrite' -and -not $_.OrderedByDependency })
-            SerializedConflicts=@($resourceConflicts | Where-Object { -not $_.OrderedByDependency })
+            SerializedConflicts=@($resourceConflicts | Where-Object { $_.OrderedByDependency })
         }
         ExecutionWaves=$waves
     }

@@ -246,7 +246,7 @@ function Get-CapsulenvScoopRehydratePlan {
     # [scriptblock] Verify parameter and surface it as System.Object[].
     $nodes = @(
         (New-CapsulenvDesiredStateNode -Id 'session-environment' `
-            -WriteResources @('process:///environment') `
+            -WriteResources @('process:///environment','capsule:///tool-storage','capsule:///runtime-directories') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) Set-CapsulenvSessionEnvironment } `
             -Verify { param($c,$d,$o) $true })
@@ -287,15 +287,15 @@ function Get-CapsulenvScoopRehydratePlan {
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'tool-relocation' `
             -DependsOn 'project-cache-links' `
-            -ReadResources @('capsule:///tool-storage/configuration') `
-            -WriteResources @('capsule:///tool-data','capsule:///tool-storage') `
+            -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `
+            -WriteResources @('process:///environment','capsule:///tool-data','capsule:///tool-storage','capsule:///state/tool-workspaces','host:///workspaces/registered') `
             -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipToolRepairs)-and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepair -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-integration' `
             -DependsOn @('persist-relocation','tool-relocation','package-host-integration') `
-            -ReadResources @('capsule:///packages/installed-state') `
-            -WriteResources @('host:///environment/user') `
+            -ReadResources @('capsule:///packages/installed-state','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
+            -WriteResources @('host:///environment/user','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvUserEnvironment -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })

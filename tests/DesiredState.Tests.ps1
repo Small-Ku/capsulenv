@@ -85,6 +85,17 @@ Describe 'Capsulenv desired-state resource claims' {
         $waves[1] | Should -Be 'c'
     }
 
+    It 'reports dependency-ordered resource conflicts as serialized diagnostics' {
+        $diagnostics = & $script:Module {
+            $writer=New-CapsulenvDesiredStateNode -Id writer -WriteResources @('capsule:///state/shared') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $reader=New-CapsulenvDesiredStateNode -Id reader -DependsOn writer -ReadResources @('capsule:///state/shared') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            (Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader)).OwnershipDiagnostics
+        }
+        @($diagnostics.SerializedConflicts) | Should -HaveCount 1
+        $diagnostics.SerializedConflicts[0].OrderedByDependency | Should -BeTrue
+        @($diagnostics.UnorderedWriteWrite) | Should -HaveCount 0
+    }
+
     It 'rejects unstable non-URI resource claims with a stable diagnostic id' {
         $record = & $script:Module {
             try {

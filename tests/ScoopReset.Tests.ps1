@@ -25,6 +25,15 @@ Describe 'Capsulenv package projection repair boundary' {
         $hostNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'package-host-integration')[0].Node
         @($projectionNode.WriteResources) | Should -Not -Contain 'host:///start-menu/capsulenv'
         @($hostNode.WriteResources) | Should -Contain 'host:///start-menu/capsulenv'
+        $sessionNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'session-environment')[0].Node
+        $toolNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'tool-relocation')[0].Node
+        $userNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'user-integration')[0].Node
+        @($sessionNode.WriteResources) | Should -Contain 'capsule:///tool-storage'
+        @($sessionNode.WriteResources) | Should -Contain 'capsule:///runtime-directories'
+        @($toolNode.WriteResources) | Should -Contain 'process:///environment'
+        @($toolNode.WriteResources) | Should -Contain 'host:///workspaces/registered'
+        @($userNode.WriteResources) | Should -Contain 'capsule:///state/user-environment-backup'
+        @($userNode.WriteResources) | Should -Contain 'capsule:///state/install-mode'
     }
 
     It 'delegates the compatibility reset command to bounded projection repair only' {
