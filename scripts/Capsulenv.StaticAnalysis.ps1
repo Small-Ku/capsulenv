@@ -433,6 +433,55 @@ function Get-CapsulenvMandatoryParameterBindingViolations {
     return $violations.ToArray()
 }
 
+
+function Get-CapsulenvDesiredStateNodeBindingBoundaryViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    foreach ($path in $Paths) {
+        $fullPath = [System.IO.Path]::GetFullPath($path)
+        $ast = Get-CapsulenvStaticAst -Path $fullPath
+        foreach ($commandAst in @(
+            $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    [string]$node.GetCommandName() -eq 'New-CapsulenvDesiredStateNode'
+                },
+                $true
+            )
+        )) {
+            $cursor = $commandAst.Parent
+            $insideArrayExpression = $false
+            $hasExplicitExpressionBoundary = $false
+            while ($null -ne $cursor) {
+                if ($cursor -is [System.Management.Automation.Language.ParenExpressionAst]) {
+                    $hasExplicitExpressionBoundary = $true
+                }
+                if ($cursor -is [System.Management.Automation.Language.ArrayExpressionAst]) {
+                    $insideArrayExpression = $true
+                    break
+                }
+                if ($cursor -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+                    break
+                }
+                $cursor = $cursor.Parent
+            }
+            if ($insideArrayExpression -and -not $hasExplicitExpressionBoundary) {
+                $violations.Add([pscustomobject]@{
+                    Rule = 'DesiredStateNodeScriptBlockBoundary'
+                    Path = $fullPath
+                    Line = $commandAst.Extent.StartLineNumber
+                    Column = $commandAst.Extent.StartColumnNumber
+                    Detail = 'New-CapsulenvDesiredStateNode must be parenthesized when emitted from @(...); its trailing scriptblock parameters require an explicit Windows PowerShell 5.1 binding boundary'
+                })
+            }
+        }
+    }
+    return $violations.ToArray()
+}
+
 function Get-CapsulenvLoopArrayAppendViolations {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string[]]$Paths)

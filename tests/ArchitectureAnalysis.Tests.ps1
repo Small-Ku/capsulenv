@@ -185,6 +185,28 @@ Invoke-Target -Name $null
         @(Get-CapsulenvMandatoryParameterBindingViolations -Paths @($fixture)).Count | Should -Be 0
     }
 
+    It 'rejects unparenthesized desired-state node constructors inside array subexpressions' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-binding-unsafe.ps1' -Source @'
+$nodes = @(
+    New-CapsulenvDesiredStateNode -Id a -Plan { 1 } -Apply { 2 } -Verify { 3 }
+    New-CapsulenvDesiredStateNode -Id b -Plan { 1 } -Apply { 2 } -Verify { 3 }
+)
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeBindingBoundaryViolations -Paths @($fixture))
+        $violations.Count | Should -Be 2
+        @($violations.Rule | Select-Object -Unique) | Should -Be @('DesiredStateNodeScriptBlockBoundary')
+    }
+
+    It 'accepts explicit desired-state node expression boundaries inside array subexpressions' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-binding-safe.ps1' -Source @'
+$nodes = @(
+    (New-CapsulenvDesiredStateNode -Id a -Plan { 1 } -Apply { 2 } -Verify { 3 })
+    (New-CapsulenvDesiredStateNode -Id b -Plan { 1 } -Apply { 2 } -Verify { 3 })
+)
+'@
+        @(Get-CapsulenvDesiredStateNodeBindingBoundaryViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
     It 'rejects PowerShell array += inside a loop when the variable is known to be an array' {
         $fixture = New-CapsulenvStaticFixture -Name 'loop-array-append.ps1' -Source @'
 $items = @()

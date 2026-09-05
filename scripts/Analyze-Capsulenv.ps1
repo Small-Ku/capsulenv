@@ -148,6 +148,14 @@ if ($mandatoryBindingViolations.Count -gt 0) {
     throw "Capsulenv mandatory-parameter binding analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
+$desiredStateNodeBindingViolations = @(Get-CapsulenvDesiredStateNodeBindingBoundaryViolations -Paths $runtimePaths)
+if ($desiredStateNodeBindingViolations.Count -gt 0) {
+    $detail = $desiredStateNodeBindingViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv desired-state scriptblock binding analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
 $loopArrayAppendViolations = @(Get-CapsulenvLoopArrayAppendViolations -Paths $runtimePaths)
 if ($loopArrayAppendViolations.Count -gt 0) {
     $detail = $loopArrayAppendViolations | ForEach-Object {
@@ -176,5 +184,6 @@ if ($diagnostics.Count -gt 0) {
     StockScoopBoundaryViolations = $stockScoopBoundaryViolations.Count
     ExternalJsonUnsafeMemberAccess = $externalJsonViolations.Count
     MandatoryParameterBindingViolations = $mandatoryBindingViolations.Count
+    DesiredStateNodeBindingViolations = $desiredStateNodeBindingViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }
