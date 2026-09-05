@@ -15,6 +15,7 @@ Describe 'Capsulenv package projection repair boundary' {
         Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvPackageProjectionRepairDescriptors { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
 
         $rehydrate = Get-CapsulenvScoopRehydratePlan -IntegrationMode ShellOnly
 
@@ -47,6 +48,7 @@ Describe 'Capsulenv package projection repair boundary' {
                 [pscustomobject]@{ Kind='Legacy'; Selector='user/tool'; Name='tool'; Scope='User'; Shims=@() }
             )
         } -ModuleName Capsulenv
+        Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
 
         $integration = & $script:Module {
             Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false
@@ -64,10 +66,50 @@ Describe 'Capsulenv package projection repair boundary' {
         @($projectionWave.ParallelNodeIds | Where-Object { $_ -like 'package-projection:*' }) | Should -HaveCount 3
     }
 
+    It 'expands project-cache repairs into parallel link nodes with one registry commit barrier' {
+        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProjectionRepairDescriptors { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvProjectCacheRepairDescriptorSet {
+            [pscustomobject]@{
+                Records=@(
+                    [pscustomobject]@{ Profile='uv'; ProjectScope='Absolute'; ProjectReference='X:\dev\a'; LinkType='Junction'; LastLinkPath='X:\dev\a\.venv'; LastStorePath='X:\cap\cache\a' },
+                    [pscustomobject]@{ Profile='npm'; ProjectScope='Absolute'; ProjectReference='X:\dev\b'; LinkType='Junction'; LastLinkPath='X:\dev\b\node_modules'; LastStorePath='X:\cap\cache\b' }
+                ); RegistryError=$null
+            }
+        } -ModuleName Capsulenv
+
+        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false }
+        $linkNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'project-cache-link:*' })
+        $linkNodes | Should -HaveCount 2
+        @($linkNodes | Where-Object { -not [bool]$_.Node.ParallelSafe }) | Should -HaveCount 0
+        @($linkNodes | ForEach-Object { @($_.Node.WriteResources) } | Select-Object -Unique) | Should -HaveCount 2
+        $barrier = @($integration.Plan.Nodes | Where-Object Id -eq 'project-cache-links')[0]
+        [bool]$barrier.Node.ParallelSafe | Should -BeFalse
+        @($barrier.Node.WriteResources) | Should -Be @('capsule:///project-cache/registry')
+        @($barrier.Node.DependsOn) | Should -HaveCount 2
+        foreach ($node in $linkNodes) { @($barrier.Node.DependsOn) | Should -Contain ([string]$node.Id) }
+    }
+
+    It 'commits the project-cache registry only once after parallel repair results are gathered' {
+        Mock Write-CapsulenvProjectCacheRegistry {} -ModuleName Capsulenv
+        $repairs = @(
+            [pscustomobject]@{ UpdatedRecord=[pscustomobject]@{ Profile='uv' }; RegistryChanged=$true; Result=[pscustomobject]@{ Status='Ready' } },
+            [pscustomobject]@{ UpdatedRecord=[pscustomobject]@{ Profile='npm' }; RegistryChanged=$false; Result=[pscustomobject]@{ Status='Ready' } }
+        )
+
+        $results = & $script:Module { param($Repairs) @(Complete-CapsulenvProjectCacheRepairBatch -Repairs $Repairs) } $repairs
+        $results | Should -HaveCount 2
+        Should -Invoke Write-CapsulenvProjectCacheRegistry -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            @($Records).Count -eq 2
+        }
+    }
+
     It 'uses the same desired-state graph for steady activation without relocation-only mutations' {
         Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvPackageProjectionRepairDescriptors { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
 
         $integration = & $script:Module {
             Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false

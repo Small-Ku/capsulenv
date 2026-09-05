@@ -284,6 +284,37 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         [string[]]@('session-environment','user-environment-backup')
     }
 
+    $projectCacheDescriptorSet = Get-CapsulenvProjectCacheRepairDescriptorSet -Strict:$StrictToolRepairs -Quiet
+    $projectCacheRecordMap = @{}
+    $projectCacheNodeIds = New-Object System.Collections.Generic.List[string]
+    $projectCacheNodes = New-Object System.Collections.Generic.List[object]
+    foreach ($record in @($projectCacheDescriptorSet.Records)) {
+        $recordKey = Get-CapsulenvProjectCacheRecordKey `
+            -Profile ([string]$record.Profile) `
+            -ProjectScope ([string]$record.ProjectScope) `
+            -ProjectReference ([string]$record.ProjectReference)
+        $recordToken = [Uri]::EscapeDataString($recordKey)
+        $profileToken = [Uri]::EscapeDataString(([string]$record.Profile).ToLowerInvariant())
+        $nodeId = ('project-cache-link:{0}' -f $recordToken)
+        $projectCacheRecordMap[$nodeId] = $record
+        $projectCacheNodeIds.Add($nodeId)
+        $projectCacheNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ParallelSafe `
+            -DependsOn 'package-projections' `
+            -ReadResources @(('capsule:///project-cache/store/{0}/{1}' -f $profileToken, $recordToken)) `
+            -WriteResources @(('host:///project-cache-links/{0}' -f $recordToken)) `
+            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
+            -Apply { param($c,$d) Invoke-CapsulenvProjectCacheLinkRepairRecord -Record $c.ProjectCacheRecords[[string]$d.Id] -Strict:$c.StrictToolRepairs -Quiet } `
+            -Verify { param($c,$d,$o) $null -ne $o -and $null -ne $o.PSObject.Properties['Result'] }))
+    }
+    $context.ProjectCacheRecords = $projectCacheRecordMap
+    $context.ProjectCacheNodeIds = [string[]]$projectCacheNodeIds.ToArray()
+    $context.ProjectCacheRegistryError = $projectCacheDescriptorSet.RegistryError
+    $projectCacheBarrierDependencies = if ($projectCacheNodeIds.Count -gt 0) {
+        [string[]]$projectCacheNodeIds.ToArray()
+    } else {
+        [string[]]@('package-projections')
+    }
+
     # Keep each constructor behind an explicit expression boundary. Windows PowerShell 5.1
     # can otherwise mis-bind adjacent array-subexpression statements into the trailing
     # [scriptblock] Verify parameter and surface it as System.Object[].
@@ -320,13 +351,14 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and (-not $SkipPersistRepairs) -and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvPersistRelocationRepair -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })
-        (New-CapsulenvDesiredStateNode -Id 'project-cache-links' -ParallelSafe `
-            -DependsOn 'package-projections' `
+        $projectCacheNodes.ToArray()
+        (New-CapsulenvDesiredStateNode -Id 'project-cache-links' `
+            -DependsOn $projectCacheBarrierDependencies `
             -ReadResources @('capsule:///project-cache/registry') `
-            -WriteResources @('capsule:///project-cache','host:///project-cache-links') `
+            -WriteResources @('capsule:///project-cache/registry') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
-            -Apply { param($c,$d) Repair-CapsulenvProjectCacheLinks -Strict:$c.StrictToolRepairs -Quiet } `
-            -Verify { param($c,$d,$o) $true })
+            -Apply { param($c,$d) if($null -ne $c.ProjectCacheRegistryError){ return @([pscustomobject]@{ Profile=$null; ProjectPath=$null; LinkPath=$null; StorePath=$null; LinkType=$null; Changed=$false; Status='RegistryError'; Detail=[string]$c.ProjectCacheRegistryError }) }; $repairs=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.ProjectCacheNodeIds)){ $repairs.Add($c.Outputs[[string]$nodeId]) }; @(Complete-CapsulenvProjectCacheRepairBatch -Repairs $repairs.ToArray()) } `
+            -Verify { param($c,$d,$o) $null -ne $o })
         (New-CapsulenvDesiredStateNode -Id 'tool-relocation' `
             -DependsOn 'project-cache-links' `
             -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `

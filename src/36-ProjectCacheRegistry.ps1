@@ -222,7 +222,7 @@ function Unregister-CapsulenvProjectCacheLink {
     Write-CapsulenvProjectCacheRegistry -Records $remaining
 }
 
-function Repair-CapsulenvProjectCacheLinks {
+function Get-CapsulenvProjectCacheRepairDescriptorSet {
     [CmdletBinding()]
     param(
         [switch]$Strict,
@@ -230,151 +230,145 @@ function Repair-CapsulenvProjectCacheLinks {
     )
 
     try {
-        $records = @(Read-CapsulenvProjectCacheRegistry)
+        return [pscustomobject][ordered]@{
+            Records = [object[]]@(Read-CapsulenvProjectCacheRegistry)
+            RegistryError = $null
+        }
     } catch {
-        if ($Strict) {
-            throw
+        if ($Strict) { throw }
+        if (-not $Quiet) { Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message }
+        return [pscustomobject][ordered]@{
+            Records = [object[]]@()
+            RegistryError = [string]$_.Exception.Message
         }
-        if (-not $Quiet) {
-            Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
+    }
+}
+
+function Invoke-CapsulenvProjectCacheLinkRepairRecord {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Record,
+        [switch]$Strict,
+        [switch]$Quiet
+    )
+
+    try {
+        $configuration = Get-CapsulenvConfiguration
+        $profile = [string]$Record.Profile
+        if (-not $configuration.ToolStorage.ProjectLinks.ContainsKey($profile)) {
+            throw "The configured project-cache profile no longer exists: $profile"
         }
-        return @([pscustomobject]@{
-            Profile = $null
-            ProjectPath = $null
-            LinkPath = $null
-            StorePath = $null
-            LinkType = $null
-            Changed = $false
-            Status = 'RegistryError'
-            Detail = $_.Exception.Message
-        })
-    }
-    if ($records.Count -eq 0) {
-        return @()
-    }
+        $projectPath = Resolve-CapsulenvProjectCacheRecordPath -Record $Record
+        if (-not (Test-Path -LiteralPath $projectPath -PathType Container)) {
+            throw "The managed project directory is unavailable: $projectPath"
+        }
+        $plan = Resolve-CapsulenvProjectLinkPlan `
+            -Profile $profile `
+            -ProjectPath $projectPath `
+            -LinkType ([string]$Record.LinkType)
+        if (-not (Test-Path -LiteralPath $plan.StorePath)) {
+            throw "The managed capsule cache store is unavailable: $($plan.StorePath)"
+        }
+        Assert-CapsulenvProjectCachePathKind -Path $plan.StorePath -Kind $plan.Kind
 
-    $configuration = Get-CapsulenvConfiguration
-    $updated = New-Object System.Collections.Generic.List[object]
-    $results = New-Object System.Collections.Generic.List[object]
-    $registryChanged = $false
-
-    foreach ($record in $records) {
-        try {
-            $profile = [string]$record.Profile
-            if (-not $configuration.ToolStorage.ProjectLinks.ContainsKey($profile)) {
-                throw "The configured project-cache profile no longer exists: $profile"
-            }
-            $projectPath = Resolve-CapsulenvProjectCacheRecordPath -Record $record
-            if (-not (Test-Path -LiteralPath $projectPath -PathType Container)) {
-                throw "The managed project directory is unavailable: $projectPath"
-            }
-            $plan = Resolve-CapsulenvProjectLinkPlan `
-                -Profile $profile `
-                -ProjectPath $projectPath `
-                -LinkType ([string]$record.LinkType)
-            if (-not (Test-Path -LiteralPath $plan.StorePath)) {
-                throw "The managed capsule cache store is unavailable: $($plan.StorePath)"
-            }
-            Assert-CapsulenvProjectCachePathKind -Path $plan.StorePath -Kind $plan.Kind
-
-            $linkInfo = Get-CapsulenvProjectLinkInfo -Plan $plan
-            $changed = $false
-            if (-not $linkInfo.Linked) {
-                $oldTarget = Get-CapsulenvReparseTarget -Path $plan.LinkPath
-                $removedRecognizedLink = $false
-                $removedRecognizedFileCopy = $false
-                if ($null -ne $oldTarget) {
-                    if (
-                        [string]::IsNullOrWhiteSpace([string]$record.LastStorePath) -or
-                        -not (Test-CapsulenvSamePath -Left $oldTarget -Right ([string]$record.LastStorePath))
-                    ) {
-                        throw "Refusing to replace an unrecognized project link: $($plan.LinkPath) -> $oldTarget"
-                    }
-                    Remove-Item -LiteralPath $plan.LinkPath -Force
-                    $removedRecognizedLink = $true
-                } elseif (Test-Path -LiteralPath $plan.LinkPath) {
-                    if ([string]$record.LinkType -ne 'HardLink') {
-                        throw "Refusing to replace a normal project path: $($plan.LinkPath)"
-                    }
-                    $fingerprintProperty = $record.PSObject.Properties['LastFileFingerprint']
-                    if (
-                        $null -eq $fingerprintProperty -or
-                        $null -eq $fingerprintProperty.Value -or
-                        -not (Test-CapsulenvProjectCacheFileFingerprint -Path $plan.LinkPath -Fingerprint $fingerprintProperty.Value)
-                    ) {
-                        throw "Refusing to replace an unrecognized file after hard-link relocation: $($plan.LinkPath)"
-                    }
-                    if (-not (Test-CapsulenvProjectCacheFileFingerprint -Path $plan.StorePath -Fingerprint $fingerprintProperty.Value)) {
-                        throw "Managed hard-link copies diverged after relocation; refusing to discard either copy: $($plan.LinkPath) <-> $($plan.StorePath)"
-                    }
-                    $linkVolume = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($plan.LinkPath))
-                    $storeVolume = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($plan.StorePath))
-                    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($linkVolume, $storeVolume)) {
-                        throw "Managed file hardlink cannot be recreated across volumes: $linkVolume <-> $storeVolume"
-                    }
-                    Remove-Item -LiteralPath $plan.LinkPath -Force
-                    $removedRecognizedLink = $true
-                    $removedRecognizedFileCopy = $true
+        $linkInfo = Get-CapsulenvProjectLinkInfo -Plan $plan
+        $changed = $false
+        if (-not $linkInfo.Linked) {
+            $oldTarget = Get-CapsulenvReparseTarget -Path $plan.LinkPath
+            $removedRecognizedLink = $false
+            $removedRecognizedFileCopy = $false
+            if ($null -ne $oldTarget) {
+                if (
+                    [string]::IsNullOrWhiteSpace([string]$Record.LastStorePath) -or
+                    -not (Test-CapsulenvSamePath -Left $oldTarget -Right ([string]$Record.LastStorePath))
+                ) {
+                    throw "Refusing to replace an unrecognized project link: $($plan.LinkPath) -> $oldTarget"
                 }
-
-                try {
-                    [void](New-Item -ItemType Directory -Path (Split-Path -Parent $plan.LinkPath) -Force)
-                    [void](New-Item -ItemType $plan.LinkType -Path $plan.LinkPath -Target $plan.StorePath -Force)
-                    $linkInfo = Get-CapsulenvProjectLinkInfo -Plan $plan
-                    if (-not $linkInfo.Linked) {
-                        throw "Recreated project-cache link could not be verified: $($plan.LinkPath)"
-                    }
-                } catch {
-                    $repairError = $_
-                    if ($removedRecognizedFileCopy -and -not (Test-Path -LiteralPath $plan.LinkPath)) {
-                        try {
-                            Copy-Item -LiteralPath $plan.StorePath -Destination $plan.LinkPath -Force
-                        } catch {
-                            throw "Project-cache repair failed: $($repairError.Exception.Message) Restoring the recognized file copy also failed: $($_.Exception.Message)"
-                        }
-                    } elseif ($removedRecognizedLink -and $null -ne $oldTarget -and $null -eq (Get-CapsulenvReparseTarget -Path $plan.LinkPath)) {
-                        try {
-                            [void](New-Item `
-                                -ItemType ([string]$record.LinkType) `
-                                -Path $plan.LinkPath `
-                                -Target $oldTarget `
-                                -Force)
-                        } catch {
-                            throw "Project-cache repair failed: $($repairError.Exception.Message) Restoring the previous link also failed: $($_.Exception.Message)"
-                        }
-                    }
-                    throw $repairError
+                Remove-Item -LiteralPath $plan.LinkPath -Force
+                $removedRecognizedLink = $true
+            } elseif (Test-Path -LiteralPath $plan.LinkPath) {
+                if ([string]$Record.LinkType -ne 'HardLink') {
+                    throw "Refusing to replace a normal project path: $($plan.LinkPath)"
                 }
-                $changed = $true
+                $fingerprintProperty = $Record.PSObject.Properties['LastFileFingerprint']
+                if (
+                    $null -eq $fingerprintProperty -or
+                    $null -eq $fingerprintProperty.Value -or
+                    -not (Test-CapsulenvProjectCacheFileFingerprint -Path $plan.LinkPath -Fingerprint $fingerprintProperty.Value)
+                ) {
+                    throw "Refusing to replace an unrecognized file after hard-link relocation: $($plan.LinkPath)"
+                }
+                if (-not (Test-CapsulenvProjectCacheFileFingerprint -Path $plan.StorePath -Fingerprint $fingerprintProperty.Value)) {
+                    throw "Managed hard-link copies diverged after relocation; refusing to discard either copy: $($plan.LinkPath) <-> $($plan.StorePath)"
+                }
+                $linkVolume = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($plan.LinkPath))
+                $storeVolume = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($plan.StorePath))
+                if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($linkVolume, $storeVolume)) {
+                    throw "Managed file hardlink cannot be recreated across volumes: $linkVolume <-> $storeVolume"
+                }
+                Remove-Item -LiteralPath $plan.LinkPath -Force
+                $removedRecognizedLink = $true
+                $removedRecognizedFileCopy = $true
             }
 
-            $newFileFingerprint = if ([string]$linkInfo.LinkType -eq 'HardLink') {
-                Get-CapsulenvProjectCacheFileFingerprint -Path $plan.LinkPath
-            } else {
-                $null
+            try {
+                [void](New-Item -ItemType Directory -Path (Split-Path -Parent $plan.LinkPath) -Force)
+                [void](New-Item -ItemType $plan.LinkType -Path $plan.LinkPath -Target $plan.StorePath -Force)
+                $linkInfo = Get-CapsulenvProjectLinkInfo -Plan $plan
+                if (-not $linkInfo.Linked) {
+                    throw "Recreated project-cache link could not be verified: $($plan.LinkPath)"
+                }
+            } catch {
+                $repairError = $_
+                if ($removedRecognizedFileCopy -and -not (Test-Path -LiteralPath $plan.LinkPath)) {
+                    try {
+                        Copy-Item -LiteralPath $plan.StorePath -Destination $plan.LinkPath -Force
+                    } catch {
+                        throw "Project-cache repair failed: $($repairError.Exception.Message) Restoring the recognized file copy also failed: $($_.Exception.Message)"
+                    }
+                } elseif ($removedRecognizedLink -and $null -ne $oldTarget -and $null -eq (Get-CapsulenvReparseTarget -Path $plan.LinkPath)) {
+                    try {
+                        [void](New-Item `
+                            -ItemType ([string]$Record.LinkType) `
+                            -Path $plan.LinkPath `
+                            -Target $oldTarget `
+                            -Force)
+                    } catch {
+                        throw "Project-cache repair failed: $($repairError.Exception.Message) Restoring the previous link also failed: $($_.Exception.Message)"
+                    }
+                }
+                throw $repairError
             }
-            $oldFingerprintProperty = $record.PSObject.Properties['LastFileFingerprint']
-            $oldFileFingerprint = if ($null -ne $oldFingerprintProperty) { $oldFingerprintProperty.Value } else { $null }
-            $newRecord = [pscustomobject][ordered]@{
-                Profile = $profile
-                ProjectScope = [string]$record.ProjectScope
-                ProjectReference = [string]$record.ProjectReference
-                LinkType = [string]$linkInfo.LinkType
-                LastLinkPath = [string]$plan.LinkPath
-                LastStorePath = [string]$plan.StorePath
-                LastFileFingerprint = $newFileFingerprint
-            }
-            $updated.Add($newRecord)
-            if (
-                $changed -or
-                -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$record.LastLinkPath, [string]$plan.LinkPath) -or
-                -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$record.LastStorePath, [string]$plan.StorePath) -or
-                -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$record.LinkType, [string]$linkInfo.LinkType) -or
-                ([string]($oldFileFingerprint | ConvertTo-Json -Compress)) -ne ([string]($newFileFingerprint | ConvertTo-Json -Compress))
-            ) {
-                $registryChanged = $true
-            }
-            $results.Add([pscustomobject]@{
+            $changed = $true
+        }
+
+        $newFileFingerprint = if ([string]$linkInfo.LinkType -eq 'HardLink') {
+            Get-CapsulenvProjectCacheFileFingerprint -Path $plan.LinkPath
+        } else {
+            $null
+        }
+        $oldFingerprintProperty = $Record.PSObject.Properties['LastFileFingerprint']
+        $oldFileFingerprint = if ($null -ne $oldFingerprintProperty) { $oldFingerprintProperty.Value } else { $null }
+        $newRecord = [pscustomobject][ordered]@{
+            Profile = $profile
+            ProjectScope = [string]$Record.ProjectScope
+            ProjectReference = [string]$Record.ProjectReference
+            LinkType = [string]$linkInfo.LinkType
+            LastLinkPath = [string]$plan.LinkPath
+            LastStorePath = [string]$plan.StorePath
+            LastFileFingerprint = $newFileFingerprint
+        }
+        $registryChanged = (
+            $changed -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.LastLinkPath, [string]$plan.LinkPath) -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.LastStorePath, [string]$plan.StorePath) -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.LinkType, [string]$linkInfo.LinkType) -or
+            ([string]($oldFileFingerprint | ConvertTo-Json -Compress)) -ne ([string]($newFileFingerprint | ConvertTo-Json -Compress))
+        )
+        return [pscustomobject][ordered]@{
+            UpdatedRecord = $newRecord
+            RegistryChanged = [bool]$registryChanged
+            Result = [pscustomobject]@{
                 Profile = $profile
                 ProjectPath = $projectPath
                 LinkPath = $plan.LinkPath
@@ -383,32 +377,65 @@ function Repair-CapsulenvProjectCacheLinks {
                 Changed = $changed
                 Status = 'Ready'
                 Detail = $null
-            })
-        } catch {
-            $updated.Add($record)
-            $results.Add([pscustomobject]@{
-                Profile = [string]$record.Profile
-                ProjectPath = [string]$record.ProjectReference
-                LinkPath = [string]$record.LastLinkPath
-                StorePath = [string]$record.LastStorePath
-                LinkType = [string]$record.LinkType
+            }
+        }
+    } catch {
+        if ($Strict) { throw }
+        if (-not $Quiet) { Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message }
+        return [pscustomobject][ordered]@{
+            UpdatedRecord = $Record
+            RegistryChanged = $false
+            Result = [pscustomobject]@{
+                Profile = [string]$Record.Profile
+                ProjectPath = [string]$Record.ProjectReference
+                LinkPath = [string]$Record.LastLinkPath
+                StorePath = [string]$Record.LastStorePath
+                LinkType = [string]$Record.LinkType
                 Changed = $false
                 Status = 'Skipped'
                 Detail = $_.Exception.Message
-            })
-            if ($Strict) {
-                throw
-            }
-            if (-not $Quiet) {
-                Write-CapsulenvMessage -Level Warning -Message $_.Exception.Message
             }
         }
     }
+}
 
-    if ($registryChanged) {
-        Write-CapsulenvProjectCacheRegistry -Records $updated.ToArray()
+function Complete-CapsulenvProjectCacheRepairBatch {
+    [CmdletBinding()]
+    param([AllowEmptyCollection()][object[]]$Repairs = @())
+
+    if (@($Repairs | Where-Object { [bool]$_.RegistryChanged }).Count -gt 0) {
+        Write-CapsulenvProjectCacheRegistry -Records @($Repairs | ForEach-Object { $_.UpdatedRecord })
     }
-    return $results.ToArray()
+    return @($Repairs | ForEach-Object { $_.Result })
+}
+
+function Repair-CapsulenvProjectCacheLinks {
+    [CmdletBinding()]
+    param(
+        [switch]$Strict,
+        [switch]$Quiet
+    )
+
+    $descriptorSet = Get-CapsulenvProjectCacheRepairDescriptorSet -Strict:$Strict -Quiet:$Quiet
+    if ($null -ne $descriptorSet.RegistryError) {
+        return @([pscustomobject]@{
+            Profile = $null
+            ProjectPath = $null
+            LinkPath = $null
+            StorePath = $null
+            LinkType = $null
+            Changed = $false
+            Status = 'RegistryError'
+            Detail = [string]$descriptorSet.RegistryError
+        })
+    }
+    if (@($descriptorSet.Records).Count -eq 0) { return @() }
+
+    $repairs = New-Object System.Collections.Generic.List[object]
+    foreach ($record in @($descriptorSet.Records)) {
+        $repairs.Add((Invoke-CapsulenvProjectCacheLinkRepairRecord -Record $record -Strict:$Strict -Quiet:$Quiet))
+    }
+    return @(Complete-CapsulenvProjectCacheRepairBatch -Repairs $repairs.ToArray())
 }
 
 function Get-CapsulenvManagedProjectCacheLinks {
