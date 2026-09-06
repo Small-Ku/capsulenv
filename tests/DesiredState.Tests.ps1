@@ -14,6 +14,31 @@ Describe 'Capsulenv desired-state graph' {
         }
         $result.Ids -join ',' | Should -Be 'a,b'; $result.Log -join ',' | Should -Be 'a,b'; @($result.Verified | Where-Object { -not $_ }).Count | Should -Be 0
     }
+
+    It 'does not materialize diagnostic topology for an execution-only plan' {
+        $shape = & $script:Module {
+            $a=New-CapsulenvDesiredStateNode -Id a -ReadResources @('capsule:///diag/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $b=New-CapsulenvDesiredStateNode -Id b -WriteResources @('capsule:///diag/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $runtimePlan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b)
+            $diagnosticPlan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b) -IncludeDiagnostics
+            [pscustomobject]@{
+                RuntimeIncluded=$runtimePlan.DiagnosticsIncluded
+                RuntimeClaims=@($runtimePlan.ResourceClaims).Count
+                RuntimeConflicts=@($runtimePlan.ResourceConflicts).Count
+                RuntimeWaves=@($runtimePlan.ExecutionWaves).Count
+                DiagnosticIncluded=$diagnosticPlan.DiagnosticsIncluded
+                DiagnosticClaims=@($diagnosticPlan.ResourceClaims).Count
+                DiagnosticWaves=@($diagnosticPlan.ExecutionWaves).Count
+            }
+        }
+        $shape.RuntimeIncluded | Should -BeFalse
+        $shape.RuntimeClaims | Should -Be 0
+        $shape.RuntimeConflicts | Should -Be 0
+        $shape.RuntimeWaves | Should -Be 0
+        $shape.DiagnosticIncluded | Should -BeTrue
+        $shape.DiagnosticClaims | Should -Be 2
+        $shape.DiagnosticWaves | Should -Be 1
+    }
     It 'adds actionable remediation when an unexpected node apply error is wrapped' {
         $record = & $script:Module {
             $node = New-CapsulenvDesiredStateNode `
@@ -54,7 +79,7 @@ Describe 'Capsulenv desired-state resource claims' {
         $result = & $script:Module {
             $a=New-CapsulenvDesiredStateNode -Id a -ReadResources @('CAPSULE:///Tool-Data/') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $b=New-CapsulenvDesiredStateNode -Id b -ReadResources @('capsule:///Tool-Data') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
-            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b)
+            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b) -IncludeDiagnostics
             [pscustomobject]@{ Claims=@($plan.ResourceClaims.ResourceUri); Waves=@($plan.ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }) }
         }
         @($result.Claims | Where-Object { $_ -eq 'capsule:///Tool-Data' }).Count | Should -Be 2
@@ -66,7 +91,7 @@ Describe 'Capsulenv desired-state resource claims' {
         $waves = & $script:Module {
             $writer=New-CapsulenvDesiredStateNode -Id writer -WriteResources @('capsule:///tool-data') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $reader=New-CapsulenvDesiredStateNode -Id reader -ReadResources @('capsule:///tool-data') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
-            @(Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader)).ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }
+            @(Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader) -IncludeDiagnostics).ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }
         }
         @($waves).Count | Should -Be 2
         $waves[0] | Should -Be 'writer'
@@ -78,7 +103,7 @@ Describe 'Capsulenv desired-state resource claims' {
             $a=New-CapsulenvDesiredStateNode -Id a -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $b=New-CapsulenvDesiredStateNode -Id b -DependsOn a -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $c=New-CapsulenvDesiredStateNode -Id c -DependsOn b -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
-            @(Get-CapsulenvDesiredStatePlan -Nodes @($a,$b,$c)).ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }
+            @(Get-CapsulenvDesiredStatePlan -Nodes @($a,$b,$c) -IncludeDiagnostics).ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }
         }
         @($waves).Count | Should -Be 2
         $waves[0] | Should -Be 'a'
@@ -89,7 +114,7 @@ Describe 'Capsulenv desired-state resource claims' {
         $diagnostics = & $script:Module {
             $writer=New-CapsulenvDesiredStateNode -Id writer -WriteResources @('capsule:///state/shared') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $reader=New-CapsulenvDesiredStateNode -Id reader -DependsOn writer -ReadResources @('capsule:///state/shared') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
-            (Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader)).OwnershipDiagnostics
+            (Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader) -IncludeDiagnostics).OwnershipDiagnostics
         }
         @($diagnostics.SerializedConflicts) | Should -HaveCount 1
         $diagnostics.SerializedConflicts[0].OrderedByDependency | Should -BeTrue
@@ -117,7 +142,7 @@ Describe 'Capsulenv desired-state parallel execution' {
         $waves = & $script:Module {
             $writer=New-CapsulenvDesiredStateNode -Id writer -WriteResources @('capsule:///tool-data') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $reader=New-CapsulenvDesiredStateNode -Id reader -ReadResources @('capsule:///tool-data/python/cache') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
-            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader)
+            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($writer,$reader) -IncludeDiagnostics
             [pscustomobject]@{ Waves=@($plan.ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }); Conflicts=@($plan.ResourceConflicts) }
         }
         $waves.Waves.Count | Should -Be 2
@@ -131,7 +156,7 @@ Describe 'Capsulenv desired-state parallel execution' {
             $main=New-CapsulenvDesiredStateNode -Id main -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///config/main') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $worker=New-CapsulenvDesiredStateNode -Id worker -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///config/worker') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $legacy=New-CapsulenvDesiredStateNode -Id legacy -ParallelSafe -ReadResources @('capsule:///config/legacy') -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
-            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($main,$worker,$legacy)
+            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($main,$worker,$legacy) -IncludeDiagnostics
             [pscustomobject]@{
                 MainAffinity=$main.ExecutionAffinity
                 MainPolicy=$main.ConcurrencyPolicy
@@ -161,7 +186,7 @@ Describe 'Capsulenv desired-state parallel execution' {
         $waves = & $script:Module {
             $exclusive=New-CapsulenvDesiredStateNode -Id exclusive -ExecutionAffinity MainRunspace -ConcurrencyPolicy Exclusive -WriteResources @('capsule:///exclusive/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
             $worker=New-CapsulenvDesiredStateNode -Id worker -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('capsule:///parallel/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
-            @(Get-CapsulenvDesiredStatePlan -Nodes @($exclusive,$worker)).ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }
+            @(Get-CapsulenvDesiredStatePlan -Nodes @($exclusive,$worker) -IncludeDiagnostics).ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }
         }
         @($waves) | Should -HaveCount 2
         $waves[0] | Should -Be 'exclusive'
@@ -195,7 +220,7 @@ Describe 'Capsulenv desired-state parallel execution' {
                 $a=New-CapsulenvDesiredStateNode -Id a -ParallelSafe -WriteResources @('capsule:///cache/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if(-not $c.Barrier.SignalAndWait(5000)){throw 'a did not overlap'};'A'} -Verify {param($c,$d,$o)$o -eq 'A'}
                 $b=New-CapsulenvDesiredStateNode -Id b -ParallelSafe -WriteResources @('capsule:///cache/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if(-not $c.Barrier.SignalAndWait(5000)){throw 'b did not overlap'};'B'} -Verify {param($c,$d,$o)$o -eq 'B'}
                 $c=New-CapsulenvDesiredStateNode -Id c -DependsOn @('a','b') -ReadResources @('capsule:///cache/a','capsule:///cache/b') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) ([string]$c.Outputs['a']) + ([string]$c.Outputs['b'])} -Verify {param($c,$d,$o)$o -eq 'AB'}
-                $ctx=@{Barrier=$barrier};$plan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b,$c) -Context $ctx
+                $ctx=@{Barrier=$barrier};$plan=Get-CapsulenvDesiredStatePlan -Nodes @($a,$b,$c) -Context $ctx -IncludeDiagnostics
                 $runs=@(Invoke-CapsulenvDesiredStatePlan -Plan $plan -Context $ctx -ExecutionMode Auto -ThrottleLimit 2)
                 [pscustomobject]@{ Outputs=@($runs.Output); Waves=@($plan.ExecutionWaves | ForEach-Object { @($_.NodeIds) -join ',' }) }
             } finally { $barrier.Dispose() }
@@ -210,7 +235,7 @@ Describe 'Capsulenv desired-state parallel execution' {
                 $fast=New-CapsulenvDesiredStateNode -Id fast -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('capsule:///dynamic/fast') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)[System.Threading.Thread]::Sleep(100);'F'} -Verify {param($c,$d,$o)$o -eq 'F'}
                 $slow=New-CapsulenvDesiredStateNode -Id slow -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -WriteResources @('capsule:///dynamic/slow') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)[System.Threading.Thread]::Sleep(1200);$c.SlowDone.Set();'S'} -Verify {param($c,$d,$o)$o -eq 'S'}
                 $dependent=New-CapsulenvDesiredStateNode -Id dependent -DependsOn fast -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///dynamic/fast') -WriteResources @('capsule:///dynamic/dependent') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) if($c.SlowDone.IsSet){throw 'dependent waited for unrelated slow peer'};([string]$c.Outputs['fast'])+'D'} -Verify {param($c,$d,$o)$o -eq 'FD'}
-                $ctx=@{SlowDone=$slowDone};$plan=Get-CapsulenvDesiredStatePlan -Nodes @($fast,$slow,$dependent) -Context $ctx
+                $ctx=@{SlowDone=$slowDone};$plan=Get-CapsulenvDesiredStatePlan -Nodes @($fast,$slow,$dependent) -Context $ctx -IncludeDiagnostics
                 $runs=@(Invoke-CapsulenvDesiredStatePlan -Plan $plan -Context $ctx -ExecutionMode Auto -ThrottleLimit 2)
                 [pscustomobject]@{Dependent=($runs | Where-Object Id -eq dependent).Output;Slow=($runs | Where-Object Id -eq slow).Output;WaveCount=@($plan.ExecutionWaves).Count}
             } finally { $slowDone.Dispose() }

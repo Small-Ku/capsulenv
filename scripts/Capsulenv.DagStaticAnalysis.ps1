@@ -531,6 +531,56 @@ function Get-CapsulenvDesiredStateSchedulerBoundaryViolations {
         })
     }
 
+    $planBuilder = Get-CapsulenvFunctionAst -Path $fullPath -Name 'Get-CapsulenvDesiredStatePlan'
+    foreach ($commandAst in @(
+        $planBuilder.Body.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                [string]$node.GetCommandName() -in @('Get-CapsulenvDesiredStateResourceConflicts','Get-CapsulenvDesiredStateExecutionWaves')
+            },
+            $true
+        )
+    )) {
+        $guardedByDiagnostics = $false
+        $ancestor = $commandAst.Parent
+        while ($null -ne $ancestor -and $ancestor -ne $planBuilder) {
+            if ($ancestor -is [System.Management.Automation.Language.IfStatementAst]) {
+                foreach ($clause in @($ancestor.Clauses)) {
+                    $conditionVariables = @(
+                        $clause.Item1.FindAll(
+                            {
+                                param($node)
+                                $node -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                                [string]$node.VariablePath.UserPath -eq 'IncludeDiagnostics'
+                            },
+                            $true
+                        )
+                    )
+                    if (
+                        $conditionVariables.Count -gt 0 -and
+                        $commandAst.Extent.StartOffset -ge $clause.Item2.Extent.StartOffset -and
+                        $commandAst.Extent.EndOffset -le $clause.Item2.Extent.EndOffset
+                    ) {
+                        $guardedByDiagnostics = $true
+                        break
+                    }
+                }
+            }
+            if ($guardedByDiagnostics) { break }
+            $ancestor = $ancestor.Parent
+        }
+        if (-not $guardedByDiagnostics) {
+            $violations.Add([pscustomobject]@{
+                Rule = 'DesiredStateDiagnosticTopologyMustBeOptIn'
+                Path = $fullPath
+                Line = $commandAst.Extent.StartLineNumber
+                Column = $commandAst.Extent.StartColumnNumber
+                Detail = 'resource-conflict matrices and execution waves are diagnostic topology and must stay behind IncludeDiagnostics'
+            })
+        }
+    }
+
     foreach ($legacyFunction in @(
         $ast.FindAll(
             {

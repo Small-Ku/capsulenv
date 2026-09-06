@@ -316,6 +316,7 @@ $apply = { 2 }
 
     It 'rejects wave-barrier scheduler regressions and legacy batch executors' {
         $fixture = New-CapsulenvStaticFixture -Name 'scheduler-wave-regression.ps1' -Source @'
+function Get-CapsulenvDesiredStatePlan { param([switch]$IncludeDiagnostics) }
 function Invoke-CapsulenvDesiredStateParallelBatch { }
 function Invoke-CapsulenvDesiredStatePlan {
     param($Plan)
@@ -328,6 +329,22 @@ function Invoke-CapsulenvDesiredStatePlan {
         @($violations.Rule) | Should -Contain 'DesiredStateDynamicReadyQueueRequired'
         @($violations.Rule) | Should -Contain 'DesiredStateRuntimeWaveBarrierForbidden'
         @($violations.Rule) | Should -Contain 'DesiredStateLegacyWaveBatchHelperForbidden'
+    }
+
+    It 'rejects eager desired-state diagnostic topology in the execution plan path' {
+        $fixture = New-CapsulenvStaticFixture -Name 'scheduler-eager-diagnostics.ps1' -Source @'
+function Get-CapsulenvDesiredStatePlan {
+    param([switch]$IncludeDiagnostics)
+    $conflicts = Get-CapsulenvDesiredStateResourceConflicts -Decisions @()
+    if ($IncludeDiagnostics) { $waves = Get-CapsulenvDesiredStateExecutionWaves -Decisions @() }
+}
+function Invoke-CapsulenvDesiredStatePlan {
+    Invoke-CapsulenvDesiredStateReadyQueue
+}
+'@
+        $violations = @(Get-CapsulenvDesiredStateSchedulerBoundaryViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'DesiredStateDiagnosticTopologyMustBeOptIn'
+        @($violations.Rule | Where-Object { $_ -eq 'DesiredStateDiagnosticTopologyMustBeOptIn' }) | Should -HaveCount 1
     }
 
     It 'accepts the authoritative dynamic ready-queue scheduler boundary' {

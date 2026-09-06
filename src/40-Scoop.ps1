@@ -280,7 +280,8 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         [switch]$SkipToolRepairs,
         [switch]$StrictToolRepairs,
         [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode),
-        [bool]$RehydrationRequired = $false
+        [bool]$RehydrationRequired = $false,
+        [switch]$IncludeDiagnostics
     )
 
     # Process-wide worker prerequisites are initialized once in the parent
@@ -438,7 +439,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
     )
     return [pscustomobject][ordered]@{
         Context=$context
-        Plan=(Get-CapsulenvDesiredStatePlan -Nodes $nodes -Context $context)
+        Plan=(Get-CapsulenvDesiredStatePlan -Nodes $nodes -Context $context -IncludeDiagnostics:$IncludeDiagnostics)
         RelocationContext=$relocationContext
         RehydrationRequired=[bool]$RehydrationRequired
     }
@@ -450,7 +451,8 @@ function Get-CapsulenvScoopRehydratePlan {
         [switch]$SkipPersistRepairs,
         [switch]$SkipToolRepairs,
         [switch]$StrictToolRepairs,
-        [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode)
+        [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode),
+        [bool]$IncludeDiagnostics = $true
     )
 
     return Get-CapsulenvIntegrationDesiredStatePlan `
@@ -458,7 +460,8 @@ function Get-CapsulenvScoopRehydratePlan {
         -SkipToolRepairs:$SkipToolRepairs `
         -StrictToolRepairs:$StrictToolRepairs `
         -IntegrationMode $IntegrationMode `
-        -RehydrationRequired $true
+        -RehydrationRequired $true `
+        -IncludeDiagnostics:$IncludeDiagnostics
 }
 
 function Write-CapsulenvRehydrationResult {
@@ -518,7 +521,7 @@ function Invoke-CapsulenvScoopRehydrate {
         [switch]$StrictToolRepairs,
         [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode)
     )
-    $rehydrate = Get-CapsulenvScoopRehydratePlan -SkipPersistRepairs:$SkipPersistRepairs -SkipToolRepairs:$SkipToolRepairs -StrictToolRepairs:$StrictToolRepairs -IntegrationMode $IntegrationMode
+    $rehydrate = Get-CapsulenvScoopRehydratePlan -SkipPersistRepairs:$SkipPersistRepairs -SkipToolRepairs:$SkipToolRepairs -StrictToolRepairs:$StrictToolRepairs -IntegrationMode $IntegrationMode -IncludeDiagnostics:$false
     if (-not $SkipHooks) { Write-CapsulenvMessage -Level Detail -Message 'Automatic Scoop lifecycle replay has been removed; arbitrary manifest code is available only through explicit upstream Scoop execution.' }
     $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $rehydrate.Plan -Context $rehydrate.Context)
     Write-CapsulenvRehydrationResult -Results $results -IntegrationMode $IntegrationMode
@@ -636,7 +639,7 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.PersistStore' -Area 'S
 }
 
 Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.DesiredState.RehydrateOwnership' -Area 'DesiredState' -Name 'Rehydrate resource ownership' -Importance Optional -Handler {
-    $rehydrate = Get-CapsulenvScoopRehydratePlan
+    $rehydrate = Get-CapsulenvScoopRehydratePlan -IncludeDiagnostics:$true
     $plan = $rehydrate.Plan
     $unorderedWriters = @($plan.OwnershipDiagnostics.UnorderedWriteWrite)
     $workerNodeIds = @($plan.ExecutionWaves | ForEach-Object { @($_.WorkerNodeIds) } | Select-Object -Unique)

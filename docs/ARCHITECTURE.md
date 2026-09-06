@@ -146,6 +146,14 @@ shims/git.cmd
 
 因此 `E:\capenv -> F:\capenv` 不需要 `scoop reset *` 才修 Capsulenv-owned shims。Alias collision 必須有 ownership marker；不能覆寫不屬該 package 的 shim。
 
+## Desired-state DAG execution and diagnostics
+
+Desired-state DAG 保留兩種不同資料層。Execution contract 只有 dependency、Plan decision、execution affinity、concurrency policy 與 resource ownership；非 sequential apply 由 dynamic ready queue 在節點完成後立即 dispatch 新變成 ready 的相容工作，不使用預先計算的 wave barrier。
+
+`ResourceConflicts`、`OwnershipDiagnostics` 與 `ExecutionWaves` 是 review/doctor/test 的 **diagnostic topology**，不是 executor authority。核心 `Get-CapsulenvDesiredStatePlan` 因此預設不 materialize 這些 derived views；明確需要 review 時才用 `-IncludeDiagnostics`。Public `Get-CapsulenvScoopRehydratePlan` 作為 plan-inspection API 預設保留 diagnostics，但實際 rehydrate/activation/package install 的 `Invoke-*` path 必須關閉它。這避免 steady execution 為 pairwise conflict matrix 與 diagnostic wave construction 支付成本，也避免 diagnostics 反過來塑造 scheduler semantics。
+
+Static analysis 要求 conflict matrix 與 execution-wave construction 保持在 `IncludeDiagnostics` guard 之內，並繼續禁止 runtime executor讀取 `ExecutionWaves`。若 future diagnostic view 改變，dynamic ready queue 的 correctness 與並行度不應隨之改變。
+
 ## Stock Scoop boundary
 
 Capsule 仍 bootstrap upstream Scoop core/Main。PowerShell session 的 PATH 會讓真正的 upstream `apps\scoop\current\bin\scoop.ps1` 排在 Scoop shims 前，因此 `scoop` 直接命中 upstream dispatcher。只有 `cmd.exe` 因 `.ps1` 不在一般 executable extension resolution 中，才保留一個 Capsulenv-owned `scoop.cmd` trampoline；它只用自身 `%~dp0` 找到：
@@ -256,5 +264,6 @@ Package ownership與 tool cache/project storage是不同 surface。`tool-data/`�
 - 禁止任何 `shortcut_folder` override
 - session mode resolver不得依賴 persistent ownership command
 - control bootstrap/runtime command boundary保持 WinPS 5.1-compatible
+- desired-state conflict matrix / execution waves只能在 explicit diagnostic path materialize；runtime executor不得依賴 wave topology
 
 這些 gate需要 synthetic rejecting/accepting fixtures；不能為了 refactor方便降級成沒有 ownership意義的 string smoke test。

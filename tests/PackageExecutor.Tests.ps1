@@ -67,7 +67,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         $installPlan = Get-CapsulenvPackageInstallPlan -Reference demo
         $execution = & $script:Module {
             param($InstallPlan)
-            Get-CapsulenvPortablePackageDesiredStatePlan -InstallPlan $InstallPlan
+            Get-CapsulenvPortablePackageDesiredStatePlan -InstallPlan $InstallPlan -IncludeDiagnostics
         } $installPlan
 
         $byId = @{}

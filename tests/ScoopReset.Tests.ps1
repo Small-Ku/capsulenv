@@ -55,7 +55,7 @@ Describe 'Capsulenv package projection repair boundary' {
         Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
 
         $integration = & $script:Module {
-            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true
+            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true -IncludeDiagnostics
         }
         $projectionNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'package-projection:*' })
         $projectionNodes | Should -HaveCount 3

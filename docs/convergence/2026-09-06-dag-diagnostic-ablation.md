@@ -1,0 +1,27 @@
+# Desired-state diagnostic topology ablation
+
+## Question
+
+Does Capsulenv need to construct the complete resource-conflict matrix and execution-wave view for every desired-state apply?
+
+## Ablation
+
+The executor was inspected independently from the diagnostic plan. Non-sequential execution is authoritative in `Invoke-CapsulenvDesiredStateReadyQueue`: it admits a node when dependencies are complete and its live resource/concurrency contract is compatible with active work. `ExecutionWaves` is not consumed by this path and static analysis already forbids reintroducing a wave barrier.
+
+The eager plan previously materialized three derived views before every apply:
+
+- pairwise `ResourceConflicts`;
+- `OwnershipDiagnostics` derived from that matrix;
+- full `ExecutionWaves`, which performs another scheduling simulation.
+
+Removing those views from execution-only plans does not remove dependency ordering, resource ownership, worker eligibility, contract validation, or the dynamic ready queue. Explicit review still requests the same diagnostics.
+
+## Decision
+
+Keep the DAG and ready queue. Make diagnostic topology opt-in at the core plan boundary. Public rehydrate plan inspection keeps diagnostics by default, while activation, explicit rehydrate execution, and PortableSafe package execution use execution-only plans.
+
+## Failure-mode analysis
+
+The removed work cannot prevent a runtime race because it was never scheduler authority. A conflict missed by diagnostic construction would still be checked by the live ready queue; conversely, making waves authoritative would reduce parallelism by restoring a barrier that the scheduler intentionally removed. Therefore eager diagnostic construction belongs outside the critical path.
+
+A static architecture gate now rejects conflict/wave construction outside the `IncludeDiagnostics` branch, and regression coverage checks that an execution-only plan exposes an empty diagnostic view while an explicit diagnostic plan still produces claims and waves.

@@ -72,7 +72,8 @@ function Get-CapsulenvPortablePackageDesiredStatePlan {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]$InstallPlan,
-        [switch]$AllowSourceManifestReplacement
+        [switch]$AllowSourceManifestReplacement,
+        [switch]$IncludeDiagnostics
     )
 
     if ([string]$InstallPlan.Classification -ne 'PortableSafe') {
@@ -133,7 +134,7 @@ function Get-CapsulenvPortablePackageDesiredStatePlan {
         AllowSourceManifestReplacement = [bool]$AllowSourceManifestReplacement
         Outputs = @{}
     }
-    $plan = Get-CapsulenvDesiredStatePlan -Nodes $nodes.ToArray() -Context $context
+    $plan = Get-CapsulenvDesiredStatePlan -Nodes $nodes.ToArray() -Context $context -IncludeDiagnostics:$IncludeDiagnostics
     return [pscustomobject][ordered]@{
         Plan = $plan
         Context = $context

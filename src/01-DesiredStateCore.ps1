@@ -301,7 +301,11 @@ function Resolve-CapsulenvDesiredStateOrder {
 
 function Get-CapsulenvDesiredStatePlan {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][object[]]$Nodes, [AllowNull()][hashtable]$Context = $null)
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Nodes,
+        [AllowNull()][hashtable]$Context = $null,
+        [switch]$IncludeDiagnostics
+    )
     if ($null -eq $Context) { $Context = @{} }
     $ordered = @(Resolve-CapsulenvDesiredStateOrder -Nodes $Nodes)
     $decisions = [ordered]@{}
@@ -326,19 +330,29 @@ function Get-CapsulenvDesiredStatePlan {
     }
     $items = @($decisions.Values)
     Assert-CapsulenvDesiredStateExecutionContract -Decisions $items
-    $resourceConflicts = @(Get-CapsulenvDesiredStateResourceConflicts -Decisions $items)
-    $claims = New-Object System.Collections.Generic.List[object]
-    foreach ($item in $items) { foreach ($claim in @(Get-CapsulenvDesiredStateResourceClaims -Node $item.Node)) { $claims.Add($claim) } }
-    $waves = if (@($items | Where-Object { -not $_.CanApply }).Count -eq 0) { @(Get-CapsulenvDesiredStateExecutionWaves -Decisions $items) } else { @() }
-    return [pscustomobject][ordered]@{
-        Nodes=$items
-        CanApply=(@($items | Where-Object { -not $_.CanApply }).Count -eq 0)
-        ResourceClaims=$claims.ToArray()
-        ResourceConflicts=$resourceConflicts
-        OwnershipDiagnostics=[pscustomobject][ordered]@{
+    $canApply = (@($items | Where-Object { -not $_.CanApply }).Count -eq 0)
+    $resourceConflicts = @()
+    $resourceClaims = @()
+    $waves = @()
+    $ownershipDiagnostics = [pscustomobject][ordered]@{ UnorderedWriteWrite=@(); SerializedConflicts=@() }
+    if ($IncludeDiagnostics) {
+        $resourceConflicts = @(Get-CapsulenvDesiredStateResourceConflicts -Decisions $items)
+        $claims = New-Object System.Collections.Generic.List[object]
+        foreach ($item in $items) { foreach ($claim in @(Get-CapsulenvDesiredStateResourceClaims -Node $item.Node)) { $claims.Add($claim) } }
+        $resourceClaims = @($claims.ToArray())
+        if ($canApply) { $waves = @(Get-CapsulenvDesiredStateExecutionWaves -Decisions $items) }
+        $ownershipDiagnostics = [pscustomobject][ordered]@{
             UnorderedWriteWrite=@($resourceConflicts | Where-Object { $_.Kind -eq 'WriteWrite' -and -not $_.OrderedByDependency })
             SerializedConflicts=@($resourceConflicts | Where-Object { $_.OrderedByDependency })
         }
+    }
+    return [pscustomobject][ordered]@{
+        Nodes=$items
+        CanApply=$canApply
+        DiagnosticsIncluded=[bool]$IncludeDiagnostics
+        ResourceClaims=$resourceClaims
+        ResourceConflicts=$resourceConflicts
+        OwnershipDiagnostics=$ownershipDiagnostics
         ExecutionWaves=$waves
     }
 }
