@@ -92,92 +92,6 @@ function Get-CapsulenvUvExecutable {
         -CommandNames @('uv.exe', 'uv')
 }
 
-function ConvertTo-CapsulenvNativeCommandLineArgument {
-    [CmdletBinding()]
-    param([AllowEmptyString()][string]$Argument)
-
-    if ($Argument.Length -gt 0 -and $Argument -notmatch '[\s"]') {
-        return $Argument
-    }
-
-    $builder = New-Object System.Text.StringBuilder
-    [void]$builder.Append('"')
-    $backslashCount = 0
-    foreach ($character in $Argument.ToCharArray()) {
-        if ($character -eq '\') {
-            $backslashCount++
-            continue
-        }
-        if ($character -eq '"') {
-            if ($backslashCount -gt 0) {
-                [void]$builder.Append(('\' * ($backslashCount * 2)))
-            }
-            [void]$builder.Append('\"')
-            $backslashCount = 0
-            continue
-        }
-        if ($backslashCount -gt 0) {
-            [void]$builder.Append(('\' * $backslashCount))
-            $backslashCount = 0
-        }
-        [void]$builder.Append($character)
-    }
-    if ($backslashCount -gt 0) {
-        [void]$builder.Append(('\' * ($backslashCount * 2)))
-    }
-    [void]$builder.Append('"')
-    return $builder.ToString()
-}
-
-function New-CapsulenvNativeProcessStartInfo {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Executable,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
-        [string]$WorkingDirectory,
-        [System.Collections.IDictionary]$Environment,
-        [switch]$Capture
-    )
-
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $Executable
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $false
-    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
-        $startInfo.WorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
-    }
-
-    $argumentListProperty = $startInfo.PSObject.Properties['ArgumentList']
-    if ($null -ne $argumentListProperty) {
-        foreach ($argument in $Arguments) {
-            [void]$startInfo.ArgumentList.Add([string]$argument)
-        }
-    } else {
-        $quotedArguments = foreach ($argument in $Arguments) {
-            ConvertTo-CapsulenvNativeCommandLineArgument -Argument ([string]$argument)
-        }
-        $startInfo.Arguments = $quotedArguments -join ' '
-    }
-
-    if ($null -ne $Environment) {
-        foreach ($keyObject in $Environment.Keys) {
-            $name = [string]$keyObject
-            $value = $Environment[$keyObject]
-            if ($null -eq $value) {
-                [void]$startInfo.EnvironmentVariables.Remove($name)
-            } else {
-                $startInfo.EnvironmentVariables[$name] = [string]$value
-            }
-        }
-    }
-
-    if ($Capture) {
-        $startInfo.RedirectStandardOutput = $true
-        $startInfo.RedirectStandardError = $true
-    }
-    return $startInfo
-}
-
 function Invoke-CapsulenvNativeTool {
     [CmdletBinding()]
     param(
@@ -188,7 +102,7 @@ function Invoke-CapsulenvNativeTool {
         [switch]$AllowFailure
     )
 
-    $startInfo = New-CapsulenvNativeProcessStartInfo `
+    $startInfo = New-CapsulenvProcessStartInfo `
         -Executable $Executable `
         -Arguments $Arguments `
         -WorkingDirectory $WorkingDirectory `
@@ -220,7 +134,7 @@ function Invoke-CapsulenvNativeToolCapture {
         [switch]$AllowFailure
     )
 
-    $startInfo = New-CapsulenvNativeProcessStartInfo `
+    $startInfo = New-CapsulenvProcessStartInfo `
         -Executable $Executable `
         -Arguments $Arguments `
         -WorkingDirectory $WorkingDirectory `

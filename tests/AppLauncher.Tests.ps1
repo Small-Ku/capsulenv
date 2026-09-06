@@ -93,18 +93,37 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
         $result.Name | Should -Be 'Visual Studio Code'
     }
 
-    It 'launches the single shortcut shape used by the Scoop Extras vscode manifest' {
+    It 'launches Capsule shortcuts through a child-local detached process plan' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-vscode-' + [Guid]::NewGuid().ToString('N'))
+        $parentValue = [Environment]::GetEnvironmentVariable('CAPSULENV_SHORTCUT_CHILD_TEST', 'Process')
+        $parentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
         try {
             [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
             Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
-            $current = Join-Path $temporaryRoot 'scoop/apps/vscode/current'
-            [void](New-Item -ItemType Directory -Path $current -Force)
+            $current = Join-Path $temporaryRoot 'packages/apps/vscode/current'
+            $persist = Join-Path $temporaryRoot 'packages/persist/vscode'
+            $binPath = Join-Path $current 'bin'
+            [void](New-Item -ItemType Directory -Path $binPath, $persist -Force)
             '' | Set-Content -LiteralPath (Join-Path $current 'code.exe') -Encoding UTF8
-            '{"version":"1.133.0","shortcuts":[["code.exe","Visual Studio Code"]]}' |
-                Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
+            @'
+{"version":"1.133.0","shortcuts":[["code.exe","Visual Studio Code","--reuse-window"]],"env_add_path":["bin"],"env_set":{"CAPSULENV_SHORTCUT_CHILD_TEST":"$dir"}}
+'@ | Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
             '{"architecture":"64bit","bucket":"extras"}' |
                 Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+            @{
+                SchemaVersion = 1
+                Packages = @{
+                    vscode = @{
+                        Name = 'vscode'
+                        Selector = 'capsule/vscode'
+                        Scope = 'Capsule'
+                        Current = $current
+                        Persist = $persist
+                        Ownership = 'Capsulenv'
+                        Provider = 'PortableSafe'
+                    }
+                }
+            } | Export-Clixml -LiteralPath (Join-Path $temporaryRoot 'state-installed.xml')
 
             & $script:Module {
                 param($CapsuleRoot)
@@ -112,13 +131,52 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
                 [void](Get-CapsulenvConfiguration -Refresh)
             } $temporaryRoot
 
-            Mock -CommandName Start-Process -ModuleName Capsulenv -MockWith { }
-            { Start-CapsulenvScoopShortcut -App vscode } | Should -Not -Throw
-            Should -Invoke -CommandName Start-Process -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-                $FilePath -eq ([System.IO.Path]::GetFullPath((Join-Path $current 'code.exe'))) -and
-                $WorkingDirectory -eq ([System.IO.Path]::GetFullPath($current))
+            # Use the real installed-app resolver shape but keep the test independent
+            # from state-file serialization details.
+            Mock -CommandName Get-CapsulenvInstalledApp -ModuleName Capsulenv -MockWith {
+                [pscustomobject]@{
+                    Name = 'vscode'
+                    Selector = 'capsule/vscode'
+                    Scope = 'Capsule'
+                    Current = $current
+                    Persist = $persist
+                    Ownership = 'Capsulenv'
+                    Provider = 'PortableSafe'
+                    Manifest = ('{"env_add_path":["bin"],"env_set":{"CAPSULENV_SHORTCUT_CHILD_TEST":"$dir"}}' | ConvertFrom-Json)
+                    Install = ('{"architecture":"64bit"}' | ConvertFrom-Json)
+                }
             }
+            Mock -CommandName Set-CapsulenvSessionEnvironment -ModuleName Capsulenv -MockWith { }
+            Mock -CommandName Get-CapsulenvScoopAppShortcuts -ModuleName Capsulenv -MockWith {
+                @([pscustomobject]@{
+                    Name = 'Visual Studio Code'
+                    Target = [System.IO.Path]::GetFullPath((Join-Path $current 'code.exe'))
+                    WorkingDirectory = [System.IO.Path]::GetFullPath($current)
+                    Arguments = '--reuse-window'
+                })
+            }
+            $script:capturedShortcutPlan = $null
+            Mock -CommandName Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -MockWith {
+                param($Plan)
+                $script:capturedShortcutPlan = $Plan
+                return $null
+            }
+
+            [Environment]::SetEnvironmentVariable('CAPSULENV_SHORTCUT_CHILD_TEST', 'parent', 'Process')
+            { Start-CapsulenvScoopShortcut -App vscode -Arguments @('--new-window', 'value with spaces') } | Should -Not -Throw
+
+            $script:capturedShortcutPlan | Should -Not -BeNullOrEmpty
+            $script:capturedShortcutPlan.ExecutionMode | Should -Be 'Detached'
+            $script:capturedShortcutPlan.Executable | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'code.exe')))
+            $script:capturedShortcutPlan.WorkingDirectory | Should -Be ([System.IO.Path]::GetFullPath($current))
+            $script:capturedShortcutPlan.Environment['CAPSULENV_SHORTCUT_CHILD_TEST'] | Should -Be ([System.IO.Path]::GetFullPath($current))
+            @($script:capturedShortcutPlan.PathEntries) | Should -Contain ([System.IO.Path]::GetFullPath($binPath))
+            $script:capturedShortcutPlan.RawArgumentString | Should -Be '--reuse-window --new-window "value with spaces"'
+            [Environment]::GetEnvironmentVariable('CAPSULENV_SHORTCUT_CHILD_TEST', 'Process') | Should -Be 'parent'
+            [Environment]::GetEnvironmentVariable('PATH', 'Process') | Should -Be $parentPath
+            Should -Invoke -CommandName Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
         } finally {
+            [Environment]::SetEnvironmentVariable('CAPSULENV_SHORTCUT_CHILD_TEST', $parentValue, 'Process')
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
             }

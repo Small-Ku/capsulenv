@@ -256,6 +256,96 @@ function Get-CapsulenvBitwardenStateBoundaryViolations {
     return $violations.ToArray()
 }
 
+function Get-CapsulenvProcessIsolationBoundaryViolations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$ProcessPlanPath,
+        [Parameter(Mandatory = $true)][string]$AppLauncherPath,
+        [Parameter(Mandatory = $true)][string]$PackageProcessPath,
+        [Parameter(Mandatory = $true)][string]$ToolRelocationPath
+    )
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    function Add-ProcessIsolationViolation {
+        param($Ast, [string]$Path, [string]$Rule, [string]$Detail)
+        $violations.Add([pscustomobject]@{
+            Rule = $Rule
+            Path = [System.IO.Path]::GetFullPath($Path)
+            Line = [int]$Ast.Extent.StartLineNumber
+            Column = [int]$Ast.Extent.StartColumnNumber
+            Detail = $Detail
+        })
+    }
+    function Get-ProcessCommands {
+        param($FunctionAst)
+        return @($FunctionAst.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+    }
+
+    # Shortcut launch is detached by definition. It must build the canonical
+    # process plan and may not mutate parent process state or bypass the plan.
+    $shortcut = Get-CapsulenvFunctionAst -Path $AppLauncherPath -Name 'Start-CapsulenvScoopShortcut'
+    $shortcutCommands = @(Get-ProcessCommands $shortcut)
+    $shortcutNames = @($shortcutCommands | ForEach-Object { [string]$_.GetCommandName() })
+    foreach ($required in @('New-CapsulenvProcessPlan', 'Invoke-CapsulenvProcessPlan')) {
+        if ($shortcutNames -contains $required) { continue }
+        Add-ProcessIsolationViolation -Ast $shortcut -Path $AppLauncherPath -Rule 'DetachedShortcutCanonicalProcessPlan' -Detail "Scoop shortcut launch must use $required"
+    }
+    foreach ($forbidden in @('Start-Process', 'Set-CapsulenvPackageProcessEnvironment')) {
+        foreach ($commandAst in @($shortcutCommands | Where-Object { [string]$_.GetCommandName() -eq $forbidden })) {
+            Add-ProcessIsolationViolation -Ast $commandAst -Path $AppLauncherPath -Rule 'DetachedShortcutNoParentProcessMutation' -Detail "Scoop shortcut launch must not use parent-scoped/bypass command: $forbidden"
+        }
+    }
+
+    # The old package-only environment mutator and ToolRelocation-only process
+    # builder are duplicate implementations. Reintroducing either recreates a
+    # second process-environment authority.
+    foreach ($entry in @(
+        [pscustomobject]@{ Path = $PackageProcessPath; Name = 'Set-CapsulenvPackageProcessEnvironment'; Rule = 'PackageProcessNoParentEnvironmentMutator' },
+        [pscustomobject]@{ Path = $ToolRelocationPath; Name = 'New-CapsulenvNativeProcessStartInfo'; Rule = 'ProcessStartInfoSingleAuthority' }
+    )) {
+        $ast = Get-CapsulenvStaticAst -Path $entry.Path
+        foreach ($definition in @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+        }, $true) | Where-Object { [string]$_.Name -eq [string]$entry.Name })) {
+            Add-ProcessIsolationViolation -Ast $definition -Path $entry.Path -Rule $entry.Rule -Detail "obsolete duplicate process helper must not be reintroduced: $($entry.Name)"
+        }
+    }
+
+    # Detached execution must cross into ProcessStartInfo before any host
+    # environment/cwd overlay used by passthrough execution.
+    $invokePlan = Get-CapsulenvFunctionAst -Path $ProcessPlanPath -Name 'Invoke-CapsulenvProcessPlan'
+    $invokeCommands = @(Get-ProcessCommands $invokePlan | Sort-Object { $_.Extent.StartOffset })
+    $detachedDispatch = @($invokeCommands | Where-Object { [string]$_.GetCommandName() -eq 'Invoke-CapsulenvDetachedProcessPlan' } | Select-Object -First 1)
+    $hostOverlay = @($invokeCommands | Where-Object { [string]$_.GetCommandName() -in @('Push-Location', 'Pop-Location') } | Select-Object -First 1)
+    if ($detachedDispatch.Count -eq 0) {
+        Add-ProcessIsolationViolation -Ast $invokePlan -Path $ProcessPlanPath -Rule 'DetachedProcessPlanDispatchRequired' -Detail 'Invoke-CapsulenvProcessPlan must dispatch Detached mode through the child-local process helper'
+    } elseif ($hostOverlay.Count -gt 0 -and $detachedDispatch[0].Extent.StartOffset -gt $hostOverlay[0].Extent.StartOffset) {
+        Add-ProcessIsolationViolation -Ast $hostOverlay[0] -Path $ProcessPlanPath -Rule 'DetachedProcessPlanBeforeHostOverlay' -Detail 'Detached process dispatch must occur before passthrough host environment/cwd overlay'
+    }
+
+    $detached = Get-CapsulenvFunctionAst -Path $ProcessPlanPath -Name 'Invoke-CapsulenvDetachedProcessPlan'
+    $detachedCommands = @(Get-ProcessCommands $detached)
+    $detachedNames = @($detachedCommands | ForEach-Object { [string]$_.GetCommandName() })
+    if ($detachedNames -notcontains 'New-CapsulenvProcessStartInfo') {
+        Add-ProcessIsolationViolation -Ast $detached -Path $ProcessPlanPath -Rule 'DetachedProcessStartInfoRequired' -Detail 'detached process execution must use the canonical child-local ProcessStartInfo builder'
+    }
+    foreach ($forbidden in @('Start-Process', 'Push-Location', 'Pop-Location', 'Set-Location')) {
+        foreach ($commandAst in @($detachedCommands | Where-Object { [string]$_.GetCommandName() -eq $forbidden })) {
+            Add-ProcessIsolationViolation -Ast $commandAst -Path $ProcessPlanPath -Rule 'DetachedProcessNoHostOverlay' -Detail "detached process helper must not mutate/bypass host process context: $forbidden"
+        }
+    }
+    foreach ($memberAst in @($detached.Body.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+        [string]$node.Extent.Text -match 'SetEnvironmentVariable'
+    }, $true))) {
+        Add-ProcessIsolationViolation -Ast $memberAst -Path $ProcessPlanPath -Rule 'DetachedProcessNoHostEnvironmentMutation' -Detail 'detached process helper must not mutate the parent process environment'
+    }
+
+    return $violations.ToArray()
+}
+
 function Get-CapsulenvModeIsolationBoundaryViolations {
     [CmdletBinding()]
     param(

@@ -845,9 +845,6 @@ function Start-CapsulenvScoopShortcut {
 
     [void](Set-CapsulenvSessionEnvironment)
     $installed = Get-CapsulenvInstalledApp -Selector $App
-    if ([string]$installed.Scope -eq 'Capsule') {
-        [void](Set-CapsulenvPackageProcessEnvironment -Installed $installed)
-    }
     $shortcuts = @(Get-CapsulenvScoopAppShortcuts -App $installed.Selector)
     if ($shortcuts.Count -eq 0) {
         throw "Installed app '$App' does not define a shortcut. Use its shim/bin command when available."
@@ -875,27 +872,41 @@ function Start-CapsulenvScoopShortcut {
         throw "Shortcut target does not exist: $($selected.Target)"
     }
 
-    $launchArguments = New-Object System.Collections.Generic.List[string]
+    # Scoop shortcut arguments are already one Windows command-line fragment.
+    # Preserve that fragment, then append correctly escaped runtime arguments.
+    $argumentFragments = New-Object System.Collections.Generic.List[string]
     if (-not [string]::IsNullOrWhiteSpace([string]$selected.Arguments)) {
-        # Scoop stores shortcut arguments as one command-line string. Preserve
-        # it verbatim rather than trying to parse and reserialize it.
-        $launchArguments.Add([string]$selected.Arguments)
+        $argumentFragments.Add([string]$selected.Arguments)
     }
     foreach ($argument in @($Arguments)) {
-        $launchArguments.Add((ConvertTo-CapsulenvProcessArgument -Argument ([string]$argument)))
+        $argumentFragments.Add((ConvertTo-CapsulenvProcessArgument -Argument ([string]$argument)))
     }
+    $rawArguments = if ($argumentFragments.Count -gt 0) { $argumentFragments.ToArray() -join ' ' } else { '' }
 
-    $startParameters = @{
-        FilePath = [string]$selected.Target
-        WorkingDirectory = [string]$selected.WorkingDirectory
+    $environment = [pscustomobject]@{ PathEntries = @(); Variables = [ordered]@{} }
+    if ([string]$installed.Scope -eq 'Capsule') {
+        $environment = Get-CapsulenvPackageEnvironmentPlan -Installed $installed
     }
-    if ($launchArguments.Count -gt 0) {
-        $startParameters['ArgumentList'] = @($launchArguments.ToArray())
-    }
+    $plan = New-CapsulenvProcessPlan `
+        -Executable ([string]$selected.Target) `
+        -RawArgumentString $rawArguments `
+        -WorkingDirectory ([string]$selected.WorkingDirectory) `
+        -Environment $environment.Variables `
+        -PathEntries @($environment.PathEntries) `
+        -ExecutionMode Detached `
+        -Metadata ([ordered]@{
+            App = [string]$installed.Selector
+            Shortcut = [string]$selected.Name
+            Ownership = [string]$installed.Ownership
+        })
+    $process = Invoke-CapsulenvProcessPlan -Plan $plan
     if ($PassThru) {
-        $startParameters['PassThru'] = $true
+        return $process
     }
-    return Start-Process @startParameters
+    if ($process -is [System.IDisposable]) {
+        $process.Dispose()
+    }
+    return $null
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvScoopAppShortcuts, Get-CapsulenvScoopAppBins, Get-CapsulenvScoopShortcutCatalog, Start-CapsulenvScoopShortcut, Resolve-CapsulenvScoopAppExecutable, Resolve-CapsulenvScoopAppPersistPath

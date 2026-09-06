@@ -56,20 +56,6 @@ function Get-CapsulenvPackageEnvironmentPlan {
     }
 }
 
-function Set-CapsulenvPackageProcessEnvironment {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)]$Installed)
-
-    $environment = Get-CapsulenvPackageEnvironmentPlan -Installed $Installed
-    foreach ($name in $environment.Variables.Keys) {
-        [Environment]::SetEnvironmentVariable([string]$name, [string]$environment.Variables[$name], 'Process')
-    }
-    if ($environment.PathEntries.Count -gt 0) {
-        $env:PATH = Merge-CapsulenvPath -ExistingPath $env:PATH -Prepend @($environment.PathEntries)
-    }
-    return $environment
-}
-
 function Get-CapsulenvInstalledAppProcessPlan {
     [CmdletBinding()]
     param(

@@ -665,4 +665,49 @@ function Repair-CapsulenvInstalledAppProjections {
         ).Count | Should -Be 0
     }
 
+    It 'rejects detached shortcuts that bypass child-local process plans' {
+        $processFixture = New-CapsulenvStaticFixture -Name 'process-plan-unsafe.ps1' -Source @'
+function Invoke-CapsulenvProcessPlan {
+    Push-Location C:\temp
+    Invoke-CapsulenvDetachedProcessPlan
+}
+function Invoke-CapsulenvDetachedProcessPlan {
+    Start-Process demo.exe
+    [Environment]::SetEnvironmentVariable('DEMO', 'x', 'Process')
+}
+'@
+        $launcherFixture = New-CapsulenvStaticFixture -Name 'shortcut-process-unsafe.ps1' -Source @'
+function Start-CapsulenvScoopShortcut {
+    Set-CapsulenvPackageProcessEnvironment -Installed $installed
+    Start-Process demo.exe
+}
+'@
+        $packageFixture = New-CapsulenvStaticFixture -Name 'package-process-unsafe.ps1' -Source @'
+function Set-CapsulenvPackageProcessEnvironment { $env:PATH = 'x' }
+'@
+        $toolFixture = New-CapsulenvStaticFixture -Name 'tool-process-unsafe.ps1' -Source @'
+function New-CapsulenvNativeProcessStartInfo { New-Object Diagnostics.ProcessStartInfo }
+'@
+        $violations = @(Get-CapsulenvProcessIsolationBoundaryViolations `
+            -ProcessPlanPath $processFixture `
+            -AppLauncherPath $launcherFixture `
+            -PackageProcessPath $packageFixture `
+            -ToolRelocationPath $toolFixture)
+        @($violations.Rule) | Should -Contain 'DetachedShortcutCanonicalProcessPlan'
+        @($violations.Rule) | Should -Contain 'DetachedShortcutNoParentProcessMutation'
+        @($violations.Rule) | Should -Contain 'PackageProcessNoParentEnvironmentMutator'
+        @($violations.Rule) | Should -Contain 'ProcessStartInfoSingleAuthority'
+        @($violations.Rule) | Should -Contain 'DetachedProcessNoHostOverlay'
+        @($violations.Rule) | Should -Contain 'DetachedProcessNoHostEnvironmentMutation'
+    }
+
+    It 'accepts repository child-local detached process boundaries' {
+        @(Get-CapsulenvProcessIsolationBoundaryViolations `
+            -ProcessPlanPath (Join-Path (Join-Path $script:Root 'src') '03-ProcessPlan.ps1') `
+            -AppLauncherPath (Join-Path (Join-Path $script:Root 'src') '42-AppLauncher.ps1') `
+            -PackageProcessPath (Join-Path (Join-Path $script:Root 'src') '44-40-PackageProcess.ps1') `
+            -ToolRelocationPath (Join-Path (Join-Path $script:Root 'src') '37-ToolRelocation.ps1')
+        ).Count | Should -Be 0
+    }
+
 }

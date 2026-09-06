@@ -10,6 +10,51 @@ Describe 'Capsulenv process plans' {
             $env:PATH|Should -Be $oldPath; (Get-Location).Path|Should -Be $oldLocation; $env:CAPSULENV_PROCESS_PLAN_TEST|Should -Be $old
         } finally { $env:PATH=$oldPath; if($null -eq $old){Remove-Item Env:CAPSULENV_PROCESS_PLAN_TEST -ErrorAction SilentlyContinue}else{$env:CAPSULENV_PROCESS_PLAN_TEST=$old} }
     }
+    It 'keeps detached environment path and cwd child-local' {
+        $hostExecutable = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $work = Join-Path $TestDrive detached-work
+        $pathEntry = Join-Path $TestDrive detached-path
+        $resultPath = Join-Path $work result.txt
+        $childScript = Join-Path $work child.ps1
+        [void](New-Item -ItemType Directory -Path $work, $pathEntry -Force)
+        @'
+param([Parameter(Mandatory = $true)][string]$ResultPath)
+[IO.File]::WriteAllLines($ResultPath, @($env:CAPSULENV_DETACHED_PROCESS_TEST, (Get-Location).Path, $env:PATH))
+'@ | Set-Content -LiteralPath $childScript -Encoding UTF8
+        $oldValue = [Environment]::GetEnvironmentVariable('CAPSULENV_DETACHED_PROCESS_TEST', 'Process')
+        $oldPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
+        $oldLocation = (Get-Location).Path
+        try {
+            [Environment]::SetEnvironmentVariable('CAPSULENV_DETACHED_PROCESS_TEST', 'parent', 'Process')
+            $process = & $script:Module {
+                param($exe, $work, $path, $resultPath)
+                $plan = New-CapsulenvProcessPlan `
+                    -Executable $exe `
+                    -Arguments @('-NoLogo', '-NoProfile', '-File', (Join-Path $work 'child.ps1'), '-ResultPath', $resultPath) `
+                    -WorkingDirectory $work `
+                    -Environment ([ordered]@{ CAPSULENV_DETACHED_PROCESS_TEST = 'child' }) `
+                    -PathEntries @($path) `
+                    -ExecutionMode Detached
+                Invoke-CapsulenvProcessPlan -Plan $plan
+            } $hostExecutable $work $pathEntry $resultPath
+            try {
+                $process.WaitForExit()
+                $process.ExitCode | Should -Be 0
+            } finally {
+                $process.Dispose()
+            }
+            $result = @(Get-Content -LiteralPath $resultPath)
+            $result[0] | Should -Be 'child'
+            [IO.Path]::GetFullPath($result[1]) | Should -Be ([IO.Path]::GetFullPath($work))
+            $result[2] | Should -Match ([regex]::Escape([IO.Path]::GetFullPath($pathEntry)))
+            [Environment]::GetEnvironmentVariable('CAPSULENV_DETACHED_PROCESS_TEST', 'Process') | Should -Be 'parent'
+            [Environment]::GetEnvironmentVariable('PATH', 'Process') | Should -Be $oldPath
+            (Get-Location).Path | Should -Be $oldLocation
+        } finally {
+            [Environment]::SetEnvironmentVariable('CAPSULENV_DETACHED_PROCESS_TEST', $oldValue, 'Process')
+        }
+    }
+
     It 'keeps a small inspectable object contract' {
         $plan=& $script:Module { New-CapsulenvProcessPlan -Executable 'tool.exe' -Arguments @('a') -ExecutionMode Detached -Metadata ([ordered]@{Owner='test'}) }
         $plan.PSTypeNames | Should -Contain 'Capsulenv.ProcessPlan'; $plan.Executable|Should -Be 'tool.exe'; $plan.ExecutionMode|Should -Be 'Detached'; $plan.Metadata.Owner|Should -Be 'test'
