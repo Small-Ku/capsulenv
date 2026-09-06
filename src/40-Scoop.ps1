@@ -407,8 +407,8 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -ReadResources @('capsule:///project-cache/registry') `
             -WriteResources @('capsule:///project-cache/registry') `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
-            -Apply { param($c,$d) if($null -ne $c.ProjectCacheRegistryError){ return @([pscustomobject]@{ Profile=$null; ProjectPath=$null; LinkPath=$null; StorePath=$null; LinkType=$null; Changed=$false; Status='RegistryError'; Detail=[string]$c.ProjectCacheRegistryError }) }; $repairs=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.ProjectCacheNodeIds)){ $repairs.Add($c.Outputs[[string]$nodeId]) }; @(Complete-CapsulenvProjectCacheRepairBatch -Repairs $repairs.ToArray()) } `
-            -Verify { param($c,$d,$o) $null -ne $o })
+            -Apply { param($c,$d) if($null -ne $c.ProjectCacheRegistryError){ return ,@([pscustomobject]@{ Profile=$null; ProjectPath=$null; LinkPath=$null; StorePath=$null; LinkType=$null; Changed=$false; Status='RegistryError'; Detail=[string]$c.ProjectCacheRegistryError }) }; $repairs=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.ProjectCacheNodeIds)){ $repairs.Add($c.Outputs[[string]$nodeId]) }; return ,@(Complete-CapsulenvProjectCacheRepairBatch -Repairs $repairs.ToArray()) } `
+            -Verify { param($c,$d,$o) $o -is [System.Array] })
         (New-CapsulenvDesiredStateNode -Id 'tool-relocation' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'project-cache-links' `
             -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `

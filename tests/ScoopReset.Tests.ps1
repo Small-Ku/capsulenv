@@ -52,6 +52,28 @@ Describe 'Capsulenv package projection repair boundary' {
         @($stateNode.DependsOn) | Should -Not -Contain 'tool-relocation'
     }
 
+    It 'verifies an empty project-cache aggregate when no managed links are registered' {
+        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProjectionRepairDescriptors { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            $integration = Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly
+            $barrier = @($integration.Plan.Nodes | Where-Object Id -eq 'project-cache-links')[0]
+            $output = & $barrier.Node.Apply $integration.Context $barrier
+            [pscustomobject]@{
+                IsArray = ($output -is [System.Array])
+                Count = @($output).Count
+                Verified = [bool](& $barrier.Node.Verify $integration.Context $barrier $output)
+            }
+        }
+
+        $result.IsArray | Should -BeTrue
+        $result.Count | Should -Be 0
+        $result.Verified | Should -BeTrue
+    }
+
     It 'expands package projections into claim-safe parallel nodes with an aggregate barrier' {
         Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
