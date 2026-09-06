@@ -132,4 +132,52 @@ Describe 'Capsulenv portable environment ownership contracts' {
         [object]::ReferenceEquals($reused, $plan.ToolStorage) | Should -BeTrue
     }
 
+
+    It 'uses a generation marker to keep steady ToolStorage initialization metadata-only' {
+        $directory = Join-Path $TestDrive 'tool-storage-data'
+        $file = Join-Path $directory 'config.toml'
+        $marker = Join-Path $TestDrive 'tool-storage-test.ready'
+        $plan = [pscustomobject]@{
+            Enabled = $true
+            CreateDirectories = $true
+            Directories = @($directory)
+            Files = @($file)
+            ReadyMarker = $marker
+        }
+
+        & $script:Module { param($Plan) Initialize-CapsulenvToolStorage -Plan $Plan -ForceRepair } $plan | Out-Null
+        Test-Path -LiteralPath $directory -PathType Container | Should -BeTrue
+        Test-Path -LiteralPath $file -PathType Leaf | Should -BeTrue
+        Test-Path -LiteralPath $marker -PathType Leaf | Should -BeTrue
+
+        Remove-Item -LiteralPath $file -Force
+        & $script:Module { param($Plan) Initialize-CapsulenvToolStorage -Plan $Plan } $plan | Out-Null
+        Test-Path -LiteralPath $file -PathType Leaf | Should -BeFalse -Because 'steady activation should trust the generation marker instead of sweeping managed files'
+
+        & $script:Module { param($Plan) Initialize-CapsulenvToolStorage -Plan $Plan -ForceRepair } $plan | Out-Null
+        Test-Path -LiteralPath $file -PathType Leaf | Should -BeTrue -Because 'explicit cache init/repair must restore drift'
+    }
+
+    It 'invalidates ToolStorage readiness when the resolved storage plan changes' {
+        $base = [pscustomobject]@{
+            Enabled = $true
+            CreateDirectories = $true
+            Variables = [ordered]@{ A = (Join-Path $TestDrive 'a') }
+            Directories = @((Join-Path $TestDrive 'a'))
+            Files = @((Join-Path $TestDrive 'a/config'))
+            PathEntries = @((Join-Path $TestDrive 'a/bin'))
+        }
+        $changed = [pscustomobject]@{
+            Enabled = $true
+            CreateDirectories = $true
+            Variables = [ordered]@{ A = (Join-Path $TestDrive 'b') }
+            Directories = @((Join-Path $TestDrive 'b'))
+            Files = @((Join-Path $TestDrive 'b/config'))
+            PathEntries = @((Join-Path $TestDrive 'b/bin'))
+        }
+        $first = & $script:Module { param($Plan) Get-CapsulenvToolStorageReadyMarkerPath -Plan $Plan } $base
+        $second = & $script:Module { param($Plan) Get-CapsulenvToolStorageReadyMarkerPath -Plan $Plan } $changed
+        $first | Should -Not -Be $second
+    }
+
 }

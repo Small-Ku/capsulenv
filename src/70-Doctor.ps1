@@ -90,14 +90,19 @@ function Invoke-CapsulenvDoctor {
     $toolPathValues = @($toolStoragePlan.Directories)
     $missingToolDirectories = @($toolPathValues | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Container) })
     $missingToolFiles = @($toolStoragePlan.Files | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
+    $conflictingToolFiles = @($toolStoragePlan.Files | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
+    $toolStorageReady = Test-CapsulenvToolStorageReady -Plan $toolStoragePlan
+    $toolStorageHealthy = $toolStoragePlan.Enabled -and $missingToolDirectories.Count -eq 0 -and $missingToolFiles.Count -eq 0 -and $conflictingToolFiles.Count -eq 0
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Portable tool storage' `
-        -Passed $toolStoragePlan.Enabled `
+        -Passed $toolStorageHealthy `
         -Importance Optional `
         -Detail $(if (-not $toolStoragePlan.Enabled) {
             'Disabled'
+        } elseif ($toolStorageHealthy) {
+            "$($toolStoragePlan.Locations.Count) location(s); readiness marker=$toolStorageReady"
         } else {
-            "$($toolStoragePlan.Locations.Count) location(s); $($missingToolDirectories.Count) directorie(s) and $($missingToolFiles.Count) config file(s) will be created on first session/cache init"
+            "$($missingToolDirectories.Count) missing directorie(s), $($missingToolFiles.Count) missing config file(s), $($conflictingToolFiles.Count) file-path conflict(s); run 'capsulenv cache init' to repair"
         })))
 
     $environmentPlan = Get-CapsulenvEnvironmentPlan

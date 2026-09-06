@@ -52,6 +52,7 @@ function Get-CapsulenvToolStoragePlan {
             Directories = @()
             Files = @()
             CreateDirectories = $false
+            ReadyMarker = $null
         }
     }
 
@@ -115,7 +116,7 @@ function Get-CapsulenvToolStoragePlan {
     $locationKinds['SCOOP_CACHE'] = 'Directory'
     $locationClasses['SCOOP_CACHE'] = 'Cache'
 
-    return [pscustomobject]@{
+    $plan = [pscustomobject]@{
         Enabled = $true
         Variables = $variables
         Locations = $locations
@@ -125,13 +126,17 @@ function Get-CapsulenvToolStoragePlan {
         Directories = $directories.ToArray()
         Files = $files.ToArray()
         CreateDirectories = [bool]$configuration.ToolStorage.CreateDirectories
+        ReadyMarker = $null
     }
+    $plan.ReadyMarker = Get-CapsulenvToolStorageReadyMarkerPath -Plan $plan
+    return $plan
 }
 
 function Initialize-CapsulenvToolStorage {
     [CmdletBinding()]
     param(
-        [object]$Plan
+        [object]$Plan,
+        [switch]$ForceRepair
     )
 
     $plan = if ($null -eq $Plan) { Get-CapsulenvToolStoragePlan } else { $Plan }
@@ -141,6 +146,13 @@ function Initialize-CapsulenvToolStorage {
 
     if (-not [bool]$plan.CreateDirectories) {
         return $plan
+    }
+
+    if (-not $ForceRepair -and (Test-CapsulenvToolStorageReady -Plan $plan)) {
+        return $plan
+    }
+    if (Test-Path -LiteralPath ([string]$plan.ReadyMarker) -PathType Leaf) {
+        Remove-Item -LiteralPath ([string]$plan.ReadyMarker) -Force -ErrorAction SilentlyContinue
     }
 
     foreach ($directory in $plan.Directories) {
@@ -156,6 +168,7 @@ function Initialize-CapsulenvToolStorage {
             [System.IO.File]::WriteAllText($file, '')
         }
     }
+    [void](Complete-CapsulenvToolStorageReadyMarker -Plan $plan)
     return $plan
 }
 

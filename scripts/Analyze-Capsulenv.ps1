@@ -292,6 +292,18 @@ $scoopBootstrapHotPathViolations = @(
         -IntegrationsPath (Join-Path (Join-Path $root 'src') '70-Doctor.ps1') `
         -CommandsPath (Join-Path (Join-Path $root 'src') '90-90-Dispatch.ps1')
 )
+$toolStorageHotPathViolations = @(
+    Get-CapsulenvToolStorageHotPathViolations `
+        -ReadinessPath (Join-Path (Join-Path $root 'src') '34-ToolStorageReadiness.ps1') `
+        -ToolStoragePath (Join-Path (Join-Path $root 'src') '35-ToolStorage.ps1') `
+        -SessionEnvironmentPath (Join-Path (Join-Path $root 'src') '30-10-EnvironmentSession.ps1') `
+        -CacheCommandPath (Join-Path (Join-Path $root 'src') '90-20-CacheTools.ps1') `
+        -DoctorPath (Join-Path (Join-Path $root 'src') '70-Doctor.ps1')
+)
+if ($toolStorageHotPathViolations.Count -gt 0) {
+    $detail = $toolStorageHotPathViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv ToolStorage hot-path analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
 if ($scoopBootstrapHotPathViolations.Count -gt 0) {
     $detail = $scoopBootstrapHotPathViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
     throw "Capsulenv Scoop bootstrap hot-path analysis failed:`n$($detail -join [Environment]::NewLine)"
@@ -348,6 +360,7 @@ if ($diagnostics.Count -gt 0) {
     EnvironmentHotPathViolations = $environmentHotPathViolations.Count
     EnvironmentPlanReuseViolations = $environmentPlanReuseViolations.Count
     ScoopBootstrapHotPathViolations = $scoopBootstrapHotPathViolations.Count
+    ToolStorageHotPathViolations = $toolStorageHotPathViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }
 } finally {

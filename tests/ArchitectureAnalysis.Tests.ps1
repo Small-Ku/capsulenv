@@ -827,4 +827,46 @@ function Initialize-CapsulenvToolStorage {
             -ToolStoragePath (Join-Path (Join-Path $script:Root 'src') '35-ToolStorage.ps1')).Count | Should -Be 0
     }
 
+
+    It 'rejects ToolStorage readiness that performs integrity sweeps on steady activation' {
+        $readyFixture = New-CapsulenvStaticFixture -Name 'tool-storage-ready-unsafe.ps1' -Source @'
+function Test-CapsulenvToolStorageReady { Get-Content x; Get-ChildItem x }
+'@
+        $storageFixture = New-CapsulenvStaticFixture -Name 'tool-storage-init-unsafe.ps1' -Source @'
+function Initialize-CapsulenvToolStorage {
+    Test-Path x
+    Test-CapsulenvToolStorageReady
+}
+'@
+        $sessionFixture = New-CapsulenvStaticFixture -Name 'tool-storage-session-unsafe.ps1' -Source @'
+function Set-CapsulenvSessionEnvironment { Initialize-CapsulenvToolStorage -ForceRepair }
+'@
+        $cacheFixture = New-CapsulenvStaticFixture -Name 'tool-storage-cache-unsafe.ps1' -Source @'
+function Invoke-CapsulenvCacheCommand { Initialize-CapsulenvToolStorage }
+'@
+        $doctorFixture = New-CapsulenvStaticFixture -Name 'tool-storage-doctor-unsafe.ps1' -Source @'
+function Invoke-CapsulenvDoctor { Get-CapsulenvToolStoragePlan }
+'@
+        $violations = @(Get-CapsulenvToolStorageHotPathViolations `
+            -ReadinessPath $readyFixture `
+            -ToolStoragePath $storageFixture `
+            -SessionEnvironmentPath $sessionFixture `
+            -CacheCommandPath $cacheFixture `
+            -DoctorPath $doctorFixture)
+        @($violations.Rule) | Should -Contain 'ToolStorageReadyMetadataOnly'
+        @($violations.Rule) | Should -Contain 'ToolStorageReadyGateBeforeIntegritySweep'
+        @($violations.Rule) | Should -Contain 'ToolStorageSteadySessionNotForced'
+        @($violations.Rule) | Should -Contain 'ToolStorageExplicitRepairForced'
+        @($violations.Rule) | Should -Contain 'ToolStorageDoctorIntegrityPreserved'
+    }
+
+    It 'accepts generation-gated ToolStorage integrity and explicit repair boundaries' {
+        @(Get-CapsulenvToolStorageHotPathViolations `
+            -ReadinessPath (Join-Path (Join-Path $script:Root 'src') '34-ToolStorageReadiness.ps1') `
+            -ToolStoragePath (Join-Path (Join-Path $script:Root 'src') '35-ToolStorage.ps1') `
+            -SessionEnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-10-EnvironmentSession.ps1') `
+            -CacheCommandPath (Join-Path (Join-Path $script:Root 'src') '90-20-CacheTools.ps1') `
+            -DoctorPath (Join-Path (Join-Path $script:Root 'src') '70-Doctor.ps1')).Count | Should -Be 0
+    }
+
 }

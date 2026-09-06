@@ -18,7 +18,7 @@ function Invoke-CapsulenvCacheCommand {
             if ($remaining.Count -gt 0) {
                 throw 'Usage: cache init'
             }
-            [void](Initialize-CapsulenvToolStorage)
+            [void](Initialize-CapsulenvToolStorage -ForceRepair)
             Get-CapsulenvToolStorageStatus | Format-Table -AutoSize
         }
         'status' {
