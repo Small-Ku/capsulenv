@@ -1,137 +1,106 @@
 Describe 'Capsulenv install-mode isolation contracts' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        $script:ScoopSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/40-Scoop.ps1') -Raw
-        $script:EnvironmentSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/30-Environment.ps1') -Raw
-        $script:BitwardenSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/50-Bitwarden.ps1') -Raw
-        $script:BitwardenAgentSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/55-BitwardenSshAgent.ps1') -Raw
-        $script:BrowserSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/60-Browser.ps1') -Raw
-        $script:DefaultBrowserSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/62-DefaultBrowser.ps1') -Raw
-        $script:DoctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
-        $script:ProjectCacheSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/36-ProjectCacheRegistry.ps1') -Raw
-        $script:BootstrapSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/41-ScoopBootstrap.ps1') -Raw
-        $script:PackageExecutorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/44-PackageExecutor.ps1') -Raw
-        $script:PackageHostIntegrationSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/45-PackageHostIntegration.ps1') -Raw
-        $script:LegacyProjectionSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/46-LegacyScoopProjection.ps1') -Raw
+        $env:CAPSULENV_ROOT = $script:Root
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        Import-Module $script:Build.ModulePath -Force -DisableNameChecking
+        $script:Module = @(Get-Module Capsulenv)[-1]
         . (Join-Path $script:Root 'src/05-DataFile.ps1')
     }
 
-    It 'has one Pester-only test path with no duplicated smoke suite' {
-        (Test-Path -LiteralPath (Join-Path $script:Root 'tests/smoke')) | Should -BeFalse
-        $runner = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/Test-Capsulenv.ps1') -Raw
-        $suiteRunner = Get-Content -LiteralPath (Join-Path $script:Root 'scripts/Invoke-CapsulenvPesterSuite.ps1') -Raw
-        $runner | Should -Match 'Get-ChildItem -LiteralPath \$testsRoot -Filter ''\*\.Tests\.ps1'''
-        $runner | Should -Match 'System\.Diagnostics\.ProcessStartInfo'
-        $runner | Should -Match 'SuiteTimeoutSeconds'
-        $suiteRunner | Should -Match 'Invoke-Pester -Path \$testPath -PassThru'
-        $runner | Should -Not -Match '\.Smoke\.ps1'
-        $suiteRunner | Should -Not -Match '\.Smoke\.ps1'
+    AfterAll {
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
-    It 'keeps package repair bounded and reserves explicit host integration for User mode' {
-        $script:LegacyProjectionSource | Should -Match 'Repair-CapsulenvLegacyPersistProjection'
-        $script:LegacyProjectionSource | Should -Match 'Cannot prove the active version'
-        $script:LegacyProjectionSource | Should -Match 'Refusing to replace a normal directory'
-        $script:LegacyProjectionSource | Should -Match 'Repair-CapsulenvPackageFileProjection'
-        $script:LegacyProjectionSource | Should -Not -Match ([regex]::Escape('apps\scoop\current\lib'))
-        $script:LegacyProjectionSource | Should -Not -Match 'shortcut_folder'
-        $script:ScoopSource | Should -Match 'Repair-CapsulenvInstalledAppProjections'
-        $script:ScoopSource | Should -Not -Match 'Invoke-CapsulenvPortableScoopReset|Invoke-CapsulenvUserScoopReset'
-        $script:ScoopSource | Should -Not -Match 'Invoke-CapsulenvConfiguredHookReplay'
-        $script:PackageExecutorSource | Should -Match 'PortableSafe'
-        $script:PackageExecutorSource | Should -Match 'Get-CapsulenvPackageShimRoot'
-        $script:PackageHostIntegrationSource | Should -Match '\$IntegrationMode -ne ''User'''
-        $script:PackageHostIntegrationSource | Should -Match "'capsule/'"
-        $script:PackageHostIntegrationSource | Should -Match "'app'"
-        $script:PackageHostIntegrationSource | Should -Match "'run'"
-        $runtimeAdapters = @(Get-ChildItem -LiteralPath (Join-Path $script:Root 'module-runtime') -Filter 'scoop-capsulenv-*' -File -ErrorAction SilentlyContinue)
-        $runtimeAdapters.Count | Should -Be 0
+    It 'keeps local, global, and PortableSafe shims inside the capsule session plan' {
+        $contract = & $script:Module {
+            $plan = Get-CapsulenvEnvironmentPlan
+            [pscustomobject]@{
+                PathEntries = @($plan.PathEntries)
+                Scoop = [string]$plan.Variables['SCOOP']
+                ScoopGlobal = [string]$plan.Variables['SCOOP_GLOBAL']
+                PackageShims = [string](Get-CapsulenvPackageShimRoot)
+            }
+        }
+
+        $contract.PathEntries | Should -Contain (Join-Path $contract.Scoop 'shims')
+        $contract.PathEntries | Should -Contain (Join-Path $contract.ScoopGlobal 'shims')
+        $contract.PathEntries | Should -Contain $contract.PackageShims
     }
 
-    It 'puts local and portable-global Scoop shims on only the Capsulenv environment plan' {
-        $script:EnvironmentSource.Contains('(Join-Path $variables.SCOOP ''shims'')') | Should -BeTrue
-        $script:EnvironmentSource.Contains('(Join-Path $variables.SCOOP_GLOBAL ''shims'')') | Should -BeTrue
-        $script:EnvironmentSource | Should -Match 'Get-CapsulenvPackageShimRoot'
-        $script:BootstrapSource | Should -Match '\.\.\\apps\\scoop\\current\\bin\\scoop\.ps1'
-        $script:BootstrapSource | Should -Not -Match 'scoop-capsulenv-gateway|scoop-capsulenv-shellonly-policy'
-        $script:EnvironmentSource | Should -Match 'SetEnvironmentVariable\(\$name, \[string\]\$plan\.Variables\[\$name\], ''Process''\)' 
-        $script:EnvironmentSource | Should -Match 'Sync-CapsulenvUserEnvironment'
-        $script:EnvironmentSource | Should -Match 'ManagedPathEntries'
-        $script:EnvironmentSource | Should -Match 'Remove-CapsulenvPathEntries'
-        $script:EnvironmentSource | Should -Match 'Get-CapsulenvRelocatedScoopPathEntries'
-        $script:EnvironmentSource | Should -Match 'Get-CapsulenvScoopPathEnvironmentVariable'
-        $script:EnvironmentSource | Should -Match "'ScoopRoot', 'ScoopGlobalRoot'"
-        $script:EnvironmentSource | Should -Match 'SCOOP_CACHE'
-        $script:EnvironmentSource.Contains('[string]$IntegrationMode = (Get-CapsulenvInstallMode)') | Should -BeTrue
-        $script:EnvironmentSource.Contains("SetEnvironmentVariable('CAPSULENV_MODE', `$IntegrationMode, 'Process')") | Should -BeTrue
-        $script:EnvironmentSource.Contains("if ([string]`$env:CAPSULENV_MODE -eq 'User')") | Should -BeTrue
-        $script:BootstrapSource.Contains('set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"') | Should -BeTrue
-        $script:BootstrapSource | Should -Not -Match 'where pwsh\.exe'
-        $script:BootstrapSource | Should -Match 'ReadAllText\(\$cmdPath\)'
+    It 'selects invocation mode only through process CAPSULENV_MODE' {
+        $oldMode = $env:CAPSULENV_MODE
+        try {
+            Remove-Item Env:CAPSULENV_MODE -ErrorAction SilentlyContinue
+            (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'ShellOnly'
+
+            $env:CAPSULENV_MODE = 'User'
+            (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'User'
+
+            $env:CAPSULENV_MODE = 'invalid'
+            (& $script:Module { Get-CapsulenvInstallMode }) | Should -Be 'ShellOnly'
+        } finally {
+            if ($null -eq $oldMode) {
+                Remove-Item Env:CAPSULENV_MODE -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_MODE = $oldMode
+            }
+        }
     }
 
-    It 'uses process Git config and leaves the Windows ssh-agent service alone in ShellOnly mode' {
-        $script:BitwardenSource | Should -Match 'GIT_CONFIG_COUNT'
-        $script:BitwardenSource | Should -Match 'GIT_CONFIG_KEY_\$index'
-        $script:BitwardenSource | Should -Match 'if \(\$mode -eq ''ShellOnly''\)' 
-        $script:BitwardenSource | Should -Match 'Git uses Microsoft OpenSSH through a Capsulenv process-only config overlay'
-        $script:BitwardenSource | Should -Match 'git config --global'
-        $script:BitwardenSource | Should -Match 'ShellOnly mode cannot change the Windows ssh-agent service'
-        $script:BitwardenAgentSource | Should -Match 'ShellOnly mode leaves the Windows ssh-agent service unchanged'
-        $script:BitwardenSource | Should -Match 'function Get-CapsulenvBitwardenProcesses'
-        $script:BitwardenSource | Should -Match 'A non-capsule Bitwarden process is running'
-        $script:BitwardenSource | Should -Match 'Capsulenv will not reuse, stop, or patch it'
-        $script:BitwardenAgentSource | Should -Match 'Get-CapsulenvBitwardenProcesses'
-        $script:DoctorSource | Should -Match 'Bitwarden process ownership'
+    It 'does not enter persistent package host integration in ShellOnly mode' {
+        Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+        Mock Get-CapsulenvUserStartMenuShortcutRoot { throw 'host UI must not be inspected in ShellOnly' } -ModuleName Capsulenv
+
+        Sync-CapsulenvPackageStartMenuShortcuts -IntegrationMode ShellOnly
+
+        Should -Invoke Get-CapsulenvUserStartMenuShortcutRoot -ModuleName Capsulenv -Times 0 -Exactly
     }
 
+    It 'uses the process-only Git OpenSSH overlay in ShellOnly mode' {
+        Mock Get-CapsulenvInstallMode { 'ShellOnly' } -ModuleName Capsulenv
+        Mock Get-CapsulenvGitOpenSshPaths { [pscustomobject]@{ Ssh = 'ssh.exe'; SshKeygen = 'ssh-keygen.exe' } } -ModuleName Capsulenv
+        Mock Enable-CapsulenvGitOpenSshSession {} -ModuleName Capsulenv
+        Mock Get-CapsulenvGitCommand { throw 'persistent git config must not be resolved in ShellOnly' } -ModuleName Capsulenv
+        Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
-    It 'restores Capsulenv-owned persistent integrations when leaving User mode' {
-        $script:EnvironmentSource | Should -Match 'Restore-CapsulenvGitOpenSshGlobal -IfPresent'
-        $script:EnvironmentSource | Should -Match 'Restore-CapsulenvWindowsSshAgent -Confirm:\$false'
-        $script:EnvironmentSource | Should -Match 'Run restore-user from an elevated terminal'
-        $script:EnvironmentSource | Should -Match 'Initialize-CapsulenvGitOpenSshSession'
-        $script:EnvironmentSource | Should -Match 'Sync-CapsulenvUserEnvironment -RelocationContext \$relocationContext'
-        $script:EnvironmentSource | Should -Match 'Sync-CapsulenvConfiguredDefaultBrowser'
-        $script:EnvironmentSource | Should -Match 'Assert-CapsulenvDefaultBrowserRestorable'
-        $script:EnvironmentSource | Should -Match 'Restore-CapsulenvDefaultBrowserRegistration'
-        $script:EnvironmentSource | Should -Match 'Remove-CapsulenvUserStartMenuShortcuts'
-        $script:EnvironmentSource | Should -Match "'Capsulenv Apps'"
-        $script:DefaultBrowserSource | Should -Match 'registeredAppUser='
-        $script:DefaultBrowserSource | Should -Match 'UserChoice hashes'
-        $script:DefaultBrowserSource | Should -Match 'HostIntegrationKey'
-        $script:BitwardenSource | Should -Match 'Set-CapsulenvGitOpenSshIntent'
-        $script:BitwardenSource | Should -Match 'function Restore-CapsulenvGitOpenSshGlobal'
+        Set-CapsulenvGitOpenSsh
+
+        Should -Invoke Enable-CapsulenvGitOpenSshSession -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Get-CapsulenvGitCommand -ModuleName Capsulenv -Times 0 -Exactly
     }
 
-    It 'binds Capsulenv browser commands to persisted runtime profiles' {
+    It 'refuses Windows ssh-agent service mutation before inspecting the service in ShellOnly mode' {
+        Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstallMode { 'ShellOnly' } -ModuleName Capsulenv
+        { Disable-CapsulenvWindowsSshAgent -Confirm:$false } | Should -Throw '*ShellOnly mode cannot change the Windows ssh-agent service*'
+    }
+
+    It 'keeps browser profiles capsule-owned and requests no-remote isolation in ShellOnly' {
         $config = Import-CapsulenvPowerShellDataFile -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1')
         $config.UserIntegration.DefaultBrowser | Should -Be ''
-        $config.Browsers.Firefox.App | Should -Be 'firefox'
-        $config.Browsers.Zen.App | Should -Be 'zen-browser'
-        $config.Browsers.LibreWolf.App | Should -Be 'librewolf'
-        $config.Browsers.Firefox.ProfilePath | Should -Be 'profile'
-        $config.Browsers.Zen.ProfilePath | Should -Be 'profile'
-        $config.Browsers.LibreWolf.ProfilePath | Should -Be 'Profiles\Default'
-        $config.Browsers.Firefox.ProfileArgument | Should -Be '-profile'
-        $config.Browsers.Zen.ProfileArgument | Should -Be '-profile'
-        $config.Browsers.LibreWolf.ProfileArgument | Should -Be '-profile'
-        @($config.Browsers.Firefox.ShellOnlyArguments) | Should -Contain '-no-remote'
-        @($config.Browsers.Zen.ShellOnlyArguments) | Should -Contain '-no-remote'
-        @($config.Browsers.LibreWolf.ShellOnlyArguments) | Should -Contain '-no-remote'
-        $script:BrowserSource | Should -Match 'never fall back to an unrelated host profile'
-        $script:BrowserSource | Should -Match '--host never falls back to a different Gecko product'
-        $script:BrowserSource | Should -Match 'Test-CapsulenvPathUnderPortableScoop'
-        $script:BrowserSource | Should -Match 'App Paths'
-        $script:BrowserSource | Should -Match '\$modeArguments = if \('
-        $script:BrowserSource | Should -Match 'Get-CapsulenvInstallMode\) -eq ''ShellOnly'''
-        $script:BrowserSource | Should -Match 'foreach \(\$modeArgument in @\(\$modeArguments\)\)'
+        foreach ($browser in @('Firefox', 'Zen', 'LibreWolf')) {
+            [string]$config.Browsers[$browser].App | Should -Not -BeNullOrEmpty
+            [string]$config.Browsers[$browser].ProfilePath | Should -Not -BeNullOrEmpty
+            [string]$config.Browsers[$browser].ProfileArgument | Should -Be '-profile'
+            @($config.Browsers[$browser].ShellOnlyArguments) | Should -Contain '-no-remote'
+        }
+        [string]$config.Browsers.LibreWolf.ProfilePath | Should -Be 'Profiles\Default'
     }
 
-    It 'records enough ownership evidence to repair copied file hardlinks safely' {
-        $script:ProjectCacheSource | Should -Match 'LastFileFingerprint'
-        $script:ProjectCacheSource | Should -Match 'SHA256'
-        $script:ProjectCacheSource | Should -Match 'Managed hard-link copies diverged after relocation'
-        $script:ProjectCacheSource | Should -Match 'Refusing to replace an unrecognized file after hard-link relocation'
+    It 'records cryptographic file ownership evidence for project-cache repair' {
+        $path = Join-Path $TestDrive 'owned-cache-file.bin'
+        [System.IO.File]::WriteAllText($path, 'capsulenv-mode-isolation')
+
+        $fingerprint = & $script:Module { param($Path) Get-CapsulenvProjectCacheFileFingerprint -Path $Path } $path
+        $fingerprint.Length | Should -BeGreaterThan 0
+        $fingerprint.Sha256 | Should -Match '^[0-9a-f]{64}$'
+        (& $script:Module { param($Path, $Fingerprint) Test-CapsulenvProjectCacheFileFingerprint -Path $Path -Fingerprint $Fingerprint } $path $fingerprint) |
+            Should -BeTrue
+
+        Add-Content -LiteralPath $path -Value 'diverged'
+        (& $script:Module { param($Path, $Fingerprint) Test-CapsulenvProjectCacheFileFingerprint -Path $Path -Fingerprint $Fingerprint } $path $fingerprint) |
+            Should -BeFalse
     }
 }

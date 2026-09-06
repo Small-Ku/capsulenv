@@ -236,6 +236,18 @@ if ($projectCacheOrderingViolations.Count -gt 0) {
     throw "Capsulenv project-cache ordering analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
+$modeIsolationBoundaryViolations = @(
+    Get-CapsulenvModeIsolationBoundaryViolations `
+        -EnvironmentPath (Join-Path (Join-Path $root 'src') '30-Environment.ps1') `
+        -PackageHostIntegrationPath (Join-Path (Join-Path $root 'src') '45-PackageHostIntegration.ps1') `
+        -BitwardenPath (Join-Path (Join-Path $root 'src') '50-Bitwarden.ps1') `
+        -LegacyProjectionPath (Join-Path (Join-Path $root 'src') '46-LegacyScoopProjection.ps1')
+)
+if ($modeIsolationBoundaryViolations.Count -gt 0) {
+    $detail = $modeIsolationBoundaryViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv install-mode isolation analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
 $bitwardenStateBoundaryViolations = @(Get-CapsulenvBitwardenStateBoundaryViolations -Path (Join-Path (Join-Path $root 'src') '55-BitwardenSshAgent.ps1'))
 if ($bitwardenStateBoundaryViolations.Count -gt 0) {
     $detail = $bitwardenStateBoundaryViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
@@ -287,6 +299,7 @@ if ($diagnostics.Count -gt 0) {
     InstallerLifecycleBoundaryViolations = $installerLifecycleViolations.Count
     PersistRelocationScanViolations = $persistRelocationScanViolations.Count
     ProjectCacheOrderingViolations = $projectCacheOrderingViolations.Count
+    ModeIsolationBoundaryViolations = $modeIsolationBoundaryViolations.Count
     BitwardenStateBoundaryViolations = $bitwardenStateBoundaryViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }

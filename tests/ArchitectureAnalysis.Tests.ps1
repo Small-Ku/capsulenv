@@ -605,4 +605,64 @@ function Restore-CapsulenvBitwardenDesktopSettings {
         @(Get-CapsulenvBitwardenStateBoundaryViolations -Path (Join-Path (Join-Path $script:Root 'src') '55-BitwardenSshAgent.ps1')).Count | Should -Be 0
     }
 
+
+    It 'rejects ShellOnly/User ownership leaks across host-integration boundaries' {
+        $environmentFixture = New-CapsulenvStaticFixture -Name 'mode-environment-unsafe.ps1' -Source @'
+function Restore-CapsulenvUserEnvironment {
+    Set-CapsulenvInstallMode -Mode ShellOnly
+}
+function Invoke-CapsulenvChildShell {
+    Sync-CapsulenvConfiguredDefaultBrowser
+}
+'@
+        $hostFixture = New-CapsulenvStaticFixture -Name 'mode-host-unsafe.ps1' -Source @'
+function Sync-CapsulenvPackageStartMenuShortcuts {
+    param([string]$IntegrationMode)
+    New-Item -ItemType Directory -Path C:\HostUi
+}
+'@
+        $bitwardenFixture = New-CapsulenvStaticFixture -Name 'mode-bitwarden-unsafe.ps1' -Source @'
+function Disable-CapsulenvWindowsSshAgent {
+    Set-Service -Name ssh-agent -StartupType Disabled
+}
+function Set-CapsulenvGitOpenSsh {
+    & $git config --global --replace-all core.sshCommand ssh.exe
+    if ($mode -eq 'ShellOnly') {
+        Enable-CapsulenvGitOpenSshSession
+        return
+    }
+}
+'@
+        $legacyFixture = New-CapsulenvStaticFixture -Name 'mode-legacy-unsafe.ps1' -Source @'
+function Repair-CapsulenvInstalledAppProjections {
+    param([string]$IntegrationMode)
+    Sync-CapsulenvPackageStartMenuShortcuts -IntegrationMode $IntegrationMode
+    New-Object -ComObject WScript.Shell
+}
+'@
+        $violations = @(
+            Get-CapsulenvModeIsolationBoundaryViolations `
+                -EnvironmentPath $environmentFixture `
+                -PackageHostIntegrationPath $hostFixture `
+                -BitwardenPath $bitwardenFixture `
+                -LegacyProjectionPath $legacyFixture
+        )
+        @($violations.Rule) | Should -Contain 'ModeIsolationStartMenuUserGuard'
+        @($violations.Rule) | Should -Contain 'ModeIsolationSshAgentUserGuard'
+        @($violations.Rule) | Should -Contain 'ModeIsolationGitShellOnlyEarlyReturn'
+        @($violations.Rule) | Should -Contain 'ModeIsolationRestoreUserOwnership'
+        @($violations.Rule) | Should -Contain 'ModeIsolationBrowserUserGuard'
+        @($violations.Rule) | Should -Contain 'ModeIsolationLegacyProjectionUserHostGuard'
+        @($violations.Rule) | Should -Contain 'ModeIsolationLegacyProjectionNoHostUi'
+    }
+
+    It 'accepts repository ShellOnly/User ownership boundaries' {
+        @(Get-CapsulenvModeIsolationBoundaryViolations `
+            -EnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-Environment.ps1') `
+            -PackageHostIntegrationPath (Join-Path (Join-Path $script:Root 'src') '45-PackageHostIntegration.ps1') `
+            -BitwardenPath (Join-Path (Join-Path $script:Root 'src') '50-Bitwarden.ps1') `
+            -LegacyProjectionPath (Join-Path (Join-Path $script:Root 'src') '46-LegacyScoopProjection.ps1')
+        ).Count | Should -Be 0
+    }
+
 }

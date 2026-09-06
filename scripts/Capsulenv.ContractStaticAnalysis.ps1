@@ -255,3 +255,137 @@ function Get-CapsulenvBitwardenStateBoundaryViolations {
 
     return $violations.ToArray()
 }
+
+function Get-CapsulenvModeIsolationBoundaryViolations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$EnvironmentPath,
+        [Parameter(Mandatory = $true)][string]$PackageHostIntegrationPath,
+        [Parameter(Mandatory = $true)][string]$BitwardenPath,
+        [Parameter(Mandatory = $true)][string]$LegacyProjectionPath
+    )
+
+    $violations = New-Object System.Collections.Generic.List[object]
+
+    function Add-ModeViolation {
+        param($Ast, [string]$Path, [string]$Rule, [string]$Detail)
+        $violations.Add([pscustomobject]@{
+            Rule = $Rule
+            Path = [System.IO.Path]::GetFullPath($Path)
+            Line = [int]$Ast.Extent.StartLineNumber
+            Column = [int]$Ast.Extent.StartColumnNumber
+            Detail = $Detail
+        })
+    }
+
+    function Get-CommandsInFunction {
+        param($FunctionAst)
+        return @($FunctionAst.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+    }
+
+    # Persistent Start Menu projection belongs exclusively to User mode.  The
+    # guard must dominate the first host mutation instead of relying on callers
+    # to remember the correct mode.
+    $startMenu = Get-CapsulenvFunctionAst -Path $PackageHostIntegrationPath -Name 'Sync-CapsulenvPackageStartMenuShortcuts'
+    $startMenuMutations = @(Get-CommandsInFunction $startMenu | Where-Object {
+        [string]$_.GetCommandName() -in @('Remove-Item', 'New-Item', 'New-Object')
+    } | Sort-Object { $_.Extent.StartOffset })
+    $startMenuGuard = @($startMenu.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] }, $true) | Where-Object {
+        $_.Extent.Text -match '\$IntegrationMode' -and
+        $_.Extent.Text -match "'User'" -and
+        @($_.Clauses.Item2.FindAll({ param($node) $node -is [System.Management.Automation.Language.ReturnStatementAst] }, $true)).Count -gt 0
+    } | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1)
+    if ($startMenuGuard.Count -eq 0 -or ($startMenuMutations.Count -gt 0 -and $startMenuGuard[0].Extent.StartOffset -gt $startMenuMutations[0].Extent.StartOffset)) {
+        Add-ModeViolation -Ast $startMenu -Path $PackageHostIntegrationPath -Rule 'ModeIsolationStartMenuUserGuard' -Detail 'persistent Start Menu projection must return before host mutation unless IntegrationMode is User'
+    }
+
+    # Machine-level ssh-agent mutation is never permitted in ShellOnly.
+    $disableAgent = Get-CapsulenvFunctionAst -Path $BitwardenPath -Name 'Disable-CapsulenvWindowsSshAgent'
+    $serviceMutations = @(Get-CommandsInFunction $disableAgent | Where-Object {
+        [string]$_.GetCommandName() -in @('Stop-Service', 'Set-Service')
+    } | Sort-Object { $_.Extent.StartOffset })
+    $agentGuard = @($disableAgent.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] }, $true) | Where-Object {
+        $_.Extent.Text -match 'Get-CapsulenvInstallMode' -and
+        $_.Extent.Text -match "'User'" -and
+        @($_.Clauses.Item2.FindAll({ param($node) $node -is [System.Management.Automation.Language.ThrowStatementAst] }, $true)).Count -gt 0
+    } | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1)
+    if ($agentGuard.Count -eq 0 -or ($serviceMutations.Count -gt 0 -and $agentGuard[0].Extent.StartOffset -gt $serviceMutations[0].Extent.StartOffset)) {
+        Add-ModeViolation -Ast $disableAgent -Path $BitwardenPath -Rule 'ModeIsolationSshAgentUserGuard' -Detail 'Windows ssh-agent service mutation must be dominated by a User-mode guard'
+    }
+
+    # ShellOnly Git integration must exit through the process-only overlay before
+    # any dynamic `git config --global` command becomes reachable.
+    $gitSetup = Get-CapsulenvFunctionAst -Path $BitwardenPath -Name 'Set-CapsulenvGitOpenSsh'
+    $shellOnlyBranch = @($gitSetup.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] }, $true) | Where-Object {
+        $_.Extent.Text -match "'ShellOnly'" -and
+        @($_.Clauses.Item2.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and [string]$node.GetCommandName() -eq 'Enable-CapsulenvGitOpenSshSession' }, $true)).Count -gt 0 -and
+        @($_.Clauses.Item2.FindAll({ param($node) $node -is [System.Management.Automation.Language.ReturnStatementAst] }, $true)).Count -gt 0
+    } | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1)
+    $globalGit = @(Get-CommandsInFunction $gitSetup | Where-Object { $_.Extent.Text -match '(?i)\bconfig\s+--global\b' } | Sort-Object { $_.Extent.StartOffset })
+    if ($shellOnlyBranch.Count -eq 0 -or ($globalGit.Count -gt 0 -and $shellOnlyBranch[0].Extent.StartOffset -gt $globalGit[0].Extent.StartOffset)) {
+        Add-ModeViolation -Ast $gitSetup -Path $BitwardenPath -Rule 'ModeIsolationGitShellOnlyEarlyReturn' -Detail 'ShellOnly Git integration must use the process-only overlay and return before any git config --global mutation'
+    }
+
+    # Leaving User mode is a transactional ownership boundary.  Every persistent
+    # integration Capsulenv can own must be restored/removed before mode flips.
+    $restoreUser = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Restore-CapsulenvUserEnvironment'
+    $restoreCommands = @(Get-CommandsInFunction $restoreUser | ForEach-Object { [string]$_.GetCommandName() })
+    foreach ($required in @(
+        'Restore-CapsulenvWindowsSshAgent',
+        'Restore-CapsulenvGitOpenSshGlobal',
+        'Restore-CapsulenvDefaultBrowserRegistration',
+        'Remove-CapsulenvUserStartMenuShortcuts',
+        'Set-CapsulenvInstallMode'
+    )) {
+        if ($restoreCommands -contains $required) { continue }
+        Add-ModeViolation -Ast $restoreUser -Path $EnvironmentPath -Rule 'ModeIsolationRestoreUserOwnership' -Detail "Restore-CapsulenvUserEnvironment must include ownership restoration step: $required"
+    }
+
+    # A normal child shell may refresh persistent browser registration only in
+    # User mode.  ShellOnly activation must not inherit persistent host writes.
+    $childShell = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Invoke-CapsulenvChildShell'
+    foreach ($syncCommand in @(Get-CommandsInFunction $childShell | Where-Object { [string]$_.GetCommandName() -eq 'Sync-CapsulenvConfiguredDefaultBrowser' })) {
+        $cursor = $syncCommand.Parent
+        $guarded = $false
+        while ($null -ne $cursor -and $cursor -ne $childShell) {
+            if ($cursor -is [System.Management.Automation.Language.IfStatementAst] -and
+                $cursor.Extent.Text -match '\$IntegrationMode' -and
+                $cursor.Extent.Text -match "'User'") {
+                $guarded = $true
+                break
+            }
+            $cursor = $cursor.Parent
+        }
+        if (-not $guarded) {
+            Add-ModeViolation -Ast $syncCommand -Path $EnvironmentPath -Rule 'ModeIsolationBrowserUserGuard' -Detail 'persistent default-browser synchronization from child-shell activation must be guarded by IntegrationMode User'
+        }
+    }
+
+    # Legacy projection repair owns files/links only.  Host UI integration is a
+    # separate User-mode node and must never leak back into projection repair.
+    $legacyAst = Get-CapsulenvStaticAst -Path $LegacyProjectionPath
+    foreach ($commandAst in @($legacyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))) {
+        $commandName = [string]$commandAst.GetCommandName()
+        if ($commandName -eq 'New-Object' -and $commandAst.Extent.Text -match '(?i)WScript\.Shell') {
+            Add-ModeViolation -Ast $commandAst -Path $LegacyProjectionPath -Rule 'ModeIsolationLegacyProjectionNoHostUi' -Detail 'legacy package projection code must not own host shortcut implementation'
+            continue
+        }
+        if ($commandName -ne 'Sync-CapsulenvPackageStartMenuShortcuts') { continue }
+        $cursor = $commandAst.Parent
+        $guarded = $false
+        while ($null -ne $cursor -and $cursor -ne $legacyAst) {
+            if ($cursor -is [System.Management.Automation.Language.IfStatementAst] -and
+                $cursor.Extent.Text -match '\$IntegrationMode' -and
+                $cursor.Extent.Text -match "'User'") {
+                $guarded = $true
+                break
+            }
+            $cursor = $cursor.Parent
+        }
+        if (-not $guarded) {
+            Add-ModeViolation -Ast $commandAst -Path $LegacyProjectionPath -Rule 'ModeIsolationLegacyProjectionUserHostGuard' -Detail 'legacy projection wrapper may synchronize host shortcuts only under an explicit IntegrationMode User guard'
+        }
+    }
+
+    return $violations.ToArray()
+}
