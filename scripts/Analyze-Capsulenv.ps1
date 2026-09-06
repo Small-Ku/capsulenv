@@ -302,7 +302,8 @@ $toolStorageHotPathViolations = @(
 )
 $rehydrationHotPathViolations = @(
     Get-CapsulenvRehydrationHotPathViolations `
-        -ScoopPath (Join-Path (Join-Path $root 'src') '40-Scoop.ps1')
+        -ScoopPath (Join-Path (Join-Path $root 'src') '40-Scoop.ps1') `
+        -IntegrationsPath (Join-Path (Join-Path $root 'src') '70-Doctor.ps1')
 )
 if ($toolStorageHotPathViolations.Count -gt 0) {
     $detail = $toolStorageHotPathViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }

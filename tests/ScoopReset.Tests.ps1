@@ -152,43 +152,60 @@ Describe 'Capsulenv package projection repair boundary' {
         }
     }
 
-    It 'uses the same desired-state graph for steady activation without relocation-only mutations' {
-        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
-        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
-        Mock Get-CapsulenvPackageProjectionRepairDescriptors { @() } -ModuleName Capsulenv
-        Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
+    It 'bypasses the relocation graph on generation-ready steady activation' {
+        Mock Test-CapsulenvScoopRehydrationRequired { $false } -ModuleName Capsulenv
+        Mock Get-CapsulenvIntegrationDesiredStatePlan { throw 'steady activation must not materialize the relocation graph' } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvDesiredStatePlan { throw 'steady activation must not execute the relocation graph' } -ModuleName Capsulenv
+        Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{ IntegrationMode='ShellOnly' } } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvRoutines { throw 'steady activation must not run OnRehydrate routines' } -ModuleName Capsulenv
 
-        $integration = & $script:Module {
-            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false
-        }
-        $operations = @{}
-        foreach ($decision in @($integration.Plan.Nodes)) { $operations[[string]$decision.Id] = [string]$decision.Operation }
+        $results = @(& $script:Module { Invoke-CapsulenvIntegrationDesiredState -IntegrationMode ShellOnly })
 
-        $operations['session-environment'] | Should -Be 'Apply'
-        $operations['package-projections'] | Should -Be 'NoOp'
-        $operations['project-cache-links'] | Should -Be 'NoOp'
-        $operations['user-environment-backup'] | Should -Be 'NoOp'
-        $operations['package-host-integration'] | Should -Be 'NoOp'
-        $operations['persist-relocation'] | Should -Be 'NoOp'
-        $operations['tool-relocation'] | Should -Be 'NoOp'
-        $operations['user-integration'] | Should -Be 'NoOp'
-        $operations['rehydration-state'] | Should -Be 'NoOp'
-        Should -Invoke Get-CapsulenvPackageProjectionRepairDescriptors -ModuleName Capsulenv -Times 0 -Exactly
-        Should -Invoke Get-CapsulenvProjectCacheRepairDescriptorSet -ModuleName Capsulenv -Times 0 -Exactly
+        $results | Should -HaveCount 0
+        Should -Invoke Set-CapsulenvSessionEnvironment -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $IntegrationMode -eq 'ShellOnly' }
+        Should -Invoke Get-CapsulenvIntegrationDesiredStatePlan -ModuleName Capsulenv -Times 0 -Exactly
+        Should -Invoke Invoke-CapsulenvDesiredStatePlan -ModuleName Capsulenv -Times 0 -Exactly
+        Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 0 -Exactly
     }
 
-    It 'keeps User host projection repair off the steady activation path' {
-        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
-        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
-        Mock Get-CapsulenvPackageProjectionRepairDescriptors { throw 'steady activation must not enumerate package projections' } -ModuleName Capsulenv
-        Mock Get-CapsulenvProjectCacheRepairDescriptorSet { throw 'steady activation must not enumerate project-cache repairs' } -ModuleName Capsulenv
+    It 'retains the full desired-state graph when the generation requires rehydration' {
+        Mock Test-CapsulenvScoopRehydrationRequired { $true } -ModuleName Capsulenv
+        Mock Get-CapsulenvIntegrationDesiredStatePlan {
+            [pscustomobject]@{ Plan='rehydrate-plan'; Context='rehydrate-context' }
+        } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvDesiredStatePlan {
+            @([pscustomobject]@{ Id='rehydration-state'; Output=[pscustomobject]@{ ProjectionRepairComplete=$true; ProjectionRepairRetryRequired=$false; ProjectionRepairIssues=@() } })
+        } -ModuleName Capsulenv
+        Mock Write-CapsulenvRehydrationResult {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvRoutines {} -ModuleName Capsulenv
+        Mock Set-CapsulenvSessionEnvironment { throw 'rehydration must remain owned by the graph session node' } -ModuleName Capsulenv
+        Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
-        $integration = & $script:Module {
-            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode User -RehydrationRequired $false
-        }
-        $operations = @{}
-        foreach ($decision in @($integration.Plan.Nodes)) { $operations[[string]$decision.Id] = [string]$decision.Operation }
-        $operations['package-host-integration'] | Should -Be 'NoOp'
+        $results = @(& $script:Module { Invoke-CapsulenvIntegrationDesiredState -IntegrationMode User })
+
+        $results | Should -HaveCount 1
+        Should -Invoke Get-CapsulenvIntegrationDesiredStatePlan -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $IntegrationMode -eq 'User' -and $RehydrationRequired }
+        Should -Invoke Invoke-CapsulenvDesiredStatePlan -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Write-CapsulenvRehydrationResult -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnRehydrate' }
+        Should -Invoke Set-CapsulenvSessionEnvironment -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
+    It 'bypasses the relocation graph entirely when relocation rehydration is disabled' {
+        Mock Initialize-CapsulenvScoopBootstrap {} -ModuleName Capsulenv
+        Mock Get-CapsulenvConfiguration { [pscustomobject]@{ Scoop=[pscustomobject]@{ RehydrateOnRelocation=$false } } } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvIntegrationDesiredState { throw 'disabled relocation rehydration must not enter graph dispatch' } -ModuleName Capsulenv
+        Mock Get-CapsulenvIntegrationDesiredStatePlan { throw 'disabled relocation rehydration must not build a graph' } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvDesiredStatePlan { throw 'disabled relocation rehydration must not execute a graph' } -ModuleName Capsulenv
+        Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{ IntegrationMode='User' } } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvBitwarden {} -ModuleName Capsulenv
+
+        & $script:Module { Initialize-CapsulenvIntegrations -IntegrationMode User }
+
+        Should -Invoke Set-CapsulenvSessionEnvironment -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $IntegrationMode -eq 'User' }
+        Should -Invoke Invoke-CapsulenvIntegrationDesiredState -ModuleName Capsulenv -Times 0 -Exactly
+        Should -Invoke Get-CapsulenvIntegrationDesiredStatePlan -ModuleName Capsulenv -Times 0 -Exactly
+        Should -Invoke Invoke-CapsulenvDesiredStatePlan -ModuleName Capsulenv -Times 0 -Exactly
     }
 
     It 'delegates the compatibility reset command to bounded projection repair only' {

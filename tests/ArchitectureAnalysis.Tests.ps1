@@ -930,16 +930,28 @@ function Save-CapsulenvRehydrationState {
     [System.IO.File]::WriteAllText('state.json', '{}')
     Remove-CapsulenvScoopRehydrationMarker
 }
+function Invoke-CapsulenvIntegrationDesiredState {
+    $rehydrationRequired = Test-CapsulenvScoopRehydrationRequired
+    $integration = Get-CapsulenvIntegrationDesiredStatePlan
+    Invoke-CapsulenvDesiredStatePlan -Plan $integration.Plan -Context $integration.Context
+}
+function Initialize-CapsulenvIntegrations {
+    Get-CapsulenvIntegrationDesiredStatePlan
+}
 '@
-        $violations = @(Get-CapsulenvRehydrationHotPathViolations -ScoopPath $fixture)
+        $violations = @(Get-CapsulenvRehydrationHotPathViolations -ScoopPath $fixture -IntegrationsPath $fixture)
         @($violations.Rule) | Should -Contain 'RehydrationReadyNoDetailIo'
         @($violations.Rule) | Should -Contain 'RehydrationReadyInvalidatedBeforeStateWrite'
         @($violations.Rule) | Should -Contain 'RehydrationReadyCommitRequired'
+        @($violations.Rule) | Should -Contain 'RehydrationSteadyBypassesDesiredStatePlan'
+        @($violations.Rule) | Should -Contain 'RehydrationSteadySessionRequired'
+        @($violations.Rule) | Should -Contain 'RehydrationDisabledBypassesDesiredStatePlan'
     }
 
     It 'accepts generation-gated rehydration readiness publication' {
         @(Get-CapsulenvRehydrationHotPathViolations `
-            -ScoopPath (Join-Path (Join-Path $script:Root 'src') '40-Scoop.ps1')).Count | Should -Be 0
+            -ScoopPath (Join-Path (Join-Path $script:Root 'src') '40-Scoop.ps1') `
+            -IntegrationsPath (Join-Path (Join-Path $script:Root 'src') '70-Doctor.ps1')).Count | Should -Be 0
     }
 
 }

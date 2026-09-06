@@ -91,7 +91,10 @@ function Get-CapsulenvToolStorageHotPathViolations {
 
 function Get-CapsulenvRehydrationHotPathViolations {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$ScoopPath)
+    param(
+        [Parameter(Mandatory = $true)][string]$ScoopPath,
+        [Parameter(Mandatory = $true)][string]$IntegrationsPath
+    )
 
     $violations = New-Object System.Collections.Generic.List[object]
     function Add-RehydrationHotPathViolation {
@@ -136,6 +139,41 @@ function Get-CapsulenvRehydrationHotPathViolations {
     $markerCalls = @(Get-RehydrationCommands $test | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvScoopRehydrationMarkerPaths' })
     if ($markerCalls.Count -ne 1) {
         Add-RehydrationHotPathViolation -Ast $test -Rule 'RehydrationReadyMarkerRequired' -Detail 'steady rehydration detection must derive exactly one generation/fingerprint marker set'
+    }
+
+    $invoke = Get-CapsulenvFunctionAst -Path $ScoopPath -Name 'Invoke-CapsulenvIntegrationDesiredState'
+    $invokeCommands = @(Get-RehydrationCommands $invoke)
+    $planCommands = @($invokeCommands | Where-Object { [string]$_.GetCommandName() -in @('Get-CapsulenvIntegrationDesiredStatePlan','Invoke-CapsulenvDesiredStatePlan') })
+    foreach ($commandAst in $planCommands) {
+        $guarded = $false
+        for ($ancestor = $commandAst.Parent; $null -ne $ancestor -and $ancestor -ne $invoke; $ancestor = $ancestor.Parent) {
+            if ($ancestor -isnot [System.Management.Automation.Language.IfStatementAst]) { continue }
+            foreach ($clause in @($ancestor.Clauses)) {
+                $condition = $clause.Item1
+                $body = $clause.Item2
+                if ($null -eq $condition -or $null -eq $body) { continue }
+                if ($commandAst.Extent.StartOffset -lt $body.Extent.StartOffset -or $commandAst.Extent.EndOffset -gt $body.Extent.EndOffset) { continue }
+                if ([string]$condition.Extent.Text -match '(?i)rehydrationRequired') { $guarded = $true; break }
+            }
+            if ($guarded) { break }
+        }
+        if (-not $guarded) {
+            Add-RehydrationHotPathViolation -Ast $commandAst -Rule 'RehydrationSteadyBypassesDesiredStatePlan' -Detail 'normal activation must not build or execute the relocation desired-state graph after readiness is established'
+        }
+    }
+    if (@($invokeCommands | Where-Object { [string]$_.GetCommandName() -eq 'Set-CapsulenvSessionEnvironment' }).Count -eq 0) {
+        Add-RehydrationHotPathViolation -Ast $invoke -Rule 'RehydrationSteadySessionRequired' -Detail 'normal activation must retain direct session-environment setup when relocation repair is not required'
+    }
+
+    $integrations = Get-CapsulenvFunctionAst -Path $IntegrationsPath -Name 'Initialize-CapsulenvIntegrations'
+    foreach ($commandAst in @(Get-RehydrationCommands $integrations | Where-Object { [string]$_.GetCommandName() -in @('Get-CapsulenvIntegrationDesiredStatePlan','Invoke-CapsulenvDesiredStatePlan') })) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'RehydrationDisabledBypassesDesiredStatePlan'
+            Path = [System.IO.Path]::GetFullPath($IntegrationsPath)
+            Line = [int]$commandAst.Extent.StartLineNumber
+            Column = [int]$commandAst.Extent.StartColumnNumber
+            Detail = 'RehydrateOnRelocation=false must initialize the session directly instead of materializing a relocation graph'
+        })
     }
 
     $save = Get-CapsulenvFunctionAst -Path $ScoopPath -Name 'Save-CapsulenvRehydrationState'

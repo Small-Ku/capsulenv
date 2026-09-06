@@ -331,8 +331,7 @@ function Initialize-CapsulenvIntegrations {
     if ($configuration.Scoop.RehydrateOnRelocation) {
         [void](Invoke-CapsulenvIntegrationDesiredState -IntegrationMode $IntegrationMode)
     } else {
-        $integration = Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode $IntegrationMode -RehydrationRequired $false
-        [void](Invoke-CapsulenvDesiredStatePlan -Plan $integration.Plan -Context $integration.Context)
+        [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
     }
     Initialize-CapsulenvBitwarden
 }

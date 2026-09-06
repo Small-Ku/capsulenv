@@ -497,19 +497,20 @@ function Invoke-CapsulenvIntegrationDesiredState {
     $rehydrationRequired = [bool](Test-CapsulenvScoopRehydrationRequired)
     if ($rehydrationRequired) {
         Write-CapsulenvMessage -Level Info -Message 'Capsule root or host changed; rehydrating installed package projections...'
-    }
-    $integration = Get-CapsulenvIntegrationDesiredStatePlan `
-        -SkipPersistRepairs:$SkipPersistRepairs `
-        -SkipToolRepairs:$SkipToolRepairs `
-        -StrictToolRepairs:$StrictToolRepairs `
-        -IntegrationMode $IntegrationMode `
-        -RehydrationRequired $rehydrationRequired
-    $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $integration.Plan -Context $integration.Context)
-    if ($rehydrationRequired) {
+        $integration = Get-CapsulenvIntegrationDesiredStatePlan `
+            -SkipPersistRepairs:$SkipPersistRepairs `
+            -SkipToolRepairs:$SkipToolRepairs `
+            -StrictToolRepairs:$StrictToolRepairs `
+            -IntegrationMode $IntegrationMode `
+            -RehydrationRequired $true
+        $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $integration.Plan -Context $integration.Context)
         Write-CapsulenvRehydrationResult -Results $results -IntegrationMode $IntegrationMode
         [void](Invoke-CapsulenvRoutines -Trigger OnRehydrate)
+        return $results
     }
-    return $results
+
+    [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
+    return @()
 }
 
 function Invoke-CapsulenvScoopRehydrate {
