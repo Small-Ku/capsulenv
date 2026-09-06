@@ -318,7 +318,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         $packageProjectionDescriptorMap[$nodeId] = $descriptor
         $packageProjectionNodeIds.Add($nodeId)
         $packageProjectionNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
-            -DependsOn @('session-environment','user-environment-backup') `
+            -DependsOn 'session-environment' `
             -ReadResources $readResources.ToArray() `
             -WriteResources $writeResources.ToArray() `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
@@ -330,7 +330,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
     $packageProjectionBarrierDependencies = if ($packageProjectionNodeIds.Count -gt 0) {
         [string[]]$packageProjectionNodeIds.ToArray()
     } else {
-        [string[]]@('session-environment','user-environment-backup')
+        [string[]]@('session-environment')
     }
 
     $projectCacheDescriptorSet = if ($RehydrationRequired) {
@@ -423,7 +423,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepairCore -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-integration' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
-            -DependsOn @('persist-relocation','tool-relocation','package-host-integration') `
+            -DependsOn @('user-environment-backup','persist-relocation','tool-relocation','package-host-integration') `
             -ReadResources @('capsule:///packages/installed-state','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
             -WriteResources @('host:///environment/user','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `

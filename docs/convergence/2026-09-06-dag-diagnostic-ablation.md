@@ -55,3 +55,9 @@ The reducer is now `MainRunspace + ResourceBound` with a narrow read claim on `p
 A first ablation considered making `rehydration-state` depend only on the terminal `user-integration` join. FMEA rejected that version: the publication callback directly consumes `persist-relocation` and `package-projections` outputs, so hiding those producers behind transitive ordering would make the DAG less complete even if the current scheduler happened to preserve execution order.
 
 The final publication node therefore keeps explicit edges to both output producers and to `user-integration`, which remains the terminal join for host/tool repair branches. The old direct `tool-relocation` edge is removed because it carries no data and is already represented by `tool-relocation -> user-integration -> rehydration-state`. A static node-contract gate now requires literal `$context.Outputs['producer']` reads in desired-state callbacks to have a matching direct `DependsOn` producer, preventing future edge ablations from silently degrading data-flow correctness.
+
+## Follow-up: move the environment-backup prerequisite to its real consumer
+
+Package projection workers previously depended on `user-environment-backup`, even though their callbacks neither consume the backup output nor mutate the user environment. This forced the entire package repair fan-out to wait behind a main-runspace filesystem backup.
+
+The backup prerequisite now belongs directly to `user-integration`, which is the operation that may mutate the user environment and therefore actually needs the backup to exist first. Package projection workers and the empty projection barrier depend only on `session-environment`; after that session prerequisite completes, package repair can overlap the user-environment backup. The final integration join still cannot run until the backup and all package/tool/persist branches complete.

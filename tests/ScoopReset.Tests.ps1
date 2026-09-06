@@ -25,6 +25,9 @@ Describe 'Capsulenv package projection repair boundary' {
         @($rehydrate.Plan.Nodes.Id) | Should -Contain 'package-host-integration'
         $projectionNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'package-projections')[0].Node
         $hostNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'package-host-integration')[0].Node
+        @($projectionNode.DependsOn) | Should -HaveCount 1
+        @($projectionNode.DependsOn) | Should -Contain 'session-environment'
+        @($projectionNode.DependsOn) | Should -Not -Contain 'user-environment-backup'
         @($projectionNode.WriteResources) | Should -Not -Contain 'host:///start-menu/capsulenv'
         @($hostNode.WriteResources) | Should -Contain 'host:///start-menu/capsulenv'
         $sessionNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'session-environment')[0].Node
@@ -40,6 +43,7 @@ Describe 'Capsulenv package projection repair boundary' {
         $hostNode.ConcurrencyPolicy | Should -Be 'ResourceBound'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/user-environment-backup'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/install-mode'
+        @($userNode.DependsOn) | Should -Contain 'user-environment-backup'
         $stateNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'rehydration-state')[0].Node
         @($stateNode.DependsOn) | Should -HaveCount 3
         @($stateNode.DependsOn) | Should -Contain 'package-projections'
@@ -66,6 +70,11 @@ Describe 'Capsulenv package projection repair boundary' {
         $projectionNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'package-projection:*' })
         $projectionNodes | Should -HaveCount 3
         @($projectionNodes | Where-Object { $_.Node.ExecutionAffinity -ne 'AnyRunspace' -or $_.Node.ConcurrencyPolicy -ne 'ResourceBound' }) | Should -HaveCount 0
+        foreach ($node in $projectionNodes) {
+            @($node.Node.DependsOn) | Should -HaveCount 1
+            @($node.Node.DependsOn) | Should -Contain 'session-environment'
+            @($node.Node.DependsOn) | Should -Not -Contain 'user-environment-backup'
+        }
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) } | Where-Object { $_ -eq 'capsule:///packages/shims' }) | Should -HaveCount 0
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/alpha'
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/beta'
@@ -77,6 +86,7 @@ Describe 'Capsulenv package projection repair boundary' {
         foreach ($node in $projectionNodes) { @($aggregate.Node.DependsOn) | Should -Contain ([string]$node.Id) }
         $projectionWave = @($integration.Plan.ExecutionWaves | Where-Object { @($_.NodeIds | Where-Object { $_ -like 'package-projection:*' }).Count -gt 0 })[0]
         @($projectionWave.ParallelNodeIds | Where-Object { $_ -like 'package-projection:*' }) | Should -HaveCount 3
+        @($projectionWave.NodeIds) | Should -Contain 'user-environment-backup'
     }
 
     It 'expands project-cache repairs into parallel link nodes with one registry commit barrier' {
