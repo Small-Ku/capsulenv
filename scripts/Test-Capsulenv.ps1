@@ -6,6 +6,8 @@ param(
     [int]$Repeat = 1,
     [ValidateRange(10, 900)]
     [int]$SuiteTimeoutSeconds = 120,
+    [ValidateRange(1, 16)]
+    [int]$ThrottleLimit = 4,
     [switch]$SkipWindowsPowerShell51Contract,
     [switch]$KeepArtifacts
 )
@@ -73,7 +75,10 @@ if ([string]::IsNullOrWhiteSpace($hostExecutable) -or -not (Test-Path -LiteralPa
     throw 'Cannot resolve the current PowerShell executable for isolated Pester suite execution.'
 }
 
-Write-Host ("[3/3] Pester ({0}: {1} suite(s), {2} repeat(s), {3} isolated process(es), timeout {4}s each)" -f $Profile, $testPaths.Count, $Repeat, $testCases.Count, $SuiteTimeoutSeconds)
+$executionPlan = New-CapsulenvTestExecutionPlan -Cases $testCases
+$dagState = New-CapsulenvTestDagState -Nodes $executionPlan.Nodes
+
+Write-Host ("[3/3] Pester DAG ({0}: {1} suite(s), {2} repeat(s), {3} isolated process(es), throttle {4}, timeout {5}s each)" -f $Profile, $testPaths.Count, $Repeat, $testCases.Count, $ThrottleLimit, $SuiteTimeoutSeconds)
 $passedCount = 0
 $failedCount = 0
 $notRunCount = 0
@@ -83,110 +88,141 @@ $suiteResults = New-Object System.Collections.Generic.List[object]
 $gateStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $resultRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-test-' + [Guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $resultRoot -Force)
+$active = [System.Collections.Generic.List[object]]::new()
 $completedGate = $false
 $gateSucceeded = $false
 try {
-    foreach ($testCase in $testCases) {
-        $testPath = [string]$testCase.Path
-        $suiteName = [string]$testCase.SuiteName
-        $repeatIndex = [int]$testCase.RepeatIndex
-        $caseIndex = [int]$testCase.Index
-        $suiteToken = ('{0:D3}-r{1:D2}-{2}' -f $caseIndex, $repeatIndex, ([System.IO.Path]::GetFileNameWithoutExtension($suiteName)))
-        $suiteRoot = Join-Path $resultRoot $suiteToken
-        $suiteTempRoot = Join-Path $suiteRoot 'tmp'
-        $suiteBuildRoot = Join-Path $suiteRoot 'build'
-        $resultPath = Join-Path $suiteRoot 'result.json'
-        [void](New-Item -ItemType Directory -Path $suiteTempRoot -Force)
-        [void](New-Item -ItemType Directory -Path $suiteBuildRoot -Force)
-        Write-Host ("  [{0}/{1}] {2} (run {3}/{4})" -f ($caseIndex + 1), $testCases.Count, $suiteName, $repeatIndex, $Repeat)
+    while (-not $dagState.Completed.Contains([string]$executionPlan.TerminalId)) {
+        $madeProgress = $false
+        foreach ($job in @($active.ToArray())) {
+            $elapsedSeconds = ([DateTime]::UtcNow - [DateTime]$job.StartedAtUtc).TotalSeconds
+            if (-not $job.Process.HasExited) {
+                if ($elapsedSeconds -le $SuiteTimeoutSeconds) { continue }
+                try { $job.Process.Kill() } catch {}
+                try { $job.Process.Dispose() } catch {}
+                throw "Pester suite timed out after $SuiteTimeoutSeconds seconds: $($job.SuiteName) (run $($job.RepeatIndex)/$Repeat). Artifacts: $($job.SuiteRoot)"
+            }
 
-        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $startInfo.FileName = $hostExecutable
-        $startInfo.Arguments = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $suiteRunner.Replace('"', '\"'))
-        $startInfo.UseShellExecute = $false
-        $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_PATH'] = $testPath
-        $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_RESULT_PATH'] = $resultPath
-        $startInfo.EnvironmentVariables['CAPSULENV_TEST_ARTIFACT_ROOT'] = $suiteRoot
-        $startInfo.EnvironmentVariables['CAPSULENV_BUILD_ROOT'] = $suiteBuildRoot
-        $startInfo.EnvironmentVariables['TMP'] = $suiteTempRoot
-        $startInfo.EnvironmentVariables['TEMP'] = $suiteTempRoot
-        $startInfo.EnvironmentVariables['TMPDIR'] = $suiteTempRoot
+            $exitCode = $job.Process.ExitCode
+            $job.Process.Dispose()
+            [void]$active.Remove($job)
+            if (-not (Test-Path -LiteralPath $job.ResultPath -PathType Leaf)) {
+                throw "Pester suite process exited with code $exitCode without writing a result: $($job.SuiteName) (run $($job.RepeatIndex)/$Repeat). Artifacts: $($job.SuiteRoot)"
+            }
+            $result = Get-Content -LiteralPath $job.ResultPath -Raw | ConvertFrom-Json
+            $passedCount += [int]$result.Passed
+            $failedCount += [int]$result.Failed
+            $notRunCount += [int]$result.NotRun
+            $totalCount += [int]$result.Total
 
-        $process = [System.Diagnostics.Process]::Start($startInfo)
-        if ($null -eq $process) {
-            throw "Failed to start isolated Pester process for $suiteName."
+            $infrastructureFailed = if ($null -ne $result.PSObject.Properties['InfrastructureFailed']) { [int]$result.InfrastructureFailed } else { 0 }
+            $resultSignalsFailure = ([int]$result.Failed -gt 0 -or [int]$result.NotRun -gt 0 -or $infrastructureFailed -gt 0)
+            $processExitMismatch = (($resultSignalsFailure -and $exitCode -eq 0) -or ((-not $resultSignalsFailure) -and $exitCode -ne 0))
+            if ($processExitMismatch) {
+                $infrastructureFailed++
+                Write-Warning ("{0} (run {1}/{2}) result/exit mismatch: exit {3}." -f $job.SuiteName, $job.RepeatIndex, $Repeat, $exitCode)
+            }
+            $infrastructureFailedCount += $infrastructureFailed
+            $suiteResults.Add([pscustomobject][ordered]@{
+                Index = [int]$job.CaseIndex
+                Suite = [string]$job.SuiteName
+                Run = [int]$job.RepeatIndex
+                Passed = [int]$result.Passed
+                Failed = [int]$result.Failed
+                NotRun = [int]$result.NotRun
+                InfrastructureFailed = $infrastructureFailed
+                DurationSeconds = [double]$result.DurationSeconds
+                ExitCode = $exitCode
+            })
+            Write-Host ("  [done {0}/{1}] {2} (run {3}/{4}): {5}/{6} passed; {7} failed; infra {8}; {9:N2}s" -f ($dagState.Completed.Count + 1), $testCases.Count, $job.SuiteName, $job.RepeatIndex, $Repeat, $result.Passed, $result.Total, $result.Failed, $infrastructureFailed, [double]$result.DurationSeconds)
+            if ($infrastructureFailed -gt 0 -and $null -ne $result.PSObject.Properties['InfrastructureError']) {
+                Write-Warning ("{0}: {1}" -f $job.SuiteName, [string]$result.InfrastructureError)
+            }
+            Complete-CapsulenvTestDagNode -State $dagState -NodeId ([string]$job.NodeId)
+            $madeProgress = $true
         }
-        $completed = $process.WaitForExit($SuiteTimeoutSeconds * 1000)
-        if (-not $completed) {
-            try { $process.Kill() } catch {}
-            $process.Dispose()
-            throw "Pester suite timed out after $SuiteTimeoutSeconds seconds: $suiteName (run $repeatIndex/$Repeat). Artifacts: $suiteRoot"
-        }
-        $exitCode = $process.ExitCode
-        $process.Dispose()
 
-        if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
-            throw "Pester suite process exited with code $exitCode without writing a result: $suiteName (run $repeatIndex/$Repeat). Artifacts: $suiteRoot"
-        }
-        $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
-        $passedCount += [int]$result.Passed
-        $failedCount += [int]$result.Failed
-        $notRunCount += [int]$result.NotRun
-        $totalCount += [int]$result.Total
+        while ($dagState.ReadyIndexes.Count -gt 0) {
+            $readyIndex = [int]$dagState.ReadyIndexes.Min
+            $node = $dagState.Nodes[$readyIndex]
+            if ([string]$node.Kind -eq 'Barrier') {
+                [void]$dagState.ReadyIndexes.Remove($readyIndex)
+                Complete-CapsulenvTestDagNode -State $dagState -NodeId ([string]$node.Id)
+                $madeProgress = $true
+                continue
+            }
+            if ($active.Count -ge $ThrottleLimit) { break }
 
-        $infrastructureFailed = if ($null -ne $result.PSObject.Properties['InfrastructureFailed']) {
-            [int]$result.InfrastructureFailed
-        } else {
-            0
-        }
-        $resultSignalsFailure = (
-            [int]$result.Failed -gt 0 -or
-            [int]$result.NotRun -gt 0 -or
-            $infrastructureFailed -gt 0
-        )
-        $processExitMismatch = (
-            ($resultSignalsFailure -and $exitCode -eq 0) -or
-            ((-not $resultSignalsFailure) -and $exitCode -ne 0)
-        )
-        if ($processExitMismatch) {
-            $infrastructureFailed++
-            Write-Warning ("{0} (run {1}/{2}) result/exit mismatch: exit {3}." -f $suiteName, $repeatIndex, $Repeat, $exitCode)
-        }
-        $infrastructureFailedCount += $infrastructureFailed
+            [void]$dagState.ReadyIndexes.Remove($readyIndex)
+            $testCase = $node.Case
+            $testPath = [string]$testCase.Path
+            $suiteName = [string]$testCase.SuiteName
+            $repeatIndex = [int]$testCase.RepeatIndex
+            $caseIndex = [int]$testCase.Index
+            $suiteToken = ('{0:D3}-r{1:D2}-{2}' -f $caseIndex, $repeatIndex, ([System.IO.Path]::GetFileNameWithoutExtension($suiteName)))
+            $suiteRoot = Join-Path $resultRoot $suiteToken
+            $suiteTempRoot = Join-Path $suiteRoot 'tmp'
+            $suiteBuildRoot = Join-Path $suiteRoot 'build'
+            $resultPath = Join-Path $suiteRoot 'result.json'
+            [void](New-Item -ItemType Directory -Path $suiteTempRoot -Force)
+            [void](New-Item -ItemType Directory -Path $suiteBuildRoot -Force)
 
-        $suiteResults.Add([pscustomobject][ordered]@{
-            Suite = $suiteName
-            Run = $repeatIndex
-            Passed = [int]$result.Passed
-            Failed = [int]$result.Failed
-            NotRun = [int]$result.NotRun
-            InfrastructureFailed = $infrastructureFailed
-            DurationSeconds = [double]$result.DurationSeconds
-            ExitCode = $exitCode
-        })
-        Write-Host ("        {0}/{1} passed; {2} failed; infra {3}; {4:N2}s" -f $result.Passed, $result.Total, $result.Failed, $infrastructureFailed, [double]$result.DurationSeconds)
-        if ($infrastructureFailed -gt 0 -and $null -ne $result.PSObject.Properties['InfrastructureError']) {
-            Write-Warning ("{0}: {1}" -f $suiteName, [string]$result.InfrastructureError)
+            $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $startInfo.FileName = $hostExecutable
+            $startInfo.Arguments = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $suiteRunner.Replace('"', '\"'))
+            $startInfo.UseShellExecute = $false
+            $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_PATH'] = $testPath
+            $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_RESULT_PATH'] = $resultPath
+            $startInfo.EnvironmentVariables['CAPSULENV_TEST_ARTIFACT_ROOT'] = $suiteRoot
+            $startInfo.EnvironmentVariables['CAPSULENV_BUILD_ROOT'] = $suiteBuildRoot
+            $startInfo.EnvironmentVariables['TMP'] = $suiteTempRoot
+            $startInfo.EnvironmentVariables['TEMP'] = $suiteTempRoot
+            $startInfo.EnvironmentVariables['TMPDIR'] = $suiteTempRoot
+
+            $process = [System.Diagnostics.Process]::Start($startInfo)
+            if ($null -eq $process) { throw "Failed to start isolated Pester process for $suiteName." }
+            $active.Add([pscustomobject][ordered]@{
+                NodeId = [string]$node.Id
+                CaseIndex = $caseIndex
+                SuiteName = $suiteName
+                RepeatIndex = $repeatIndex
+                SuiteRoot = $suiteRoot
+                ResultPath = $resultPath
+                StartedAtUtc = [DateTime]::UtcNow
+                Process = $process
+            })
+            Write-Host ("  [start {0}/{1}] {2} (run {3}/{4}); active {5}/{6}" -f ($caseIndex + 1), $testCases.Count, $suiteName, $repeatIndex, $Repeat, $active.Count, $ThrottleLimit)
+            $madeProgress = $true
+        }
+
+        if (-not $madeProgress) {
+            if ($active.Count -gt 0) {
+                [System.Threading.Thread]::Sleep(10)
+                continue
+            }
+            $pending = @($executionPlan.Nodes | Where-Object { -not $dagState.Completed.Contains([string]$_.Id) } | ForEach-Object { [string]$_.Id })
+            throw ("Test DAG ready queue stalled with no active process. Pending: {0}" -f ($pending -join ', '))
         }
     }
 
     $completedGate = $true
     $gateSucceeded = ($failedCount -eq 0 -and $notRunCount -eq 0 -and $infrastructureFailedCount -eq 0)
 } finally {
+    foreach ($job in @($active.ToArray())) {
+        try { if (-not $job.Process.HasExited) { $job.Process.Kill() } } catch {}
+        try { $job.Process.Dispose() } catch {}
+    }
     $gateStopwatch.Stop()
     if ($KeepArtifacts -or -not $completedGate -or -not $gateSucceeded) {
-        if ($gateSucceeded) {
-            Write-Host ("Test artifacts retained at: {0}" -f $resultRoot)
-        } else {
-            Write-Warning ("Test gate did not pass cleanly; artifacts retained at: {0}" -f $resultRoot)
-        }
+        if ($gateSucceeded) { Write-Host ("Test artifacts retained at: {0}" -f $resultRoot) }
+        else { Write-Warning ("Test gate did not pass cleanly; artifacts retained at: {0}" -f $resultRoot) }
     } else {
         Remove-Item -LiteralPath $resultRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
 Write-Host ''
-$suiteResults.ToArray() | Format-Table -AutoSize | Out-Host
+@($suiteResults.ToArray() | Sort-Object Index) | Format-Table -AutoSize | Out-Host
 Write-Host ("Capsulenv Pester gate ({0}, repeat {1}): {2}/{3} passed, {4} failed, {5} not run, {6} infrastructure failure(s) in {7:N2}s." -f $Profile, $Repeat, $passedCount, $totalCount, $failedCount, $notRunCount, $infrastructureFailedCount, $gateStopwatch.Elapsed.TotalSeconds)
 if (-not $gateSucceeded) {
     exit 1

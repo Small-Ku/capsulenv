@@ -100,4 +100,50 @@ Describe 'Capsulenv test harness isolation' {
             Select-CapsulenvTestPaths -AllTestPaths @('Z:\tests\DesiredState.Tests.ps1') -Profile Concurrency
         } | Should -Throw "*references missing suite(s)*"
     }
+
+    It 'models isolated suites as a fan-out DAG with a terminal barrier' {
+        $cases = @(New-CapsulenvTestCasePlan -TestPaths @(
+            'Z:\tests\Alpha.Tests.ps1',
+            'Z:\tests\Beta.Tests.ps1'
+        ) -Repeat 1)
+        $plan = New-CapsulenvTestExecutionPlan -Cases $cases
+
+        @($plan.Nodes) | Should -HaveCount 3
+        @($plan.Nodes | Where-Object Kind -eq 'Suite') | Should -HaveCount 2
+        $barrier = @($plan.Nodes | Where-Object Id -eq $plan.TerminalId)[0]
+        $barrier.Kind | Should -Be 'Barrier'
+        @($barrier.DependsOn) | Should -Be @($plan.Nodes | Where-Object Kind -eq 'Suite' | ForEach-Object { [string]$_.Id })
+    }
+
+    It 'publishes the terminal test barrier only after every suite node completes' {
+        $cases = @(New-CapsulenvTestCasePlan -TestPaths @(
+            'Z:\tests\Alpha.Tests.ps1',
+            'Z:\tests\Beta.Tests.ps1'
+        ) -Repeat 1)
+        $plan = New-CapsulenvTestExecutionPlan -Cases $cases
+        $state = New-CapsulenvTestDagState -Nodes $plan.Nodes
+        @($state.ReadyIndexes) | Should -HaveCount 2
+
+        $suiteNodes = @($plan.Nodes | Where-Object Kind -eq 'Suite')
+        Complete-CapsulenvTestDagNode -State $state -NodeId ([string]$suiteNodes[0].Id)
+        @($state.ReadyIndexes | ForEach-Object { [string]$plan.Nodes[[int]$_].Id }) | Should -Not -Contain $plan.TerminalId
+
+        Complete-CapsulenvTestDagNode -State $state -NodeId ([string]$suiteNodes[1].Id)
+        @($state.ReadyIndexes | ForEach-Object { [string]$plan.Nodes[[int]$_].Id }) | Should -Contain $plan.TerminalId
+    }
+
+    It 'fails closed for missing test DAG dependencies and duplicate completion' {
+        {
+            New-CapsulenvTestDagState -Nodes @(
+                [pscustomobject]@{ Id='a'; DependsOn=@('missing') }
+            )
+        } | Should -Throw '*depends on missing node*'
+
+        $state = New-CapsulenvTestDagState -Nodes @(
+            [pscustomobject]@{ Id='a'; DependsOn=@() }
+        )
+        Complete-CapsulenvTestDagNode -State $state -NodeId 'a'
+        { Complete-CapsulenvTestDagNode -State $state -NodeId 'a' } | Should -Throw '*completed more than once*'
+    }
+
 }

@@ -94,3 +94,94 @@ function New-CapsulenvTestCasePlan {
     }
     return $cases.ToArray()
 }
+
+function New-CapsulenvTestExecutionPlan {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object[]]$Cases)
+
+    $nodes = New-Object System.Collections.Generic.List[object]
+    foreach ($case in @($Cases)) {
+        $id = ('suite:{0:D3}:r{1:D2}:{2}' -f [int]$case.Index, [int]$case.RepeatIndex, [string]$case.SuiteName)
+        $nodes.Add([pscustomobject][ordered]@{
+            Id = $id
+            Index = [int]$case.Index
+            Kind = 'Suite'
+            DependsOn = [string[]]@()
+            Case = $case
+        })
+    }
+    $suiteIds = [string[]]@($nodes | ForEach-Object { [string]$_.Id })
+    $nodes.Add([pscustomobject][ordered]@{
+        Id = 'gate:complete'
+        Index = $Cases.Count
+        Kind = 'Barrier'
+        DependsOn = $suiteIds
+        Case = $null
+    })
+    return [pscustomobject][ordered]@{
+        Nodes = $nodes.ToArray()
+        TerminalId = 'gate:complete'
+    }
+}
+
+function New-CapsulenvTestDagState {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object[]]$Nodes)
+
+    $byId = @{}
+    $indexById = @{}
+    for ($index = 0; $index -lt $Nodes.Count; $index++) {
+        $id = [string]$Nodes[$index].Id
+        if ([string]::IsNullOrWhiteSpace($id)) { throw 'Test DAG node id cannot be empty.' }
+        if ($byId.ContainsKey($id)) { throw "Duplicate test DAG node id: $id" }
+        $byId[$id] = $Nodes[$index]
+        $indexById[$id] = $index
+    }
+
+    $unmet = [int[]]::new($Nodes.Count)
+    $dependents = @{}
+    foreach ($id in @($byId.Keys)) { $dependents[[string]$id] = [System.Collections.Generic.List[int]]::new() }
+    for ($index = 0; $index -lt $Nodes.Count; $index++) {
+        foreach ($dependency in @($Nodes[$index].DependsOn)) {
+            $dependencyId = [string]$dependency
+            if (-not $byId.ContainsKey($dependencyId)) {
+                throw ("Test DAG node '{0}' depends on missing node '{1}'." -f $Nodes[$index].Id, $dependencyId)
+            }
+            $unmet[$index]++
+            $dependents[$dependencyId].Add($index)
+        }
+    }
+
+    $ready = [System.Collections.Generic.SortedSet[int]]::new()
+    for ($index = 0; $index -lt $Nodes.Count; $index++) {
+        if ($unmet[$index] -eq 0) { [void]$ready.Add($index) }
+    }
+    return [pscustomobject][ordered]@{
+        Nodes = $Nodes
+        IndexById = $indexById
+        UnmetDependencies = $unmet
+        Dependents = $dependents
+        ReadyIndexes = $ready
+        Completed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
+}
+
+function Complete-CapsulenvTestDagNode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [Parameter(Mandatory = $true)][string]$NodeId
+    )
+
+    if (-not $State.IndexById.ContainsKey($NodeId)) { throw "Unknown test DAG node id: $NodeId" }
+    if (-not $State.Completed.Add($NodeId)) { throw "Test DAG node completed more than once: $NodeId" }
+    foreach ($dependentIndex in @($State.Dependents[$NodeId])) {
+        $State.UnmetDependencies[$dependentIndex]--
+        if ($State.UnmetDependencies[$dependentIndex] -lt 0) {
+            throw ("Test DAG dependency count underflow for node '{0}'." -f $State.Nodes[$dependentIndex].Id)
+        }
+        if ($State.UnmetDependencies[$dependentIndex] -eq 0) {
+            [void]$State.ReadyIndexes.Add([int]$dependentIndex)
+        }
+    }
+}
