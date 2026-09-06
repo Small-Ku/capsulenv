@@ -242,22 +242,23 @@ Describe 'Capsulenv PortableSafe package executor' {
         $hostExecutable = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
         $previousLastExitCode = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
-        Mock Get-CapsulenvPackageProcessPlan {
+        Mock Get-CapsulenvInstalledAppProcessPlan {
+            param($App, $BinName, $Arguments, $WorkingDirectory, $ExecutionMode)
             [pscustomobject][ordered]@{
                 PSTypeName = 'Capsulenv.ProcessPlan'
                 Executable = $hostExecutable
-                Arguments = @()
-                WorkingDirectory = $null
+                Arguments = @($Arguments)
+                WorkingDirectory = $WorkingDirectory
                 Environment = [ordered]@{}
                 PathEntries = @()
-                ExecutionMode = 'Passthrough'
+                ExecutionMode = $ExecutionMode
                 Metadata = [ordered]@{}
             }
         } -ModuleName Capsulenv
 
         try {
             $output = & $script:Module {
-                Invoke-CapsulenvPackageExecutable `
+                Invoke-CapsulenvInstalledAppExecutable `
                     -App 'capsule/demo' `
                     -BinName 'demo' `
                     -Arguments @('-NoLogo', '-NoProfile', '-Command', '[Console]::Out.WriteLine(''capsulenv-stream-marker''); exit 7')
