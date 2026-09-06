@@ -581,6 +581,31 @@ function Get-CapsulenvDesiredStateSchedulerBoundaryViolations {
         }
     }
 
+    foreach ($commandAst in @(
+        $ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                [string]$node.GetCommandName() -eq 'Get-CapsulenvDesiredStateResourceClaims'
+            },
+            $true
+        )
+    )) {
+        $owner = $commandAst.Parent
+        while ($null -ne $owner -and $owner -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) {
+            $owner = $owner.Parent
+        }
+        if ($null -eq $owner -or [string]$owner.Name -ne 'Get-CapsulenvDesiredStatePlan') {
+            $violations.Add([pscustomobject]@{
+                Rule = 'DesiredStateResourceClaimsMustBePlanCompiled'
+                Path = $fullPath
+                Line = $commandAst.Extent.StartLineNumber
+                Column = $commandAst.Extent.StartColumnNumber
+                Detail = 'normalized resource claims must be compiled once into plan decisions and reused by scheduler and diagnostics'
+            })
+        }
+    }
+
     foreach ($legacyFunction in @(
         $ast.FindAll(
             {

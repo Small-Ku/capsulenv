@@ -24,6 +24,7 @@ Describe 'Capsulenv desired-state graph' {
             [pscustomobject]@{
                 RuntimeIncluded=$runtimePlan.DiagnosticsIncluded
                 RuntimeClaims=@($runtimePlan.ResourceClaims).Count
+                RuntimeDecisionClaims=@($runtimePlan.Nodes | ForEach-Object { @($_.ResourceClaims) }).Count
                 RuntimeConflicts=@($runtimePlan.ResourceConflicts).Count
                 RuntimeWaves=@($runtimePlan.ExecutionWaves).Count
                 DiagnosticIncluded=$diagnosticPlan.DiagnosticsIncluded
@@ -33,6 +34,7 @@ Describe 'Capsulenv desired-state graph' {
         }
         $shape.RuntimeIncluded | Should -BeFalse
         $shape.RuntimeClaims | Should -Be 0
+        $shape.RuntimeDecisionClaims | Should -Be 2
         $shape.RuntimeConflicts | Should -Be 0
         $shape.RuntimeWaves | Should -Be 0
         $shape.DiagnosticIncluded | Should -BeTrue
@@ -119,6 +121,16 @@ Describe 'Capsulenv desired-state resource claims' {
         @($diagnostics.SerializedConflicts) | Should -HaveCount 1
         $diagnostics.SerializedConflicts[0].OrderedByDependency | Should -BeTrue
         @($diagnostics.UnorderedWriteWrite) | Should -HaveCount 0
+    }
+
+    It 'stores normalized execution claims on each plan decision' {
+        $claims = & $script:Module {
+            $node=New-CapsulenvDesiredStateNode -Id demo -ReadResources @('CAPSULE:///Tool-Data/') -WriteResources @('host:///State/Demo/') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            @((Get-CapsulenvDesiredStatePlan -Nodes @($node)).Nodes[0].ResourceClaims)
+        }
+        @($claims) | Should -HaveCount 2
+        @($claims.ResourceUri) | Should -Contain 'capsule:///Tool-Data'
+        @($claims.ResourceUri) | Should -Contain 'host:///State/Demo'
     }
 
     It 'rejects unstable non-URI resource claims with a stable diagnostic id' {

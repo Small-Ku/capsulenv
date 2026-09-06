@@ -56,16 +56,17 @@ function Get-CapsulenvDesiredStateResourceClaims {
     return $claims.ToArray()
 }
 
-function Test-CapsulenvDesiredStateResourceConflict {
+function Test-CapsulenvDesiredStateClaimConflict {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)]$Left, [Parameter(Mandatory = $true)]$Right)
+    param(
+        [AllowEmptyCollection()][object[]]$LeftClaims = @(),
+        [AllowEmptyCollection()][object[]]$RightClaims = @()
+    )
 
-    $leftClaims = @(Get-CapsulenvDesiredStateResourceClaims -Node $Left)
-    $rightClaims = @(Get-CapsulenvDesiredStateResourceClaims -Node $Right)
-    foreach ($leftClaim in $leftClaims) {
-        foreach ($rightClaim in $rightClaims) {
-            if (-not (Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri ([string]$leftClaim.ResourceUri) -RightResourceUri ([string]$rightClaim.ResourceUri))) { continue }
-            if ($leftClaim.Access -eq 'Write' -or $rightClaim.Access -eq 'Write') { return $true }
+    foreach ($leftClaim in @($LeftClaims)) {
+        foreach ($rightClaim in @($RightClaims)) {
+            if ($leftClaim.Access -ne 'Write' -and $rightClaim.Access -ne 'Write') { continue }
+            if (Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri ([string]$leftClaim.ResourceUri) -RightResourceUri ([string]$rightClaim.ResourceUri)) { return $true }
         }
     }
     return $false
@@ -103,11 +104,11 @@ function Get-CapsulenvDesiredStateResourceConflicts {
     for ($leftIndex = 0; $leftIndex -lt $Decisions.Count; $leftIndex++) {
         $leftDecision = $Decisions[$leftIndex]
         if (-not $leftDecision.CanApply -or $leftDecision.Operation -ne 'Apply') { continue }
-        $leftClaims = @(Get-CapsulenvDesiredStateResourceClaims -Node $leftDecision.Node)
+        $leftClaims = @($leftDecision.ResourceClaims)
         for ($rightIndex = $leftIndex + 1; $rightIndex -lt $Decisions.Count; $rightIndex++) {
             $rightDecision = $Decisions[$rightIndex]
             if (-not $rightDecision.CanApply -or $rightDecision.Operation -ne 'Apply') { continue }
-            $rightClaims = @(Get-CapsulenvDesiredStateResourceClaims -Node $rightDecision.Node)
+            $rightClaims = @($rightDecision.ResourceClaims)
             foreach ($leftClaim in $leftClaims) {
                 foreach ($rightClaim in $rightClaims) {
                     if ($leftClaim.Access -ne 'Write' -and $rightClaim.Access -ne 'Write') { continue }
@@ -141,17 +142,17 @@ function Test-CapsulenvDesiredStateWorkerEligible {
     )
 }
 
-function Test-CapsulenvDesiredStateConcurrencyConflict {
+function Test-CapsulenvDesiredStateDecisionConcurrencyConflict {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)]$Left, [Parameter(Mandatory = $true)]$Right)
+    param([Parameter(Mandatory = $true)]$LeftDecision, [Parameter(Mandatory = $true)]$RightDecision)
 
     if (
-        [string]$Left.ConcurrencyPolicy -eq 'Exclusive' -or
-        [string]$Right.ConcurrencyPolicy -eq 'Exclusive'
+        [string]$LeftDecision.Node.ConcurrencyPolicy -eq 'Exclusive' -or
+        [string]$RightDecision.Node.ConcurrencyPolicy -eq 'Exclusive'
     ) {
         return $true
     }
-    return Test-CapsulenvDesiredStateResourceConflict -Left $Left -Right $Right
+    return Test-CapsulenvDesiredStateClaimConflict -LeftClaims @($LeftDecision.ResourceClaims) -RightClaims @($RightDecision.ResourceClaims)
 }
 
 function Assert-CapsulenvDesiredStateExecutionContract {
@@ -160,7 +161,7 @@ function Assert-CapsulenvDesiredStateExecutionContract {
 
     foreach ($decision in $Decisions) {
         if ($decision.Operation -ne 'Apply' -or -not $decision.CanApply) { continue }
-        $claims = @(Get-CapsulenvDesiredStateResourceClaims -Node $decision.Node)
+        $claims = @($decision.ResourceClaims)
         if ([string]$decision.Node.ConcurrencyPolicy -eq 'ResourceBound' -and $claims.Count -eq 0) {
             throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ParallelClaimsRequired' -Message ("Resource-bound desired-state node '{0}' must declare at least one resource claim." -f $decision.Id) -TargetObject $decision.Id -Remediation @('Declare every resource read/write used by the node, or make the node Exclusive.'))
         }
@@ -213,7 +214,7 @@ function Get-CapsulenvDesiredStateExecutionWaves {
             if (-not $ready) { continue }
             $conflict = $false
             foreach ($existing in $selected.ToArray()) {
-                if (Test-CapsulenvDesiredStateConcurrencyConflict -Left $decision.Node -Right $existing.Node) { $conflict = $true; break }
+                if (Test-CapsulenvDesiredStateDecisionConcurrencyConflict -LeftDecision $decision -RightDecision $existing) { $conflict = $true; break }
             }
             if (-not $conflict) { $selected.Add($decision) }
         }
@@ -221,7 +222,7 @@ function Get-CapsulenvDesiredStateExecutionWaves {
             throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.WaveResolutionFailed' -Message 'Desired-state execution waves could not be resolved from the planned dependency graph.' -Context ([ordered]@{ PendingNodeIds=@($pending.Id); PendingNoOpNodeIds=@($pendingNoOp.Id) }))
         }
         $claims = New-Object System.Collections.Generic.List[object]
-        foreach ($decision in $selected.ToArray()) { foreach ($claim in @(Get-CapsulenvDesiredStateResourceClaims -Node $decision.Node)) { $claims.Add($claim) } }
+        foreach ($decision in $selected.ToArray()) { foreach ($claim in @($decision.ResourceClaims)) { $claims.Add($claim) } }
         $waves.Add([pscustomobject][ordered]@{ Index=$waveIndex; NodeIds=[string[]]@($selected.Id); WorkerNodeIds=[string[]]@($selected | Where-Object { Test-CapsulenvDesiredStateWorkerEligible -Node $_.Node } | ForEach-Object { [string]$_.Id }); MainRunspaceNodeIds=[string[]]@($selected | Where-Object { [string]$_.Node.ExecutionAffinity -eq 'MainRunspace' } | ForEach-Object { [string]$_.Id }); ExclusiveNodeIds=[string[]]@($selected | Where-Object { [string]$_.Node.ConcurrencyPolicy -eq 'Exclusive' } | ForEach-Object { [string]$_.Id }); ParallelNodeIds=[string[]]@($selected | Where-Object { Test-CapsulenvDesiredStateWorkerEligible -Node $_.Node } | ForEach-Object { [string]$_.Id }); SequentialNodeIds=[string[]]@($selected | Where-Object { -not (Test-CapsulenvDesiredStateWorkerEligible -Node $_.Node) } | ForEach-Object { [string]$_.Id }); ResourceClaims=$claims.ToArray() })
         foreach ($decision in $selected.ToArray()) { [void]$completed.Add([string]$decision.Id); [void]$pending.Remove($decision) }
         $waveIndex++
@@ -310,9 +311,10 @@ function Get-CapsulenvDesiredStatePlan {
     $ordered = @(Resolve-CapsulenvDesiredStateOrder -Nodes $Nodes)
     $decisions = [ordered]@{}
     foreach ($node in $ordered) {
+        $resourceClaims = @(Get-CapsulenvDesiredStateResourceClaims -Node $node)
         $blockedBy = @($node.DependsOn | Where-Object { $decisions.Contains([string]$_) -and -not [bool]$decisions[[string]$_].CanApply })
         if ($blockedBy.Count -gt 0) {
-            $decision = [pscustomobject][ordered]@{ Id=$node.Id; Node=$node; Operation='Blocked'; CanApply=$false; Reason=('[[CapsulenvText:DesiredState.BlockedByDependency]]' -f ($blockedBy -join ', ')); Current=$null; Desired=$null }
+            $decision = [pscustomobject][ordered]@{ Id=$node.Id; Node=$node; ResourceClaims=$resourceClaims; Operation='Blocked'; CanApply=$false; Reason=('[[CapsulenvText:DesiredState.BlockedByDependency]]' -f ($blockedBy -join ', ')); Current=$null; Desired=$null }
         } else {
             $raw = & $node.Plan $Context
             if ($null -eq $raw) { throw ('[[CapsulenvText:DesiredState.NoPlanDecision]]' -f $node.Id) }
@@ -320,7 +322,7 @@ function Get-CapsulenvDesiredStatePlan {
             if ($operation -notin @('NoOp','Apply','Blocked')) { throw ('[[CapsulenvText:DesiredState.UnsupportedOperation]]' -f $node.Id, $operation) }
             $canApply = if ($null -ne $raw.PSObject.Properties['CanApply']) { [bool]$raw.CanApply } else { $operation -ne 'Blocked' }
             $decision = [pscustomobject][ordered]@{
-                Id=$node.Id; Node=$node; Operation=$operation; CanApply=$canApply
+                Id=$node.Id; Node=$node; ResourceClaims=$resourceClaims; Operation=$operation; CanApply=$canApply
                 Reason=if($null -ne $raw.PSObject.Properties['Reason']){[string]$raw.Reason}else{''}
                 Current=if($null -ne $raw.PSObject.Properties['Current']){$raw.Current}else{$null}
                 Desired=if($null -ne $raw.PSObject.Properties['Desired']){$raw.Desired}else{$null}
@@ -338,7 +340,7 @@ function Get-CapsulenvDesiredStatePlan {
     if ($IncludeDiagnostics) {
         $resourceConflicts = @(Get-CapsulenvDesiredStateResourceConflicts -Decisions $items)
         $claims = New-Object System.Collections.Generic.List[object]
-        foreach ($item in $items) { foreach ($claim in @(Get-CapsulenvDesiredStateResourceClaims -Node $item.Node)) { $claims.Add($claim) } }
+        foreach ($item in $items) { foreach ($claim in @($item.ResourceClaims)) { $claims.Add($claim) } }
         $resourceClaims = @($claims.ToArray())
         if ($canApply) { $waves = @(Get-CapsulenvDesiredStateExecutionWaves -Decisions $items) }
         $ownershipDiagnostics = [pscustomobject][ordered]@{
@@ -528,11 +530,11 @@ function Test-CapsulenvDesiredStateDecisionCompatibleWithActive {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]$Decision,
-        [AllowEmptyCollection()][object[]]$ActiveNodes = @()
+        [AllowEmptyCollection()][object[]]$ActiveDecisions = @()
     )
 
-    foreach ($node in @($ActiveNodes)) {
-        if (Test-CapsulenvDesiredStateConcurrencyConflict -Left $Decision.Node -Right $node) { return $false }
+    foreach ($activeDecision in @($ActiveDecisions)) {
+        if (Test-CapsulenvDesiredStateDecisionConcurrencyConflict -LeftDecision $Decision -RightDecision $activeDecision) { return $false }
     }
     return $true
 }
@@ -589,15 +591,15 @@ function Invoke-CapsulenvDesiredStateReadyQueue {
             if ($pendingApply.Count -eq 0 -and $pendingNoOp.Count -eq 0 -and $activeWorkers.Count -eq 0) { break }
 
             $ready = @($pendingApply.ToArray() | Where-Object { Test-CapsulenvDesiredStateDecisionReady -Decision $_ -CompletedNodeIds $completed })
-            $activeNodes = New-Object System.Collections.Generic.List[object]
-            foreach ($job in $activeWorkers.ToArray()) { $activeNodes.Add($job.Decision.Node) }
+            $activeDecisions = New-Object System.Collections.Generic.List[object]
+            foreach ($job in $activeWorkers.ToArray()) { $activeDecisions.Add($job.Decision) }
             $selectedWorkers = New-Object System.Collections.Generic.List[object]
             $selectedMain = $null
             $workerCapacity = [Math]::Max(0, $ThrottleLimit - $activeWorkers.Count)
 
             foreach ($decision in $ready) {
-                $candidateNodes = @($activeNodes.ToArray())
-                if (-not (Test-CapsulenvDesiredStateDecisionCompatibleWithActive -Decision $decision -ActiveNodes $candidateNodes)) { continue }
+                $candidateDecisions = @($activeDecisions.ToArray())
+                if (-not (Test-CapsulenvDesiredStateDecisionCompatibleWithActive -Decision $decision -ActiveDecisions $candidateDecisions)) { continue }
 
                 if ([string]$decision.Node.ConcurrencyPolicy -eq 'Exclusive') {
                     if ($activeWorkers.Count -eq 0 -and $selectedWorkers.Count -eq 0 -and $null -eq $selectedMain) {
@@ -609,14 +611,14 @@ function Invoke-CapsulenvDesiredStateReadyQueue {
                 if ([string]$decision.Node.ExecutionAffinity -eq 'MainRunspace') {
                     if ($null -eq $selectedMain) {
                         $selectedMain = $decision
-                        $activeNodes.Add($decision.Node)
+                        $activeDecisions.Add($decision)
                     }
                     continue
                 }
 
                 if ($workerCapacity -gt $selectedWorkers.Count) {
                     $selectedWorkers.Add($decision)
-                    $activeNodes.Add($decision.Node)
+                    $activeDecisions.Add($decision)
                 }
             }
 

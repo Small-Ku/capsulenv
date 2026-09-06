@@ -25,3 +25,9 @@ Keep the DAG and ready queue. Make diagnostic topology opt-in at the core plan b
 The removed work cannot prevent a runtime race because it was never scheduler authority. A conflict missed by diagnostic construction would still be checked by the live ready queue; conversely, making waves authoritative would reduce parallelism by restoring a barrier that the scheduler intentionally removed. Therefore eager diagnostic construction belongs outside the critical path.
 
 A static architecture gate now rejects conflict/wave construction outside the `IncludeDiagnostics` branch, and regression coverage checks that an execution-only plan exposes an empty diagnostic view while an explicit diagnostic plan still produces claims and waves.
+
+## Follow-up: compile execution claims once
+
+After diagnostic topology was removed from the critical path, the remaining scheduler cost showed a second duplication: each candidate-versus-active comparison rebuilt and normalized both nodes' claims. `ResourceClaims` are not diagnostics; they are execution metadata. The plan compiler now stores normalized claims on each decision exactly once. Contract validation, the dynamic ready queue, and opt-in diagnostic views all reuse those decision claims. The node-level conflict wrappers that existed only to regenerate claims were removed.
+
+Static analysis rejects `Get-CapsulenvDesiredStateResourceClaims` calls outside `Get-CapsulenvDesiredStatePlan`, keeping claim normalization out of the live admission loop.

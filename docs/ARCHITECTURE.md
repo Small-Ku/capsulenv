@@ -148,7 +148,7 @@ shims/git.cmd
 
 ## Desired-state DAG execution and diagnostics
 
-Desired-state DAG 保留兩種不同資料層。Execution contract 只有 dependency、Plan decision、execution affinity、concurrency policy 與 resource ownership；非 sequential apply 由 dynamic ready queue 在節點完成後立即 dispatch 新變成 ready 的相容工作，不使用預先計算的 wave barrier。
+Desired-state DAG 保留兩種不同資料層。Execution contract 只有 dependency、Plan decision、execution affinity、concurrency policy 與 resource ownership；resource URI 在 plan build 時編譯成每個 decision 的 normalized `ResourceClaims`，scheduler 與 diagnostics 共用同一份，不在 active-pair admission 時重新 normalize。非 sequential apply 由 dynamic ready queue 在節點完成後立即 dispatch 新變成 ready 的相容工作，不使用預先計算的 wave barrier。
 
 `ResourceConflicts`、`OwnershipDiagnostics` 與 `ExecutionWaves` 是 review/doctor/test 的 **diagnostic topology**，不是 executor authority。核心 `Get-CapsulenvDesiredStatePlan` 因此預設不 materialize 這些 derived views；明確需要 review 時才用 `-IncludeDiagnostics`。Public `Get-CapsulenvScoopRehydratePlan` 作為 plan-inspection API 預設保留 diagnostics，但實際 rehydrate/activation/package install 的 `Invoke-*` path 必須關閉它。這避免 steady execution 為 pairwise conflict matrix 與 diagnostic wave construction 支付成本，也避免 diagnostics 反過來塑造 scheduler semantics。
 

@@ -347,6 +347,19 @@ function Invoke-CapsulenvDesiredStatePlan {
         @($violations.Rule | Where-Object { $_ -eq 'DesiredStateDiagnosticTopologyMustBeOptIn' }) | Should -HaveCount 1
     }
 
+    It 'rejects resource-claim recompilation outside the plan compiler' {
+        $fixture = New-CapsulenvStaticFixture -Name 'scheduler-recompile-claims.ps1' -Source @'
+function Get-CapsulenvDesiredStatePlan { param($Nodes) }
+function Invoke-CapsulenvDesiredStatePlan {
+    param($Plan)
+    Invoke-CapsulenvDesiredStateReadyQueue
+    Get-CapsulenvDesiredStateResourceClaims -Node $Plan.Nodes[0].Node
+}
+'@
+        $violations = @(Get-CapsulenvDesiredStateSchedulerBoundaryViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'DesiredStateResourceClaimsMustBePlanCompiled'
+    }
+
     It 'accepts the authoritative dynamic ready-queue scheduler boundary' {
         $core = Join-Path (Join-Path $script:Root 'src') '01-DesiredStateCore.ps1'
         @(Get-CapsulenvDesiredStateSchedulerBoundaryViolations -Path $core).Count | Should -Be 0
