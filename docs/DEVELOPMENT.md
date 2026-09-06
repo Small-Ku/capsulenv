@@ -72,7 +72,9 @@ pwsh -NoProfile -File scripts\Test-Capsulenv.ps1
 pwsh -NoProfile -File scripts\Test-Capsulenv.ps1 -Profile Fast
 ```
 
-`Full` is the default and remains the release gate. Pester suites are launched in **separate child PowerShell processes**, with a per-suite timeout (`-SuiteTimeoutSeconds`, default 120), so module reloads, runspaces, mocks, or Pester state from one suite cannot poison the next suite. The runner prints the current suite and duration before moving on; a hang therefore identifies its owning suite instead of leaving the whole gate apparently idle.
+`Full` is the default and remains the release gate. Pester suites are launched in **separate child PowerShell processes** and scheduled through a dependency DAG with a dynamic ready queue (`-ThrottleLimit`, default 4). A shared immutable test-module build is an explicit producer node for functional suites; build/install/text-resource tests that validate build behavior keep their own local builds. Every suite still has an isolated temp/build/artifact/result root and a per-suite timeout (`-SuiteTimeoutSeconds`, default 120), so module reloads, runspaces, mocks, or Pester state from one suite cannot poison another. Successful child stdout/stderr is drained to per-suite artifacts and the parent prints compact completion summaries; failure output is surfaced with its owning suite. Use `-ThrottleLimit 1` when a sequential differential run is useful.
+
+The measured rationale and rejected parallelization experiments are recorded in [`convergence/2026-09-06-test-dag.md`](convergence/2026-09-06-test-dag.md).
 
 The entrypoint runs static analysis first. On Windows it then launches `tests/WindowsPowerShell51.Contract.ps1` through the real `powershell.exe` 5.1 runtime before Pester. That Pester-free contract clean-builds/imports Capsulenv, constructs the rehydrate DAG, and asserts that every desired-state `Plan`/`Apply`/`Verify` callback is actually a `ScriptBlock`; this specifically protects the Windows PowerShell 5.1 argument-binding boundary that modern `pwsh` alone cannot reproduce.
 
