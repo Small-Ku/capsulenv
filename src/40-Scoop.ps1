@@ -386,9 +386,9 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -Apply { param($c,$d) $plan=Get-CapsulenvEnvironmentPlan; $name=Get-CapsulenvScoopPathEnvironmentVariable; Ensure-CapsulenvUserEnvironmentBackupEntries -Names (@($plan.Variables.Keys)+@('PATH',$name)) } `
             -Verify { param($c,$d,$o) $true })
         $packageProjectionNodes.ToArray()
-        (New-CapsulenvDesiredStateNode -Id 'package-projections' -ExecutionAffinity MainRunspace -ConcurrencyPolicy Exclusive `
+        (New-CapsulenvDesiredStateNode -Id 'package-projections' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn $packageProjectionBarrierDependencies `
-            -ReadResources @() `
+            -ReadResources @('process:///desired-state/outputs/package-projections') `
             -WriteResources @() `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) $results=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.PackageProjectionNodeIds)){ $results.Add($c.Outputs[[string]$nodeId]) }; Merge-CapsulenvPackageProjectionResults -Results $results.ToArray() } `

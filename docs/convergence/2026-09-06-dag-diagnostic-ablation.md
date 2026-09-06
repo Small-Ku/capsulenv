@@ -43,3 +43,9 @@ A finite differential check over 9,604 canonical URI pairs, including case varia
 The project-cache repair fan-out does not consume package projection output. Its actual prerequisite is session preparation, which creates the configured tool/project-cache storage roots. The previous `package-projections -> project-cache-link:*` edge serialized independent I/O domains and also made the no-record project-cache barrier wait for package repair for no semantic reason.
 
 Project-cache nodes and the empty project-cache barrier now depend directly on `session-environment`. Package projection and project-cache worker fan-outs can therefore occupy the same diagnostic wave when their resource claims are disjoint. The later `user-integration` join still waits for both the package/persist branch and `tool-relocation`, so final state publication keeps the same safety boundary.
+
+## Follow-up: remove the global exclusive aggregate barrier
+
+`package-projections` is a main-runspace reducer over already-published worker outputs. It performs no independent external mutation, yet it was declared `Exclusive`, so the live ready queue could not run that reducer while any unrelated project-cache/tool worker was still active. That turned an in-memory join into a global serialization point.
+
+The reducer is now `MainRunspace + ResourceBound` with a narrow read claim on `process:///desired-state/outputs/package-projections`. Its dependency barrier still guarantees every package-projection result exists before reduction, while disjoint workers from the project-cache branch no longer block it merely because they are active.

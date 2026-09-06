@@ -64,6 +64,9 @@ Describe 'Capsulenv package projection repair boundary' {
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/alpha'
         @($projectionNodes | ForEach-Object { @($_.Node.WriteResources) }) | Should -Contain 'capsule:///packages/shims/beta'
         $aggregate = @($integration.Plan.Nodes | Where-Object Id -eq 'package-projections')[0]
+        $aggregate.Node.ExecutionAffinity | Should -Be 'MainRunspace'
+        $aggregate.Node.ConcurrencyPolicy | Should -Be 'ResourceBound'
+        @($aggregate.Node.ReadResources) | Should -Contain 'process:///desired-state/outputs/package-projections'
         @($aggregate.Node.DependsOn) | Should -HaveCount 3
         foreach ($node in $projectionNodes) { @($aggregate.Node.DependsOn) | Should -Contain ([string]$node.Id) }
         $projectionWave = @($integration.Plan.ExecutionWaves | Where-Object { @($_.NodeIds | Where-Object { $_ -like 'package-projection:*' }).Count -gt 0 })[0]
