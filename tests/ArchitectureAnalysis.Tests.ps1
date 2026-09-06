@@ -760,7 +760,7 @@ function Invoke-Capsulenv { Initialize-CapsulenvScoopBootstrap }
         @(Get-CapsulenvScoopBootstrapHotPathViolations `
             -BootstrapPath (Join-Path (Join-Path $script:Root 'src') '41-ScoopBootstrap.ps1') `
             -IntegrationsPath (Join-Path (Join-Path $script:Root 'src') '70-Doctor.ps1') `
-            -CommandsPath (Join-Path (Join-Path $script:Root 'src') '90-Commands.ps1')
+            -CommandsPath (Join-Path (Join-Path $script:Root 'src') '90-90-Dispatch.ps1')
         ).Count | Should -Be 0
     }
 

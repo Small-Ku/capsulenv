@@ -281,7 +281,7 @@ $scoopBootstrapHotPathViolations = @(
     Get-CapsulenvScoopBootstrapHotPathViolations `
         -BootstrapPath (Join-Path (Join-Path $root 'src') '41-ScoopBootstrap.ps1') `
         -IntegrationsPath (Join-Path (Join-Path $root 'src') '70-Doctor.ps1') `
-        -CommandsPath (Join-Path (Join-Path $root 'src') '90-Commands.ps1')
+        -CommandsPath (Join-Path (Join-Path $root 'src') '90-90-Dispatch.ps1')
 )
 if ($scoopBootstrapHotPathViolations.Count -gt 0) {
     $detail = $scoopBootstrapHotPathViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }

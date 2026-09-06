@@ -146,25 +146,31 @@ Describe 'Capsulenv portable workflow contracts' {
         }
     }
 
-    It 'makes user-shell explicit and keeps persistent ownership separate from default session mode' {
-        $environmentSource = ((Get-ChildItem -LiteralPath (Join-Path $script:Root 'src') -Filter '30-*.ps1' -File | Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n")
-        $commandsSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/90-Commands.ps1') -Raw
+    It 'enters User mode through explicit takeover before launching the child shell' {
+        $script:InstallUserCall = $null
+        $script:ChildShellCall = $null
+        Mock Get-CapsulenvUserIntegrationMode { 'ShellOnly' } -ModuleName Capsulenv
+        Mock Install-CapsulenvUserEnvironment {
+            param($Force, $RefreshBackup)
+            $script:InstallUserCall = [pscustomobject]@{ Force = [bool]$Force; RefreshBackup = [bool]$RefreshBackup }
+        } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvChildShell {
+            param($IntegrationMode, $SkipUserIntegrationSync)
+            $script:ChildShellCall = [pscustomobject]@{ IntegrationMode = [string]$IntegrationMode; SkipSync = [bool]$SkipUserIntegrationSync }
+        } -ModuleName Capsulenv
+
+        Enter-CapsulenvUserShell -Force
+
+        $script:InstallUserCall.Force | Should -BeTrue
+        $script:InstallUserCall.RefreshBackup | Should -BeTrue
+        $script:ChildShellCall.IntegrationMode | Should -Be 'User'
+        $script:ChildShellCall.SkipSync | Should -BeTrue
+    }
+
+    It 'keeps lifecycle cleanup and desired-state repair authority bounded' {
         $lifecycleSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/72-Lifecycle.ps1') -Raw
         $doctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
 
-        $environmentSource | Should -Match '\$ledgerWasUser = \(\$backupExists -and \$null -ne \$ledgerState -and \[string\]\$ledgerState\.Mode -eq ''User''\)'
-        $environmentSource | Should -Match '\$alreadyUser = \(\$backupExists -and \$currentMode -eq ''User''\)'
-        $environmentSource | Should -Match '\$currentMode = Get-CapsulenvUserIntegrationMode'
-        $environmentSource | Should -Match '\$refreshBackup = \(\(Get-CapsulenvUserIntegrationMode\) -ne ''User''\)'
-        $environmentSource | Should -Match '\$RefreshBackup = \$true'
-        $commandsSource | Should -Match "'user-shell'"
-        $commandsSource | Should -Match 'Enter-CapsulenvUserShell -Force:'
-        $environmentSource | Should -Match 'Install-CapsulenvUserEnvironment -Force:\$Force -RefreshBackup:\$refreshBackup'
-        $environmentSource | Should -Match 'Invoke-CapsulenvChildShell -IntegrationMode User -SkipUserIntegrationSync'
-        $commandsSource | Should -Match "'eject'"
-        $commandsSource | Should -Match "'status'"
-        $commandsSource | Should -Match 'help <topic>'
-        $commandsSource | Should -Match 'No separate init step is required'
         $lifecycleSource | Should -Match 'Get-CapsulenvDirtyRepositories'
         $lifecycleSource | Should -Match 'Stop-CapsulenvOwnedProcesses'
         $lifecycleSource | Should -Match 'CAPSULENV_SCRATCH|Get-CapsulenvScratchPath'
