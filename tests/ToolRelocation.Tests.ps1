@@ -161,6 +161,41 @@ Describe 'Capsulenv tool relocation parsing' {
     }
 
 
+    It 'passes UV_PROJECT_ENVIRONMENT only to uv child processes during workspace repair' {
+        $workRoot = Join-Path $script:Root '.build/test-uv-workspace-child-environment'
+        $environmentPath = Join-Path $workRoot '.venv'
+        $projectPath = Join-Path $workRoot 'pyproject.toml'
+        [void](New-Item -ItemType Directory -Path $environmentPath -Force)
+        Set-Content -LiteralPath $projectPath -Value '[project]' -Encoding UTF8
+        $workspace = [pscustomobject]@{
+            ProjectPath = $projectPath
+            EnvironmentPath = $environmentPath
+        }
+        $originalValue = [Environment]::GetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', 'Process')
+        try {
+            [Environment]::SetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', 'parent-value', 'Process')
+            Mock Invoke-CapsulenvNativeTool { 0 } -ModuleName Capsulenv
+
+            $result = & $script:Module {
+                param($workspaceValue)
+                Repair-CapsulenvUvWorkspace `
+                    -UvExecutable 'uv.exe' `
+                    -Workspace $workspaceValue `
+                    -RelocatableSupported $true
+            } $workspace
+
+            $result.Status | Should -Be 'RecreatedRelocatable'
+            Should -Invoke Invoke-CapsulenvNativeTool -ModuleName Capsulenv -Times 2 -Exactly -ParameterFilter {
+                $Environment -is [System.Collections.IDictionary] -and
+                [string]$Environment['UV_PROJECT_ENVIRONMENT'] -eq $environmentPath
+            }
+            [Environment]::GetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', 'Process') | Should -Be 'parent-value'
+        } finally {
+            [Environment]::SetEnvironmentVariable('UV_PROJECT_ENVIRONMENT', $originalValue, 'Process')
+            Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'does not mutate UV_PROJECT_ENVIRONMENT or process working directory inside workspace repair' {
         $workspaceSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/39-ToolWorkspaceRelocation.ps1') -Raw
         $nativeSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/37-ToolRelocation.ps1') -Raw

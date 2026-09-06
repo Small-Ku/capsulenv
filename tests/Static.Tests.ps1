@@ -342,7 +342,6 @@ Describe 'Capsulenv static and relocation' {
         foreach ($requiredUvWorkspaceBehavior in @(
             "'venv', `$environmentPath",
             "'--relocatable'",
-            "'UV_PROJECT_ENVIRONMENT'",
             "'sync',",
             "'--project', [string]`$Workspace.ProjectPath",
             "Move-Item -LiteralPath `$environmentPath -Destination `$rollbackPath",
