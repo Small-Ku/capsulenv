@@ -276,32 +276,56 @@ function New-CapsulenvDesiredStateNode {
 function Resolve-CapsulenvDesiredStateOrder {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object[]]$Nodes)
+
     $byId = @{}
-    foreach ($node in $Nodes) {
-        $id = [string]$node.Id
+    for ($index = 0; $index -lt $Nodes.Count; $index++) {
+        $id = [string]$Nodes[$index].Id
         if ([string]::IsNullOrWhiteSpace($id)) { throw '[[CapsulenvText:DesiredState.NodeIdEmpty]]' }
         if ($byId.ContainsKey($id)) { throw ('[[CapsulenvText:DesiredState.DuplicateNode]]' -f $id) }
-        $byId[$id] = $node
+        $byId[$id] = $Nodes[$index]
     }
-    foreach ($node in $Nodes) {
+
+    $indegree = [int[]]::new($Nodes.Count)
+    $dependents = @{}
+    foreach ($id in @($byId.Keys)) { $dependents[[string]$id] = [System.Collections.Generic.List[int]]::new() }
+    for ($index = 0; $index -lt $Nodes.Count; $index++) {
+        $node = $Nodes[$index]
         foreach ($dependency in @($node.DependsOn)) {
-            if (-not $byId.ContainsKey([string]$dependency)) { throw ('[[CapsulenvText:DesiredState.MissingDependency]]' -f $node.Id, $dependency) }
+            $dependencyId = [string]$dependency
+            if (-not $byId.ContainsKey($dependencyId)) { throw ('[[CapsulenvText:DesiredState.MissingDependency]]' -f $node.Id, $dependency) }
+            $indegree[$index]++
+            $dependents[$dependencyId].Add($index)
         }
     }
-    $remaining = New-Object System.Collections.Generic.List[object]
-    foreach ($node in $Nodes) { $remaining.Add($node) }
-    $ordered = New-Object System.Collections.Generic.List[object]
-    $resolved = @{}
-    while ($remaining.Count -gt 0) {
-        $selectedIndex = -1
-        for ($index = 0; $index -lt $remaining.Count; $index++) {
-            $ready = $true
-            foreach ($dependency in @($remaining[$index].DependsOn)) { if (-not $resolved.ContainsKey([string]$dependency)) { $ready = $false; break } }
-            if ($ready) { $selectedIndex = $index; break }
+
+    # The old resolver always selected the earliest node in original input order
+    # among all currently-ready nodes. SortedSet<int> preserves that stable tie-break
+    # while Kahn's algorithm avoids rescanning the entire unresolved list each step.
+    $readyIndexes = [System.Collections.Generic.SortedSet[int]]::new()
+    for ($index = 0; $index -lt $Nodes.Count; $index++) {
+        if ($indegree[$index] -eq 0) { [void]$readyIndexes.Add($index) }
+    }
+
+    $ordered = [System.Collections.Generic.List[object]]::new()
+    $selected = [bool[]]::new($Nodes.Count)
+    while ($readyIndexes.Count -gt 0) {
+        $selectedIndex = [int]$readyIndexes.Min
+        [void]$readyIndexes.Remove($selectedIndex)
+        $selected[$selectedIndex] = $true
+        $node = $Nodes[$selectedIndex]
+        $ordered.Add($node)
+        foreach ($dependentIndex in @($dependents[[string]$node.Id])) {
+            $indegree[$dependentIndex]--
+            if ($indegree[$dependentIndex] -eq 0) { [void]$readyIndexes.Add([int]$dependentIndex) }
         }
-        if ($selectedIndex -lt 0) { throw ('[[CapsulenvText:DesiredState.DependencyCycle]]' -f (@($remaining.Id) -join ', ')) }
-        $selected = $remaining[$selectedIndex]
-        $ordered.Add($selected); $resolved[[string]$selected.Id] = $true; $remaining.RemoveAt($selectedIndex)
+    }
+
+    if ($ordered.Count -ne $Nodes.Count) {
+        $unresolved = [System.Collections.Generic.List[string]]::new()
+        for ($index = 0; $index -lt $Nodes.Count; $index++) {
+            if (-not $selected[$index]) { $unresolved.Add([string]$Nodes[$index].Id) }
+        }
+        throw ('[[CapsulenvText:DesiredState.DependencyCycle]]' -f ($unresolved.ToArray() -join ', '))
     }
     return $ordered.ToArray()
 }

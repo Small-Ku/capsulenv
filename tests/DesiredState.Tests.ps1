@@ -15,6 +15,32 @@ Describe 'Capsulenv desired-state graph' {
         $result.Ids -join ',' | Should -Be 'a,b'; $result.Log -join ',' | Should -Be 'a,b'; @($result.Verified | Where-Object { -not $_ }).Count | Should -Be 0
     }
 
+    It 'preserves original input priority when a dependency makes an earlier node newly ready' {
+        $ids = & $script:Module {
+            $a=New-CapsulenvDesiredStateNode -Id a -DependsOn b -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $b=New-CapsulenvDesiredStateNode -Id b -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            $c=New-CapsulenvDesiredStateNode -Id c -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
+            @((Resolve-CapsulenvDesiredStateOrder -Nodes @($a,$b,$c)).Id)
+        }
+        $ids -join ',' | Should -Be 'b,a,c'
+    }
+
+    It 'keeps topology validation at the resolver boundary' {
+        $errors = & $script:Module {
+            $node = { param($Id,$DependsOn=@()) New-CapsulenvDesiredStateNode -Id $Id -DependsOn $DependsOn -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true} }
+            $duplicate = $false
+            try { Resolve-CapsulenvDesiredStateOrder -Nodes @((& $node 'a'),(& $node 'a')) | Out-Null } catch { $duplicate = $true }
+            $missing = $false
+            try { Resolve-CapsulenvDesiredStateOrder -Nodes @((& $node 'a' @('missing'))) | Out-Null } catch { $missing = $true }
+            $cycle = $false
+            try { Resolve-CapsulenvDesiredStateOrder -Nodes @((& $node 'a' @('b')),(& $node 'b' @('a'))) | Out-Null } catch { $cycle = $true }
+            [pscustomobject]@{ Duplicate=$duplicate; Missing=$missing; Cycle=$cycle }
+        }
+        $errors.Duplicate | Should -BeTrue
+        $errors.Missing | Should -BeTrue
+        $errors.Cycle | Should -BeTrue
+    }
+
     It 'does not materialize diagnostic topology for an execution-only plan' {
         $shape = & $script:Module {
             $a=New-CapsulenvDesiredStateNode -Id a -ReadResources @('capsule:///diag/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}
