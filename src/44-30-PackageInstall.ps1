@@ -214,7 +214,7 @@ function Repair-CapsulenvPackageProjection {
         if ([string]$mapping.Kind -eq 'Directory') {
             $existingTarget = Get-CapsulenvReparseTarget -Path $source
             if ($null -ne $existingTarget -and -not (Test-CapsulenvSamePath -Left $existingTarget -Right $target)) {
-                Remove-Item -LiteralPath $source -Force
+                Remove-CapsulenvPackageReparsePoint -Path $source
             }
             if ($null -eq (Get-CapsulenvReparseTarget -Path $source)) {
                 if (Test-Path -LiteralPath $source) {

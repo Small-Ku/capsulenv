@@ -228,7 +228,7 @@ function Set-CapsulenvPackageDirectoryLink {
         if (Test-CapsulenvSamePath -Left $existingTarget -Right $Target) {
             return
         }
-        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+        Remove-CapsulenvPackageReparsePoint -Path $Path
     } elseif (Test-Path -LiteralPath $Path) {
         throw "Refusing to replace a non-link path while projecting a package: $Path"
     }
@@ -249,7 +249,7 @@ function Set-CapsulenvPackageFileLink {
         if (Test-CapsulenvSamePath -Left $existingTarget -Right $Target) {
             return
         }
-        Remove-Item -LiteralPath $Path -Force
+        Remove-CapsulenvPackageReparsePoint -Path $Path
     } elseif (Test-Path -LiteralPath $Path -PathType Leaf) {
         if ((Test-CapsulenvWindows) -and (Test-CapsulenvHardLinkMatch -Left $Path -Right $Target)) {
             return
@@ -280,7 +280,7 @@ function Repair-CapsulenvPackageFileProjection {
         if (Test-CapsulenvSamePath -Left $existingTarget -Right $Target) {
             return
         }
-        Remove-Item -LiteralPath $Path -Force
+        Remove-CapsulenvPackageReparsePoint -Path $Path
         Set-CapsulenvPackageFileLink -Path $Path -Target $Target
         return
     }
@@ -302,6 +302,29 @@ function Repair-CapsulenvPackageFileProjection {
         throw "Refusing to replace an unknown path while repairing $OwnershipLabel`: $Path"
     }
     Set-CapsulenvPackageFileLink -Path $Path -Target $Target
+}
+
+function Remove-CapsulenvPackageReparsePoint {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    # Scoop and older Capsulenv versions can leave a stale junction with the
+    # ReadOnly attribute set. Windows PowerShell 5.1's Remove-Item -Force still
+    # refuses that broken directory junction. We have already inspected the
+    # reparse target before reaching this helper, so remove only the link itself
+    # with the .NET directory/file API; never recurse through its target.
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+        throw "Refusing to remove a non-reparse path while replacing a package projection: $Path"
+    }
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+        $item.Attributes = $item.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
+    }
+    if ($item.PSIsContainer) {
+        [System.IO.Directory]::Delete($Path, $false)
+    } else {
+        [System.IO.File]::Delete($Path)
+    }
 }
 
 function Get-CapsulenvPackagePersistDefinitions {

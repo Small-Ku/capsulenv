@@ -581,7 +581,13 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.ProjectionRepairState'
     $pendingProperty = $saved.PSObject.Properties['PendingProjectionRepair']
     $pending = ($null -ne $pendingProperty -and [bool]$pendingProperty.Value)
     $issuesProperty = $saved.PSObject.Properties['ProjectionRepairIssues']
-    $issues = if ($null -ne $issuesProperty) { @($issuesProperty.Value) } else { @() }
+    # Keep the empty JSON array as an actual PowerShell array. An array
+    # subexpression returned through an if-expression is unrolled in Windows
+    # PowerShell 5.1, which otherwise leaves $issues as $null under StrictMode.
+    $issues = @()
+    if ($null -ne $issuesProperty) {
+        $issues = @($issuesProperty.Value)
+    }
     $status = if ($pending -or $issues.Count -gt 0) { 'Advisory' } else { 'Healthy' }
     $summary = if ($issues.Count -gt 0) {
         "Legacy Scoop projection repair has $($issues.Count) unresolved issue(s); foreign or ambiguous state was left unchanged."

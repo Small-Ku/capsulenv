@@ -111,6 +111,28 @@ Describe 'Capsulenv package projection repair boundary' {
         @($projectionWave.NodeIds) | Should -Not -Contain 'user-environment-backup'
     }
 
+    It 'replaces a read-only broken directory junction without touching its target' {
+        $root = Join-Path $TestDrive 'readonly-broken-junction'
+        $oldTarget = Join-Path $root 'old-target'
+        $newTarget = Join-Path $root 'new-target'
+        $link = Join-Path $root 'current'
+        New-Item -ItemType Directory -Path $oldTarget, $newTarget -Force | Out-Null
+        New-Item -ItemType Junction -Path $link -Target $oldTarget -Force | Out-Null
+        Remove-Item -LiteralPath $oldTarget -Recurse -Force
+        $linkItem = Get-Item -LiteralPath $link -Force
+        $linkItem.Attributes = $linkItem.Attributes -bor [System.IO.FileAttributes]::ReadOnly
+
+        & $script:Module {
+            param($Path, $Target)
+            Set-CapsulenvPackageDirectoryLink -Path $Path -Target $Target
+        } $link $newTarget
+
+        $repaired = Get-Item -LiteralPath $link -Force
+        $repaired.LinkType | Should -Be 'Junction'
+        @($repaired.Target) | Should -Contain $newTarget
+        (Get-Item -LiteralPath $newTarget -Force).PSIsContainer | Should -BeTrue
+    }
+
     It 'expands project-cache repairs into parallel link nodes with one registry commit barrier' {
         Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
         Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
@@ -400,6 +422,23 @@ $global:LASTEXITCODE = 0
         @($saved.ProjectionRepairIssues) | Should -HaveCount 1
         $saved.ProjectionRepairIssues[0].Selector | Should -Be 'user/tool'
         $saved.ProjectionRepairIssues[0].ErrorId | Should -Be 'Capsulenv.LegacyScoopProjection.AmbiguousVersion'
+    }
+
+    It 'reports an empty projection issue array as healthy in doctor' {
+        $statePath = Join-Path $TestDrive 'state/healthy-rehydration.json'
+        [pscustomobject]@{
+            PendingProjectionRepair = $false
+            ProjectionRepairIssues = @()
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $statePath -Encoding UTF8
+        Mock Get-CapsulenvRehydrationStatePath { $statePath } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            @(Invoke-CapsulenvDoctorChecks -Ids @('Capsulenv.Doctor.Scoop.ProjectionRepairState'))
+        }
+
+        $result | Should -HaveCount 1
+        $result[0].Status | Should -Be 'Healthy'
+        $result[0].Summary | Should -Be 'No persisted relocation repair issues.'
     }
 
     It 'does not force every activation to retry a non-retryable legacy ownership issue' {
