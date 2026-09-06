@@ -494,4 +494,82 @@ function Invoke-CapsulenvDetachedWorker {
         @($violations.Rule) | Should -Contain 'DesiredStateWorkerDetachedAsyncExecution'
     }
 
+
+    It 'rejects runtime launchers that buffer dispatcher output or lose native exit status' {
+        $fixture = New-CapsulenvStaticFixture -Name 'runtime-launcher-unsafe.ps1' -Source @'
+Import-Module $modulePath -Force
+$result = Invoke-Capsulenv @args
+'@
+        $violations = @(Get-CapsulenvRuntimeLauncherBoundaryViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'RuntimeLauncherDisableNameChecking'
+        @($violations.Rule) | Should -Contain 'RuntimeLauncherNoDispatcherCapture'
+        @($violations.Rule) | Should -Contain 'RuntimeLauncherExitCodePreservation'
+    }
+
+    It 'rejects lifecycle ownership in the deployment-only installer' {
+        $fixture = New-CapsulenvStaticFixture -Name 'installer-lifecycle-unsafe.ps1' -Source @'
+param(
+    [ValidateSet('ShellOnly', 'User')][string]$Mode,
+    [switch]$SkipScoopBootstrap
+)
+Import-Module ./Capsulenv.psd1
+Initialize-CapsulenvScoopBootstrap
+Set-CapsulenvInstallMode -Mode User
+'@
+        $violations = @(Get-CapsulenvInstallerLifecycleBoundaryViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'InstallerDeploymentOnlyCommand'
+        @($violations.Rule) | Should -Contain 'InstallerDeploymentOnlyParameter'
+        @($violations.Rule) | Should -Contain 'InstallerDeploymentOnlyModeSelector'
+    }
+
+    It 'rejects recursive persist relocation scans' {
+        $fixture = New-CapsulenvStaticFixture -Name 'persist-recursive-scan.ps1' -Source @'
+function Invoke-CapsulenvPersistRelocationRepair {
+    Get-ChildItem -LiteralPath $PersistRoot -Recurse
+}
+'@
+        $violations = @(Get-CapsulenvPersistRelocationScanViolations -Paths @($fixture))
+        $violations.Count | Should -Be 1
+        $violations[0].Rule | Should -Be 'PersistRelocationNoRecursiveScan'
+    }
+
+    It 'requires reparse-point inspection before hard-link identity checks' {
+        $fixture = New-CapsulenvStaticFixture -Name 'project-cache-ordering.ps1' -Source @'
+function Get-CapsulenvProjectLinkInfo {
+    param($Plan)
+    if (Test-CapsulenvHardLinkMatch -Left $Plan.LinkPath -Right $Plan.StorePath) { return $true }
+    $target = Get-CapsulenvReparseTarget -Path $Plan.LinkPath
+    return $false
+}
+'@
+        $violations = @(Get-CapsulenvProjectCacheOrderingViolations -Path $fixture)
+        $violations.Count | Should -Be 1
+        $violations[0].Rule | Should -Be 'ProjectCacheReparseBeforeHardLink'
+    }
+
+    It 'requires precise Bitwarden state boundaries and rejects wholesale settings reserialization' {
+        $fixture = New-CapsulenvStaticFixture -Name 'bitwarden-state-unsafe.ps1' -Source @'
+function Set-CapsulenvBitwardenDesktopSshAgent {
+    ConvertTo-Json -InputObject $state -Depth 100
+}
+function Restore-CapsulenvBitwardenDesktopSettings {
+    return $json
+}
+'@
+        $violations = @(Get-CapsulenvBitwardenStateBoundaryViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'BitwardenPreciseStateBoundary'
+        @($violations.Rule) | Should -Contain 'BitwardenNoWholesaleJsonReserialization'
+    }
+
+    It 'accepts repository control-plane, relocation, project-cache, and Bitwarden AST boundaries' {
+        @(Get-CapsulenvRuntimeLauncherBoundaryViolations -Path (Join-Path (Join-Path $script:Root 'module-runtime') 'Invoke-Capsulenv.ps1')).Count | Should -Be 0
+        @(Get-CapsulenvInstallerLifecycleBoundaryViolations -Path (Join-Path (Join-Path $script:Root 'scripts') 'Install-Capsulenv.ps1')).Count | Should -Be 0
+        @(Get-CapsulenvPersistRelocationScanViolations -Paths @(
+            (Join-Path (Join-Path $script:Root 'src') '45-Relocation.ps1'),
+            (Join-Path (Join-Path $script:Root 'src') '46-PersistRelocation.ps1')
+        )).Count | Should -Be 0
+        @(Get-CapsulenvProjectCacheOrderingViolations -Path (Join-Path (Join-Path $script:Root 'src') '35-ToolStorage.ps1')).Count | Should -Be 0
+        @(Get-CapsulenvBitwardenStateBoundaryViolations -Path (Join-Path (Join-Path $script:Root 'src') '55-BitwardenSshAgent.ps1')).Count | Should -Be 0
+    }
+
 }

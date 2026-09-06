@@ -211,6 +211,36 @@ if ($portablePackageExecutionViolations.Count -gt 0) {
 $testHarnessIsolationViolations = @(
     Get-CapsulenvTestHarnessIsolationViolations -Path (Join-Path (Join-Path $root 'scripts') 'Test-Capsulenv.ps1')
 )
+
+$runtimeLauncherViolations = @(Get-CapsulenvRuntimeLauncherBoundaryViolations -Path (Join-Path (Join-Path $root 'module-runtime') 'Invoke-Capsulenv.ps1'))
+if ($runtimeLauncherViolations.Count -gt 0) {
+    $detail = $runtimeLauncherViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv runtime-launcher boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$installerLifecycleViolations = @(Get-CapsulenvInstallerLifecycleBoundaryViolations -Path (Join-Path (Join-Path $root 'scripts') 'Install-Capsulenv.ps1'))
+if ($installerLifecycleViolations.Count -gt 0) {
+    $detail = $installerLifecycleViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv installer lifecycle-boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$persistRelocationScanViolations = @(Get-CapsulenvPersistRelocationScanViolations -Paths @((Join-Path (Join-Path $root 'src') '45-Relocation.ps1'), (Join-Path (Join-Path $root 'src') '46-PersistRelocation.ps1')))
+if ($persistRelocationScanViolations.Count -gt 0) {
+    $detail = $persistRelocationScanViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv persist-relocation scan analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$projectCacheOrderingViolations = @(Get-CapsulenvProjectCacheOrderingViolations -Path (Join-Path (Join-Path $root 'src') '35-ToolStorage.ps1'))
+if ($projectCacheOrderingViolations.Count -gt 0) {
+    $detail = $projectCacheOrderingViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv project-cache ordering analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$bitwardenStateBoundaryViolations = @(Get-CapsulenvBitwardenStateBoundaryViolations -Path (Join-Path (Join-Path $root 'src') '55-BitwardenSshAgent.ps1'))
+if ($bitwardenStateBoundaryViolations.Count -gt 0) {
+    $detail = $bitwardenStateBoundaryViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv Bitwarden state-boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
 if ($testHarnessIsolationViolations.Count -gt 0) {
     $detail = $testHarnessIsolationViolations | ForEach-Object {
         '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
@@ -253,6 +283,11 @@ if ($diagnostics.Count -gt 0) {
     DesiredStateSchedulerViolations = $desiredStateSchedulerViolations.Count
     PortablePackageExecutionViolations = $portablePackageExecutionViolations.Count
     TestHarnessIsolationViolations = $testHarnessIsolationViolations.Count
+    RuntimeLauncherBoundaryViolations = $runtimeLauncherViolations.Count
+    InstallerLifecycleBoundaryViolations = $installerLifecycleViolations.Count
+    PersistRelocationScanViolations = $persistRelocationScanViolations.Count
+    ProjectCacheOrderingViolations = $projectCacheOrderingViolations.Count
+    BitwardenStateBoundaryViolations = $bitwardenStateBoundaryViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }
 } finally {

@@ -11,6 +11,11 @@ if (Test-Path -LiteralPath $workerStaticAnalysisLibrary -PathType Leaf) {
     . $workerStaticAnalysisLibrary
 }
 
+$contractStaticAnalysisLibrary = Join-Path $PSScriptRoot 'Capsulenv.ContractStaticAnalysis.ps1'
+if (Test-Path -LiteralPath $contractStaticAnalysisLibrary -PathType Leaf) {
+    . $contractStaticAnalysisLibrary
+}
+
 function Get-CapsulenvStaticAst {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Path)
