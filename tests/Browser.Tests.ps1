@@ -2,7 +2,7 @@ Describe 'Capsulenv Gecko browser configuration selection' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        $script:Build = Get-CapsulenvTestModuleBuild -Root $script:Root
         Import-Module $script:Build.ModulePath -Force
         $script:Module = @(Get-Module Capsulenv)[-1]
     }
@@ -60,7 +60,7 @@ Describe 'Capsulenv Gecko browser launch contracts' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        $script:Build = Get-CapsulenvTestModuleBuild -Root $script:Root
         Import-Module $script:Build.ModulePath -Force
         $script:Module = @(Get-Module Capsulenv)[-1]
     }
@@ -179,7 +179,7 @@ Describe 'Capsulenv User default-browser integration' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        $script:Build = Get-CapsulenvTestModuleBuild -Root $script:Root
         Import-Module $script:Build.ModulePath -Force
         $script:Module = @(Get-Module Capsulenv)[-1]
     }

@@ -3,6 +3,7 @@ Describe 'Capsulenv test harness isolation' {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $script:Pwsh = [string](Get-Process -Id $PID).Path
         . (Join-Path (Join-Path $script:Root 'scripts') 'Capsulenv.TestHarness.ps1')
+        . (Join-Path (Join-Path $script:Root 'tests') 'Capsulenv.TestSupport.ps1')
     }
 
     It 'routes implicit module builds through the per-suite build root' {
@@ -101,35 +102,60 @@ Describe 'Capsulenv test harness isolation' {
         } | Should -Throw "*references missing suite(s)*"
     }
 
-    It 'models isolated suites as a fan-out DAG with a terminal barrier' {
+    It 'models the shared module build as a data-producing DAG root before suite fan-out' {
         $cases = @(New-CapsulenvTestCasePlan -TestPaths @(
             'Z:\tests\Alpha.Tests.ps1',
             'Z:\tests\Beta.Tests.ps1'
         ) -Repeat 1)
         $plan = New-CapsulenvTestExecutionPlan -Cases $cases
 
-        @($plan.Nodes) | Should -HaveCount 3
-        @($plan.Nodes | Where-Object Kind -eq 'Suite') | Should -HaveCount 2
+        @($plan.Nodes) | Should -HaveCount 4
+        $build = @($plan.Nodes | Where-Object Id -eq $plan.SharedModuleBuildId)[0]
+        $build.Kind | Should -Be 'SharedModuleBuild'
+        @($build.DependsOn) | Should -HaveCount 0
+        $suiteNodes = @($plan.Nodes | Where-Object Kind -eq 'Suite')
+        $suiteNodes | Should -HaveCount 2
+        foreach ($suiteNode in $suiteNodes) {
+            @($suiteNode.DependsOn) | Should -Be @($plan.SharedModuleBuildId)
+        }
         $barrier = @($plan.Nodes | Where-Object Id -eq $plan.TerminalId)[0]
         $barrier.Kind | Should -Be 'Barrier'
-        @($barrier.DependsOn) | Should -Be @($plan.Nodes | Where-Object Kind -eq 'Suite' | ForEach-Object { [string]$_.Id })
+        @($barrier.DependsOn) | Should -Be @($suiteNodes | ForEach-Object { [string]$_.Id })
     }
 
-    It 'publishes the terminal test barrier only after every suite node completes' {
+    It 'publishes suite fan-out after the shared build and the terminal barrier after every suite' {
         $cases = @(New-CapsulenvTestCasePlan -TestPaths @(
             'Z:\tests\Alpha.Tests.ps1',
             'Z:\tests\Beta.Tests.ps1'
         ) -Repeat 1)
         $plan = New-CapsulenvTestExecutionPlan -Cases $cases
         $state = New-CapsulenvTestDagState -Nodes $plan.Nodes
-        @($state.ReadyIndexes) | Should -HaveCount 2
+        @($state.ReadyIndexes) | Should -HaveCount 1
+        @($state.ReadyIndexes | ForEach-Object { [string]$plan.Nodes[[int]$_].Id }) | Should -Contain $plan.SharedModuleBuildId
 
+        Complete-CapsulenvTestDagNode -State $state -NodeId $plan.SharedModuleBuildId
         $suiteNodes = @($plan.Nodes | Where-Object Kind -eq 'Suite')
+        @($state.ReadyIndexes | ForEach-Object { [string]$plan.Nodes[[int]$_].Id }) | Should -Be @($suiteNodes | ForEach-Object { [string]$_.Id })
+
         Complete-CapsulenvTestDagNode -State $state -NodeId ([string]$suiteNodes[0].Id)
         @($state.ReadyIndexes | ForEach-Object { [string]$plan.Nodes[[int]$_].Id }) | Should -Not -Contain $plan.TerminalId
 
         Complete-CapsulenvTestDagNode -State $state -NodeId ([string]$suiteNodes[1].Id)
         @($state.ReadyIndexes | ForEach-Object { [string]$plan.Nodes[[int]$_].Id }) | Should -Contain $plan.TerminalId
+    }
+
+    It 'uses the injected shared module without touching the source build path' {
+        $modulePath = Join-Path $TestDrive 'Capsulenv.psm1'
+        'function Get-Demo {}' | Set-Content -LiteralPath $modulePath -Encoding UTF8
+        $oldPrebuilt = $env:CAPSULENV_TEST_PREBUILT_MODULE_PATH
+        try {
+            $env:CAPSULENV_TEST_PREBUILT_MODULE_PATH = $modulePath
+            $build = Get-CapsulenvTestModuleBuild -Root (Join-Path $TestDrive 'missing-source-root')
+            $build.Shared | Should -BeTrue
+            $build.ModulePath | Should -Be ([System.IO.Path]::GetFullPath($modulePath))
+        } finally {
+            $env:CAPSULENV_TEST_PREBUILT_MODULE_PATH = $oldPrebuilt
+        }
     }
 
     It 'fails closed for missing test DAG dependencies and duplicate completion' {

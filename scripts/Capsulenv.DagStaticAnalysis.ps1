@@ -356,7 +356,7 @@ function Get-CapsulenvTestHarnessIsolationViolations {
                 $true
             )
         )) {
-            if ([string]$variableAst.VariablePath.UserPath -match '^(?i:env:CAPSULENV_TEST_SUITE_|env:CAPSULENV_BUILD_ROOT$|env:TMP$|env:TEMP$|env:TMPDIR$)') {
+            if ([string]$variableAst.VariablePath.UserPath -match '^(?i:env:CAPSULENV_TEST_SUITE_|env:CAPSULENV_TEST_PREBUILT_MODULE_PATH$|env:CAPSULENV_BUILD_ROOT$|env:TMP$|env:TEMP$|env:TMPDIR$)') {
                 $violations.Add([pscustomobject]@{
                     Rule = 'TestHarnessParentEnvironmentMutation'
                     Path = $fullPath
@@ -392,6 +392,7 @@ function Get-CapsulenvTestHarnessIsolationViolations {
         'CAPSULENV_TEST_SUITE_RESULT_PATH',
         'CAPSULENV_TEST_ARTIFACT_ROOT',
         'CAPSULENV_BUILD_ROOT',
+        'CAPSULENV_TEST_PREBUILT_MODULE_PATH',
         'TMP',
         'TEMP',
         'TMPDIR'

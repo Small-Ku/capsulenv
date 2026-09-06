@@ -2,7 +2,7 @@ Describe 'Capsulenv tool relocation parsing' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        $script:Build = Get-CapsulenvTestModuleBuild -Root $script:Root
         Import-Module $script:Build.ModulePath -Force -DisableNameChecking
         $script:Module = @(Get-Module Capsulenv)[-1]
         $script:PythonRoot = Join-Path $script:Root '.build/test-uv-python'

@@ -100,27 +100,37 @@ function New-CapsulenvTestExecutionPlan {
     param([Parameter(Mandatory = $true)][object[]]$Cases)
 
     $nodes = New-Object System.Collections.Generic.List[object]
+    $sharedModuleBuildId = 'build:shared-module'
+    $nodes.Add([pscustomobject][ordered]@{
+        Id = $sharedModuleBuildId
+        Index = 0
+        Kind = 'SharedModuleBuild'
+        DependsOn = [string[]]@()
+        Case = $null
+    })
     foreach ($case in @($Cases)) {
         $id = ('suite:{0:D3}:r{1:D2}:{2}' -f [int]$case.Index, [int]$case.RepeatIndex, [string]$case.SuiteName)
         $nodes.Add([pscustomobject][ordered]@{
             Id = $id
-            Index = [int]$case.Index
+            Index = [int]$case.Index + 1
             Kind = 'Suite'
-            DependsOn = [string[]]@()
+            DependsOn = [string[]]@($sharedModuleBuildId)
             Case = $case
         })
     }
-    $suiteIds = [string[]]@($nodes | ForEach-Object { [string]$_.Id })
+    $suiteIds = [string[]]@($nodes | Where-Object Kind -eq 'Suite' | ForEach-Object { [string]$_.Id })
+    $terminalId = 'gate:complete'
     $nodes.Add([pscustomobject][ordered]@{
-        Id = 'gate:complete'
-        Index = $Cases.Count
+        Id = $terminalId
+        Index = $Cases.Count + 1
         Kind = 'Barrier'
         DependsOn = $suiteIds
         Case = $null
     })
     return [pscustomobject][ordered]@{
         Nodes = $nodes.ToArray()
-        TerminalId = 'gate:complete'
+        SharedModuleBuildId = $sharedModuleBuildId
+        TerminalId = $terminalId
     }
 }
 
@@ -175,6 +185,8 @@ function Complete-CapsulenvTestDagNode {
 
     if (-not $State.IndexById.ContainsKey($NodeId)) { throw "Unknown test DAG node id: $NodeId" }
     if (-not $State.Completed.Add($NodeId)) { throw "Test DAG node completed more than once: $NodeId" }
+    $nodeIndex = [int]$State.IndexById[$NodeId]
+    [void]$State.ReadyIndexes.Remove($nodeIndex)
     foreach ($dependentIndex in @($State.Dependents[$NodeId])) {
         $State.UnmetDependencies[$dependentIndex]--
         if ($State.UnmetDependencies[$dependentIndex] -lt 0) {

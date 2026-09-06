@@ -32,6 +32,11 @@ try {
     }
     Import-Module $pester.Path -Force
 
+    $testSupport = Join-Path (Split-Path -Parent $testPath) 'Capsulenv.TestSupport.ps1'
+    if (Test-Path -LiteralPath $testSupport -PathType Leaf) {
+        . $testSupport
+    }
+
     $result = Invoke-Pester -Path $testPath -PassThru
     $summary.Passed = [int]$result.PassedCount
     $summary.Failed = [int]$result.FailedCount

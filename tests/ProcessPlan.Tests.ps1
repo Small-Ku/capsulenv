@@ -1,5 +1,5 @@
 Describe 'Capsulenv process plans' {
-    BeforeAll { $script:Root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue; $script:Build=& (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv }
+    BeforeAll { $script:Root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue; $script:Build=Get-CapsulenvTestModuleBuild -Root $script:Root; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv }
     AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
     It 'applies child environment path and cwd then restores the parent' {
         $hostExecutable=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName; $work=Join-Path $TestDrive work; $pathEntry=Join-Path $TestDrive path; New-Item -ItemType Directory -Path $work,$pathEntry -Force|Out-Null

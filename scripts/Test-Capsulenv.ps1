@@ -78,7 +78,7 @@ if ([string]::IsNullOrWhiteSpace($hostExecutable) -or -not (Test-Path -LiteralPa
 $executionPlan = New-CapsulenvTestExecutionPlan -Cases $testCases
 $dagState = New-CapsulenvTestDagState -Nodes $executionPlan.Nodes
 
-Write-Host ("[3/3] Pester DAG ({0}: {1} suite(s), {2} repeat(s), {3} isolated process(es), throttle {4}, timeout {5}s each)" -f $Profile, $testPaths.Count, $Repeat, $testCases.Count, $ThrottleLimit, $SuiteTimeoutSeconds)
+Write-Host ("[3/3] Test DAG ({0}: shared module build + {1} suite(s), {2} repeat(s), {3} isolated process(es), throttle {4}, timeout {5}s each)" -f $Profile, $testPaths.Count, $Repeat, $testCases.Count, $ThrottleLimit, $SuiteTimeoutSeconds)
 $passedCount = 0
 $failedCount = 0
 $notRunCount = 0
@@ -88,6 +88,7 @@ $suiteResults = New-Object System.Collections.Generic.List[object]
 $gateStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $resultRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-test-' + [Guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $resultRoot -Force)
+$sharedModulePath = ''
 $active = [System.Collections.Generic.List[object]]::new()
 $completedGate = $false
 $gateSucceeded = $false
@@ -104,6 +105,14 @@ try {
             }
 
             $exitCode = $job.Process.ExitCode
+            $standardOutput = [string]$job.StandardOutputTask.GetAwaiter().GetResult()
+            $standardError = [string]$job.StandardErrorTask.GetAwaiter().GetResult()
+            if (-not [string]::IsNullOrEmpty($standardOutput)) {
+                [System.IO.File]::WriteAllText([string]$job.StandardOutputPath, $standardOutput)
+            }
+            if (-not [string]::IsNullOrEmpty($standardError)) {
+                [System.IO.File]::WriteAllText([string]$job.StandardErrorPath, $standardError)
+            }
             $job.Process.Dispose()
             [void]$active.Remove($job)
             if (-not (Test-Path -LiteralPath $job.ResultPath -PathType Leaf)) {
@@ -134,7 +143,15 @@ try {
                 DurationSeconds = [double]$result.DurationSeconds
                 ExitCode = $exitCode
             })
-            Write-Host ("  [done {0}/{1}] {2} (run {3}/{4}): {5}/{6} passed; {7} failed; infra {8}; {9:N2}s" -f ($dagState.Completed.Count + 1), $testCases.Count, $job.SuiteName, $job.RepeatIndex, $Repeat, $result.Passed, $result.Total, $result.Failed, $infrastructureFailed, [double]$result.DurationSeconds)
+            Write-Host ("  [done {0}/{1}] {2} (run {3}/{4}): {5}/{6} passed; {7} failed; infra {8}; {9:N2}s" -f $suiteResults.Count, $testCases.Count, $job.SuiteName, $job.RepeatIndex, $Repeat, $result.Passed, $result.Total, $result.Failed, $infrastructureFailed, [double]$result.DurationSeconds)
+            if ($resultSignalsFailure -or $infrastructureFailed -gt 0 -or $processExitMismatch) {
+                if (-not [string]::IsNullOrWhiteSpace($standardOutput)) {
+                    Write-Host ("--- {0} stdout ---`n{1}" -f $job.SuiteName, $standardOutput.TrimEnd())
+                }
+                if (-not [string]::IsNullOrWhiteSpace($standardError)) {
+                    Write-Warning ("--- {0} stderr ---`n{1}" -f $job.SuiteName, $standardError.TrimEnd())
+                }
+            }
             if ($infrastructureFailed -gt 0 -and $null -ne $result.PSObject.Properties['InfrastructureError']) {
                 Write-Warning ("{0}: {1}" -f $job.SuiteName, [string]$result.InfrastructureError)
             }
@@ -145,6 +162,22 @@ try {
         while ($dagState.ReadyIndexes.Count -gt 0) {
             $readyIndex = [int]$dagState.ReadyIndexes.Min
             $node = $dagState.Nodes[$readyIndex]
+            if ([string]$node.Kind -eq 'SharedModuleBuild') {
+                [void]$dagState.ReadyIndexes.Remove($readyIndex)
+                $sharedBuildRoot = Join-Path $resultRoot 'shared-module-build'
+                $sharedBuildStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                Write-Host '  [build] shared test module'
+                $sharedBuild = & (Join-Path $root 'Merge-ModuleScripts.ps1') -OutputRoot $sharedBuildRoot -Clean
+                $sharedBuildStopwatch.Stop()
+                $sharedModulePath = [System.IO.Path]::GetFullPath([string]$sharedBuild.ModulePath)
+                if (-not (Test-Path -LiteralPath $sharedModulePath -PathType Leaf)) {
+                    throw "Shared test module build did not produce a module: $sharedModulePath"
+                }
+                Complete-CapsulenvTestDagNode -State $dagState -NodeId ([string]$node.Id)
+                Write-Host ("  [done build] shared test module: {0:N2}s" -f $sharedBuildStopwatch.Elapsed.TotalSeconds)
+                $madeProgress = $true
+                continue
+            }
             if ([string]$node.Kind -eq 'Barrier') {
                 [void]$dagState.ReadyIndexes.Remove($readyIndex)
                 Complete-CapsulenvTestDagNode -State $dagState -NodeId ([string]$node.Id)
@@ -164,6 +197,8 @@ try {
             $suiteTempRoot = Join-Path $suiteRoot 'tmp'
             $suiteBuildRoot = Join-Path $suiteRoot 'build'
             $resultPath = Join-Path $suiteRoot 'result.json'
+            $standardOutputPath = Join-Path $suiteRoot 'stdout.log'
+            $standardErrorPath = Join-Path $suiteRoot 'stderr.log'
             [void](New-Item -ItemType Directory -Path $suiteTempRoot -Force)
             [void](New-Item -ItemType Directory -Path $suiteBuildRoot -Force)
 
@@ -171,16 +206,21 @@ try {
             $startInfo.FileName = $hostExecutable
             $startInfo.Arguments = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $suiteRunner.Replace('"', '\"'))
             $startInfo.UseShellExecute = $false
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
             $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_PATH'] = $testPath
             $startInfo.EnvironmentVariables['CAPSULENV_TEST_SUITE_RESULT_PATH'] = $resultPath
             $startInfo.EnvironmentVariables['CAPSULENV_TEST_ARTIFACT_ROOT'] = $suiteRoot
             $startInfo.EnvironmentVariables['CAPSULENV_BUILD_ROOT'] = $suiteBuildRoot
+            $startInfo.EnvironmentVariables['CAPSULENV_TEST_PREBUILT_MODULE_PATH'] = $sharedModulePath
             $startInfo.EnvironmentVariables['TMP'] = $suiteTempRoot
             $startInfo.EnvironmentVariables['TEMP'] = $suiteTempRoot
             $startInfo.EnvironmentVariables['TMPDIR'] = $suiteTempRoot
 
             $process = [System.Diagnostics.Process]::Start($startInfo)
             if ($null -eq $process) { throw "Failed to start isolated Pester process for $suiteName." }
+            $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+            $standardErrorTask = $process.StandardError.ReadToEndAsync()
             $active.Add([pscustomobject][ordered]@{
                 NodeId = [string]$node.Id
                 CaseIndex = $caseIndex
@@ -188,6 +228,10 @@ try {
                 RepeatIndex = $repeatIndex
                 SuiteRoot = $suiteRoot
                 ResultPath = $resultPath
+                StandardOutputPath = $standardOutputPath
+                StandardErrorPath = $standardErrorPath
+                StandardOutputTask = $standardOutputTask
+                StandardErrorTask = $standardErrorTask
                 StartedAtUtc = [DateTime]::UtcNow
                 Process = $process
             })

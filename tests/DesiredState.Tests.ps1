@@ -1,7 +1,7 @@
 Describe 'Capsulenv desired-state graph' {
     BeforeAll {
         $script:Root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build=& (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
+        $script:Build=Get-CapsulenvTestModuleBuild -Root $script:Root; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
     }
     AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
     It 'orders dependencies and executes Plan Apply Verify' {
@@ -112,7 +112,7 @@ Describe 'Capsulenv desired-state graph' {
 Describe 'Capsulenv desired-state resource claims' {
     BeforeAll {
         $script:Root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build=& (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
+        $script:Build=Get-CapsulenvTestModuleBuild -Root $script:Root; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
     }
     AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
 
@@ -202,7 +202,7 @@ Describe 'Capsulenv desired-state resource claims' {
 Describe 'Capsulenv desired-state parallel execution' {
     BeforeAll {
         $script:Root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build=& (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
+        $script:Build=Get-CapsulenvTestModuleBuild -Root $script:Root; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
     }
     AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
 
@@ -333,7 +333,7 @@ Describe 'Capsulenv desired-state parallel execution' {
 Describe 'Capsulenv desired-state module worker boundary' {
     BeforeAll {
         $script:Root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')); Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build=& (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
+        $script:Build=Get-CapsulenvTestModuleBuild -Root $script:Root; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
     }
     AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
     It 'preserves Capsulenv private command resolution inside parallel worker runspaces' {
