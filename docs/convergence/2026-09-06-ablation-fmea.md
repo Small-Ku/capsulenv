@@ -12,6 +12,8 @@ This phase uses ablation before deletion: remove one steady-state responsibility
 | Rehydration detail JSON parse and fingerprint comparison | Detail state is manually corrupted after a successful unchanged generation | Low | Low; diagnostic history is unreadable but materialized projections are unchanged | `doctor` parses/reports detail state; explicit `capsulenv rehydrate` republishes it; root/host changes select different marker paths; retry publishes a `.pending` tombstone | Replace with generation marker |
 | Full relocation desired-state graph materialization after a ready generation | A graph-level invariant would have to change without any relocation/pending signal | Very low; graph repair nodes are all `NoOp` on the ready generation | Low; only session-local environment setup is required by the steady path | marker invalidation/pending tombstone re-enters the full DAG; explicit `rehydrate` always uses the DAG; session setup remains direct | Remove from steady activation |
 
+After steady dispatch was removed from the graph, `Get-CapsulenvIntegrationDesiredStatePlan` is deliberately repair-only: it no longer accepts or stores a `RehydrationRequired` flag, and readiness is owned by `Invoke-CapsulenvIntegrationDesiredState`. This prevents the old one-`Apply`/many-`NoOp` pseudo-steady graph from reappearing through a private planner mode.
+
 The ablation deliberately does **not** suppress repair when `Test-CapsulenvScoopRehydrationRequired` is true. The steady signal now covers missing readiness, root/host/fingerprint generation changes, and a retryable `.pending` tombstone. Unreadable detail JSON after a committed generation is intentionally a `doctor` / explicit-rehydrate concern rather than a per-activation parse.
 
 ## Evidence

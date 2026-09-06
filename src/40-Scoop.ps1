@@ -280,7 +280,6 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         [switch]$SkipToolRepairs,
         [switch]$StrictToolRepairs,
         [ValidateSet('ShellOnly', 'User')][string]$IntegrationMode = (Get-CapsulenvInstallMode),
-        [bool]$RehydrationRequired = $false,
         [switch]$IncludeDiagnostics
     )
 
@@ -293,9 +292,8 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         RelocationContext=$relocationContext
         IntegrationMode=$IntegrationMode
         StrictToolRepairs=[bool]$StrictToolRepairs
-        RehydrationRequired=[bool]$RehydrationRequired
     }
-    $packageProjectionDescriptors = if ($RehydrationRequired) { @(Get-CapsulenvPackageProjectionRepairDescriptors -Apps @('*')) } else { @() }
+    $packageProjectionDescriptors = @(Get-CapsulenvPackageProjectionRepairDescriptors -Apps @('*'))
     $packageProjectionDescriptorMap = @{}
     $packageProjectionNodeIds = New-Object System.Collections.Generic.List[string]
     $packageProjectionNodes = New-Object System.Collections.Generic.List[object]
@@ -333,11 +331,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         [string[]]@('session-environment')
     }
 
-    $projectCacheDescriptorSet = if ($RehydrationRequired) {
-        Get-CapsulenvProjectCacheRepairDescriptorSet -Strict:$StrictToolRepairs -Quiet
-    } else {
-        [pscustomobject]@{ Records=@(); RegistryError=$null }
-    }
+    $projectCacheDescriptorSet = Get-CapsulenvProjectCacheRepairDescriptorSet -Strict:$StrictToolRepairs -Quiet
     $projectCacheRecordMap = @{}
     $projectCacheNodeIds = New-Object System.Collections.Generic.List[string]
     $projectCacheNodes = New-Object System.Collections.Generic.List[object]
@@ -382,7 +376,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -DependsOn 'session-environment' `
             -ReadResources @('host:///environment/user') `
             -WriteResources @('capsule:///state/user-environment-backup') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) $plan=Get-CapsulenvEnvironmentPlan; $name=Get-CapsulenvScoopPathEnvironmentVariable; Ensure-CapsulenvUserEnvironmentBackupEntries -Names (@($plan.Variables.Keys)+@('PATH',$name)) } `
             -Verify { param($c,$d,$o) $true })
         $packageProjectionNodes.ToArray()
@@ -390,21 +384,21 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -DependsOn $packageProjectionBarrierDependencies `
             -ReadResources @('process:///desired-state/outputs/package-projections') `
             -WriteResources @() `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) $results=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.PackageProjectionNodeIds)){ $results.Add($c.Outputs[[string]$nodeId]) }; Merge-CapsulenvPackageProjectionResults -Results $results.ToArray() } `
             -Verify { param($c,$d,$o) $null -ne $o -and $null -ne $o.PSObject.Properties['Complete'] })
         (New-CapsulenvDesiredStateNode -Id 'package-host-integration' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///packages/installed-state') `
             -WriteResources @('host:///start-menu/capsulenv') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvPackageStartMenuShortcuts -IntegrationMode $c.IntegrationMode } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'persist-relocation' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///scoop/persist') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and (-not $SkipPersistRepairs) -and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipPersistRepairs) -and $c.RelocationContext.HasPathChanges){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvPersistRelocationRepair -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })
         $projectCacheNodes.ToArray()
@@ -412,28 +406,28 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -DependsOn $projectCacheBarrierDependencies `
             -ReadResources @('capsule:///project-cache/registry') `
             -WriteResources @('capsule:///project-cache/registry') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) if($null -ne $c.ProjectCacheRegistryError){ return @([pscustomobject]@{ Profile=$null; ProjectPath=$null; LinkPath=$null; StorePath=$null; LinkType=$null; Changed=$false; Status='RegistryError'; Detail=[string]$c.ProjectCacheRegistryError }) }; $repairs=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.ProjectCacheNodeIds)){ $repairs.Add($c.Outputs[[string]$nodeId]) }; @(Complete-CapsulenvProjectCacheRepairBatch -Repairs $repairs.ToArray()) } `
             -Verify { param($c,$d,$o) $null -ne $o })
         (New-CapsulenvDesiredStateNode -Id 'tool-relocation' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'project-cache-links' `
             -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `
             -WriteResources @('capsule:///tool-data','capsule:///tool-storage','capsule:///state/tool-workspaces','host:///workspaces/registered') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and (-not $SkipToolRepairs) -and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if((-not $SkipToolRepairs) -and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepairCore -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-integration' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn @('user-environment-backup','persist-relocation','tool-relocation','package-host-integration') `
             -ReadResources @('capsule:///packages/installed-state','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
             -WriteResources @('host:///environment/user','capsule:///state/user-environment-backup','capsule:///state/install-mode') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvUserEnvironment -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'rehydration-state' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn @('package-projections','persist-relocation','user-integration') `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///state/rehydration') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
             -Apply { param($c,$d) $repair=$c.Outputs['persist-relocation']; $projection=$c.Outputs['package-projections']; $complete=[bool]$projection.Complete; $retryRequired=[bool]$projection.RetryRequired; $issues=@($projection.Issues); Save-CapsulenvRehydrationState -RelocationContext $c.RelocationContext -PersistRepairResult $repair -PendingProjectionRepair:$retryRequired -ProjectionRepairIssues $issues; [pscustomobject]@{ ProjectionRepairComplete=$complete; ProjectionRepairRetryRequired=$retryRequired; ProjectionRepairIssues=$issues } } `
             -Verify { param($c,$d,$o) $true })
     )
@@ -441,7 +435,6 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         Context=$context
         Plan=(Get-CapsulenvDesiredStatePlan -Nodes $nodes -Context $context -IncludeDiagnostics:$IncludeDiagnostics)
         RelocationContext=$relocationContext
-        RehydrationRequired=[bool]$RehydrationRequired
     }
 }
 
@@ -460,7 +453,6 @@ function Get-CapsulenvScoopRehydratePlan {
         -SkipToolRepairs:$SkipToolRepairs `
         -StrictToolRepairs:$StrictToolRepairs `
         -IntegrationMode $IntegrationMode `
-        -RehydrationRequired $true `
         -IncludeDiagnostics:$IncludeDiagnostics
 }
 
@@ -501,8 +493,7 @@ function Invoke-CapsulenvIntegrationDesiredState {
             -SkipPersistRepairs:$SkipPersistRepairs `
             -SkipToolRepairs:$SkipToolRepairs `
             -StrictToolRepairs:$StrictToolRepairs `
-            -IntegrationMode $IntegrationMode `
-            -RehydrationRequired $true
+            -IntegrationMode $IntegrationMode
         $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $integration.Plan -Context $integration.Context)
         Write-CapsulenvRehydrationResult -Results $results -IntegrationMode $IntegrationMode
         [void](Invoke-CapsulenvRoutines -Trigger OnRehydrate)

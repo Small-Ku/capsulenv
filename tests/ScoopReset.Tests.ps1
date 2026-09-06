@@ -65,7 +65,7 @@ Describe 'Capsulenv package projection repair boundary' {
         Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
 
         $integration = & $script:Module {
-            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true -IncludeDiagnostics
+            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -IncludeDiagnostics
         }
         $projectionNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'package-projection:*' })
         $projectionNodes | Should -HaveCount 3
@@ -102,7 +102,7 @@ Describe 'Capsulenv package projection repair boundary' {
             }
         } -ModuleName Capsulenv
 
-        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true }
+        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly }
         $linkNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'project-cache-link:*' })
         $linkNodes | Should -HaveCount 2
         @($linkNodes | Where-Object { $_.Node.ExecutionAffinity -ne 'AnyRunspace' -or $_.Node.ConcurrencyPolicy -ne 'ResourceBound' }) | Should -HaveCount 0
@@ -131,7 +131,7 @@ Describe 'Capsulenv package projection repair boundary' {
             }
         } -ModuleName Capsulenv
 
-        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true -IncludeDiagnostics }
+        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -IncludeDiagnostics }
         $packageId = @($integration.Plan.Nodes.Id | Where-Object { $_ -like 'package-projection:*' })[0]
         $cacheId = @($integration.Plan.Nodes.Id | Where-Object { $_ -like 'project-cache-link:*' })[0]
         $sharedWave = @($integration.Plan.ExecutionWaves | Where-Object { @($_.NodeIds) -contains $packageId -and @($_.NodeIds) -contains $cacheId })
@@ -184,7 +184,7 @@ Describe 'Capsulenv package projection repair boundary' {
         $results = @(& $script:Module { Invoke-CapsulenvIntegrationDesiredState -IntegrationMode User })
 
         $results | Should -HaveCount 1
-        Should -Invoke Get-CapsulenvIntegrationDesiredStatePlan -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $IntegrationMode -eq 'User' -and $RehydrationRequired }
+        Should -Invoke Get-CapsulenvIntegrationDesiredStatePlan -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $IntegrationMode -eq 'User' }
         Should -Invoke Invoke-CapsulenvDesiredStatePlan -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Write-CapsulenvRehydrationResult -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnRehydrate' }

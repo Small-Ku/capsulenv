@@ -141,6 +141,20 @@ function Get-CapsulenvRehydrationHotPathViolations {
         Add-RehydrationHotPathViolation -Ast $test -Rule 'RehydrationReadyMarkerRequired' -Detail 'steady rehydration detection must derive exactly one generation/fingerprint marker set'
     }
 
+    $builder = Get-CapsulenvFunctionAst -Path $ScoopPath -Name 'Get-CapsulenvIntegrationDesiredStatePlan'
+    $builderHasReadinessParameter = $false
+    if ($null -ne $builder.Body.ParamBlock) {
+        $builderHasReadinessParameter = @($builder.Body.ParamBlock.Parameters | Where-Object { [string]$_.Name.VariablePath.UserPath -eq 'RehydrationRequired' }).Count -gt 0
+    }
+    $builderReadinessCalls = @(Get-RehydrationCommands $builder | Where-Object { [string]$_.GetCommandName() -eq 'Test-CapsulenvScoopRehydrationRequired' })
+    $builderReadinessMembers = @($builder.Body.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.MemberExpressionAst] -and [string]$node.Member.Value -eq 'RehydrationRequired'
+    }, $true))
+    if ($builderHasReadinessParameter -or $builderReadinessCalls.Count -gt 0 -or $builderReadinessMembers.Count -gt 0) {
+        Add-RehydrationHotPathViolation -Ast $builder -Rule 'RehydrationPlanRepairOnly' -Detail 'the relocation desired-state builder is repair-only; readiness/steady-state branching belongs at the dispatch boundary'
+    }
+
     $invoke = Get-CapsulenvFunctionAst -Path $ScoopPath -Name 'Invoke-CapsulenvIntegrationDesiredState'
     $invokeCommands = @(Get-RehydrationCommands $invoke)
     $planCommands = @($invokeCommands | Where-Object { [string]$_.GetCommandName() -in @('Get-CapsulenvIntegrationDesiredStatePlan','Invoke-CapsulenvDesiredStatePlan') })

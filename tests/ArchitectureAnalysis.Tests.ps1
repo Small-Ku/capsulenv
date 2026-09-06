@@ -930,6 +930,11 @@ function Save-CapsulenvRehydrationState {
     [System.IO.File]::WriteAllText('state.json', '{}')
     Remove-CapsulenvScoopRehydrationMarker
 }
+function Get-CapsulenvIntegrationDesiredStatePlan {
+    param([bool]$RehydrationRequired = $false)
+    if ($RehydrationRequired) { return 'repair-plan' }
+    return 'steady-plan'
+}
 function Invoke-CapsulenvIntegrationDesiredState {
     $rehydrationRequired = Test-CapsulenvScoopRehydrationRequired
     $integration = Get-CapsulenvIntegrationDesiredStatePlan
@@ -943,6 +948,7 @@ function Initialize-CapsulenvIntegrations {
         @($violations.Rule) | Should -Contain 'RehydrationReadyNoDetailIo'
         @($violations.Rule) | Should -Contain 'RehydrationReadyInvalidatedBeforeStateWrite'
         @($violations.Rule) | Should -Contain 'RehydrationReadyCommitRequired'
+        @($violations.Rule) | Should -Contain 'RehydrationPlanRepairOnly'
         @($violations.Rule) | Should -Contain 'RehydrationSteadyBypassesDesiredStatePlan'
         @($violations.Rule) | Should -Contain 'RehydrationSteadySessionRequired'
         @($violations.Rule) | Should -Contain 'RehydrationDisabledBypassesDesiredStatePlan'
