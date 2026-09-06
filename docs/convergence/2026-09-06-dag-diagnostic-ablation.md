@@ -37,3 +37,9 @@ Static analysis rejects `Get-CapsulenvDesiredStateResourceClaims` calls outside 
 Compiled claims already carry canonical resource URIs, but conflict admission still routed each pair through a helper that normalized both strings again, split both paths into segment arrays, and allocated path-part objects. The live/diagnostic claim-conflict paths now use a canonical URI overlap helper that compares scheme plus slash-delimited prefix boundaries directly. The general overlap entrypoint still normalizes arbitrary callers before delegating, so validation semantics are unchanged.
 
 A finite differential check over 9,604 canonical URI pairs, including case variation, root claims, and empty interior path segments, produced identical overlap results between the old segment-array algorithm and the new boundary-prefix algorithm. Pester regression cases cover parent/child, exact, misleading string prefix, sibling, and cross-scheme behavior.
+
+## Follow-up: remove the package-to-project-cache sequencing edge
+
+The project-cache repair fan-out does not consume package projection output. Its actual prerequisite is session preparation, which creates the configured tool/project-cache storage roots. The previous `package-projections -> project-cache-link:*` edge serialized independent I/O domains and also made the no-record project-cache barrier wait for package repair for no semantic reason.
+
+Project-cache nodes and the empty project-cache barrier now depend directly on `session-environment`. Package projection and project-cache worker fan-outs can therefore occupy the same diagnostic wave when their resource claims are disjoint. The later `user-integration` join still waits for both the package/persist branch and `tool-relocation`, so final state publication keeps the same safety boundary.

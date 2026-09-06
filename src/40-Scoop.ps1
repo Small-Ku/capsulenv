@@ -352,7 +352,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         $projectCacheRecordMap[$nodeId] = $record
         $projectCacheNodeIds.Add($nodeId)
         $projectCacheNodes.Add((New-CapsulenvDesiredStateNode -Id $nodeId -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
-            -DependsOn 'package-projections' `
+            -DependsOn 'session-environment' `
             -ReadResources @(('capsule:///project-cache/store/{0}/{1}' -f $profileToken, $recordToken)) `
             -WriteResources @(('host:///project-cache-links/{0}' -f $recordToken)) `
             -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
@@ -365,7 +365,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
     $projectCacheBarrierDependencies = if ($projectCacheNodeIds.Count -gt 0) {
         [string[]]$projectCacheNodeIds.ToArray()
     } else {
-        [string[]]@('package-projections')
+        [string[]]@('session-environment')
     }
 
     # Keep each constructor behind an explicit expression boundary. Windows PowerShell 5.1

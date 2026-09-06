@@ -88,11 +88,35 @@ Describe 'Capsulenv package projection repair boundary' {
         $linkNodes | Should -HaveCount 2
         @($linkNodes | Where-Object { $_.Node.ExecutionAffinity -ne 'AnyRunspace' -or $_.Node.ConcurrencyPolicy -ne 'ResourceBound' }) | Should -HaveCount 0
         @($linkNodes | ForEach-Object { @($_.Node.WriteResources) } | Select-Object -Unique) | Should -HaveCount 2
+        foreach ($node in $linkNodes) {
+            @($node.Node.DependsOn) | Should -Be @('session-environment')
+            @($node.Node.DependsOn) | Should -Not -Contain 'package-projections'
+        }
         $barrier = @($integration.Plan.Nodes | Where-Object Id -eq 'project-cache-links')[0]
         [bool]$barrier.Node.ParallelSafe | Should -BeFalse
         @($barrier.Node.WriteResources) | Should -Be @('capsule:///project-cache/registry')
         @($barrier.Node.DependsOn) | Should -HaveCount 2
         foreach ($node in $linkNodes) { @($barrier.Node.DependsOn) | Should -Contain ([string]$node.Id) }
+    }
+
+    It 'allows package projection and project-cache fan-outs to share a diagnostic wave' {
+        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProjectionRepairDescriptors {
+            @([pscustomobject]@{ Kind='Owned'; Selector='capsule/alpha'; Name='alpha'; Scope='Capsule'; Shims=@('alpha') })
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvProjectCacheRepairDescriptorSet {
+            [pscustomobject]@{
+                Records=@([pscustomobject]@{ Profile='uv'; ProjectScope='Absolute'; ProjectReference='X:\dev\a'; LinkType='Junction'; LastLinkPath='X:\dev\a\.venv'; LastStorePath='X:\cap\cache\a' })
+                RegistryError=$null
+            }
+        } -ModuleName Capsulenv
+
+        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true -IncludeDiagnostics }
+        $packageId = @($integration.Plan.Nodes.Id | Where-Object { $_ -like 'package-projection:*' })[0]
+        $cacheId = @($integration.Plan.Nodes.Id | Where-Object { $_ -like 'project-cache-link:*' })[0]
+        $sharedWave = @($integration.Plan.ExecutionWaves | Where-Object { @($_.NodeIds) -contains $packageId -and @($_.NodeIds) -contains $cacheId })
+        $sharedWave | Should -HaveCount 1
     }
 
     It 'commits the project-cache registry only once after parallel repair results are gathered' {
