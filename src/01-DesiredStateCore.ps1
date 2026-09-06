@@ -435,6 +435,28 @@ function Invoke-CapsulenvDesiredStateDecisionSequential {
     }
 }
 
+function Copy-CapsulenvDesiredStateWorkerModule {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [Parameter(Mandatory = $true)][string]$DestinationPath
+    )
+
+    $moduleText = [System.IO.File]::ReadAllText($SourcePath)
+    $exportMarker = "`nExport-ModuleMember "
+    $exportIndex = $moduleText.LastIndexOf($exportMarker, [System.StringComparison]::Ordinal)
+    if ($exportIndex -lt 0) {
+        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.WorkerModuleExportBoundaryMissing' -Message 'Parallel desired-state execution requires the merged Capsulenv module to end with its generated Export-ModuleMember boundary.' -TargetObject $SourcePath -Remediation @('Rebuild the installed Capsulenv module from the supported module merger before retrying parallel desired-state execution.'))
+    }
+
+    # Worker runspaces invoke private commands through module scope and do not need public
+    # exports. Removing the generated terminal export avoids per-runspace unapproved-verb
+    # warnings without suppressing warnings or errors from module initialization itself.
+    $workerText = $moduleText.Substring(0, $exportIndex + 1) + "Export-ModuleMember -Function @()`n"
+    $utf8 = New-Object System.Text.UTF8Encoding($true)
+    [System.IO.File]::WriteAllText($DestinationPath, $workerText, $utf8)
+}
+
 function New-CapsulenvDesiredStateWorkerPool {
     [CmdletBinding()]
     param([ValidateRange(1, 32)][int]$ThrottleLimit = 4)
@@ -456,7 +478,7 @@ function New-CapsulenvDesiredStateWorkerPool {
         [System.IO.File]::Copy($sourceFile, $destinationFile, $true)
     }
     $workerModulePath = Join-Path $workerModuleRoot ('CapsulenvWorker.' + [Guid]::NewGuid().ToString('N') + '.psm1')
-    [System.IO.File]::Copy([string]$module.Path, $workerModulePath, $true)
+    Copy-CapsulenvDesiredStateWorkerModule -SourcePath ([string]$module.Path) -DestinationPath $workerModulePath
 
     $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
     $initialSessionState.ImportPSModule(@($workerModulePath))

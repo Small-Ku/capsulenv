@@ -336,6 +336,33 @@ Describe 'Capsulenv desired-state module worker boundary' {
         $script:Build=Get-CapsulenvTestModuleBuild -Root $script:Root; Import-Module $script:Build.ModulePath -Force; $script:Module=Get-Module Capsulenv
     }
     AfterAll { Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue }
+    It 'loads worker modules without public exports while preserving private command scope' {
+        $result = & $script:Module {
+            $workerPool = New-CapsulenvDesiredStateWorkerPool -ThrottleLimit 1
+            $powershell = [PowerShell]::Create()
+            try {
+                $powershell.RunspacePool = $workerPool.Pool
+                [void]$powershell.AddScript(@'
+param($ModuleName)
+$workerModule = Get-Module -Name $ModuleName | Select-Object -First 1
+if ($null -eq $workerModule) { throw "Worker module not loaded: $ModuleName" }
+[pscustomobject]@{
+    ExportCount = $workerModule.ExportedFunctions.Count
+    InstallMode = (& $workerModule { Get-CapsulenvInstallMode })
+}
+'@).AddArgument([string]$workerPool.WorkerModuleName)
+                @($powershell.Invoke())[-1]
+            } finally {
+                $powershell.Dispose()
+                $workerPool.Pool.Dispose()
+                try { [System.IO.Directory]::Delete([string]$workerPool.WorkerModuleRoot, $true) } catch { }
+            }
+        }
+
+        $result.ExportCount | Should -Be 0
+        $result.InstallMode | Should -BeIn @('ShellOnly','User')
+    }
+
     It 'preserves Capsulenv private command resolution inside parallel worker runspaces' {
         $result = & $script:Module {
             $a=New-CapsulenvDesiredStateNode -Id a -ParallelSafe -ReadResources @('capsule:///config/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d) Get-CapsulenvInstallMode} -Verify {param($c,$d,$o) $o -in @('ShellOnly','User')}
