@@ -342,7 +342,7 @@ function Initialize-Capsulenv {
     )
 
     [void](Get-CapsulenvConfiguration -Refresh)
-    [void](Initialize-CapsulenvScoopBootstrap)
+    [void](Initialize-CapsulenvScoopBootstrap -ForceRepair)
     Invoke-CapsulenvScoopRehydrate `
         -SkipHooks:$SkipHooks `
         -SkipPersistRepairs:$SkipPersistRepairs `

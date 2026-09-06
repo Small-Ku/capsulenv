@@ -309,6 +309,21 @@ function Get-CapsulenvStockScoopBoundaryViolations {
     }
 
     $source = [string]$functionAst.Extent.Text
+    $templateCall = @($functionAst.Body.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+        [string]$node.GetCommandName() -eq 'Get-CapsulenvScoopCmdShimText'
+    }, $true) | Select-Object -First 1)
+    if ($templateCall.Count -gt 0) {
+        $templateAst = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$node.Name, 'Get-CapsulenvScoopCmdShimText')
+        }, $true) | Select-Object -First 1)
+        if ($templateAst.Count -gt 0) {
+            $source += [Environment]::NewLine + [string]$templateAst[0].Extent.Text
+        }
+    }
     foreach ($forbidden in @(
         [pscustomobject]@{ Pattern = 'scoop-capsulenv-gateway'; Rule = 'StockScoopNoGateway'; Detail = 'direct Scoop must not route through the Capsulenv gateway' },
         [pscustomobject]@{ Pattern = 'scoop-capsulenv-shellonly-policy'; Rule = 'StockScoopNoPolicyInjection'; Detail = 'direct Scoop must not inject Capsulenv lifecycle policy' },

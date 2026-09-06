@@ -164,6 +164,7 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                     -Message 'Shell-only session retained the inherited host global Scoop shim directory.'
 
                 $bootstrap = Initialize-CapsulenvScoopBootstrap
+                Assert-CapsulenvBootstrapTest -Condition ([bool]$bootstrap.BootstrapPerformed) -Message 'Initial Scoop bootstrap did not report repair/materialization work.'
                 Assert-CapsulenvBootstrapTest -Condition ($bootstrap.ScoopTransport -eq 'git') -Message 'Scoop did not use Git bootstrap.'
                 Assert-CapsulenvBootstrapTest -Condition ($bootstrap.MainTransport -eq 'git') -Message 'Main did not use Git bootstrap.'
                 Assert-CapsulenvBootstrapTest `
@@ -186,6 +187,10 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $capsule 'scoop/shims/scoop.ps1') -PathType Leaf)) `
                     -Message 'Capsulenv unexpectedly created a PowerShell scoop.ps1 wrapper.'
+                $steadyBootstrap = Initialize-CapsulenvScoopBootstrap
+                Assert-CapsulenvBootstrapTest `
+                    -Condition (-not [bool]$steadyBootstrap.BootstrapPerformed) `
+                    -Message 'Ready Scoop bootstrap did not take the metadata-only steady-state fast path.'
 
                 $legacyPs1ShimPath = Join-Path $capsule 'scoop/shims/scoop.ps1'
                 @'
@@ -195,6 +200,11 @@ throw 'Capsulenv Scoop shim requires an active capsulenv shell.'
                 $cmdShimPath = Join-Path $capsule 'scoop/shims/scoop.cmd'
                 ('@echo off' + [Environment]::NewLine + ('powershell -File "{0}\scoop\apps\scoop\current\bin\scoop.ps1" %*' -f $capsule)) |
                     Set-Content -LiteralPath $cmdShimPath -Encoding ASCII
+                # Simulate a Capsulenv/bootstrap generation change.  A missing
+                # current-generation marker must re-enter full normalization,
+                # including migration cleanup and stale shim replacement.
+                Get-ChildItem -LiteralPath (Join-Path $capsule 'scoop/.capsulenv') -Filter 'bootstrap-*.ready' -File |
+                    Remove-Item -Force
                 [void](Initialize-CapsulenvScoopBootstrap)
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not (Test-Path -LiteralPath $legacyPs1ShimPath -PathType Leaf)) `
@@ -212,6 +222,16 @@ throw 'Capsulenv Scoop shim requires an active capsulenv shell.'
                 Assert-CapsulenvBootstrapTest `
                     -Condition (-not $cmdShim.Contains($capsuleFullPath)) `
                     -Message 'Normalized scoop.cmd still captured the absolute capsule path.'
+
+                'corrupt shim' | Set-Content -LiteralPath $cmdShimPath -Encoding ASCII
+                $forcedBootstrap = Initialize-CapsulenvScoopBootstrap -ForceRepair
+                Assert-CapsulenvBootstrapTest `
+                    -Condition ([bool]$forcedBootstrap.BootstrapPerformed) `
+                    -Message 'Explicit bootstrap repair did not bypass the steady-state readiness marker.'
+                $forcedCmdShim = Get-Content -LiteralPath $cmdShimPath -Raw
+                Assert-CapsulenvBootstrapTest `
+                    -Condition ($forcedCmdShim.Contains('CAPSULENV_UPSTREAM_SCOOP')) `
+                    -Message 'Forced bootstrap did not repair a corrupt Scoop cmd shim.'
 
                 Assert-CapsulenvBootstrapTest `
                     -Condition ((Get-Content -LiteralPath $hostScoopSentinel -Raw).Trim() -eq 'untouched') `

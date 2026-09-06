@@ -163,6 +163,20 @@ set "UPSTREAM=%~dp0..\apps\scoop\current\bin\scoop.ps1"
         @(Get-CapsulenvStockScoopBoundaryViolations -Path $fixture).Count | Should -Be 0
     }
 
+    It 'accepts a factored Scoop cmd template helper as the single trampoline authority' {
+        $fixture = New-CapsulenvStaticFixture -Name 'stock-shim-factored.ps1' -Source @'
+function Get-CapsulenvScoopCmdShimText {
+    return @"
+set "UPSTREAM=%~dp0..\apps\scoop\current\bin\scoop.ps1"
+"@
+}
+function Install-CapsulenvScoopShim {
+    $cmdText = Get-CapsulenvScoopCmdShimText
+}
+'@
+        @(Get-CapsulenvStockScoopBoundaryViolations -Path $fixture).Count | Should -Be 0
+    }
+
     It 'rejects explicit null passed to a mandatory local function parameter without AllowNull' {
         $fixture = New-CapsulenvStaticFixture -Name 'mandatory-null.ps1' -Source @'
 function Invoke-Target {
@@ -707,6 +721,44 @@ function New-CapsulenvNativeProcessStartInfo { New-Object Diagnostics.ProcessSta
             -AppLauncherPath (Join-Path (Join-Path $script:Root 'src') '42-40-AppShortcut.ps1') `
             -PackageProcessPath (Join-Path (Join-Path $script:Root 'src') '44-40-PackageProcess.ps1') `
             -ToolRelocationPath (Join-Path (Join-Path $script:Root 'src') '37-ToolRelocation.ps1')
+        ).Count | Should -Be 0
+    }
+
+
+    It 'rejects bootstrap hot paths that perform repair work or force steady activation' {
+        $bootstrapFixture = New-CapsulenvStaticFixture -Name 'bootstrap-hotpath-unsafe.ps1' -Source @'
+function Test-CapsulenvScoopBootstrapReady {
+    Get-Content .\scoop.cmd
+    New-Item .\marker -ItemType File
+    return $true
+}
+function Initialize-CapsulenvScoopBootstrap {
+    Ensure-CapsulenvScoopPortableConfig
+    Test-CapsulenvScoopBootstrapReady
+}
+'@
+        $integrationFixture = New-CapsulenvStaticFixture -Name 'bootstrap-integrations-unsafe.ps1' -Source @'
+function Initialize-CapsulenvIntegrations { Initialize-CapsulenvScoopBootstrap -ForceRepair }
+function Initialize-Capsulenv { Initialize-CapsulenvScoopBootstrap }
+'@
+        $commandsFixture = New-CapsulenvStaticFixture -Name 'bootstrap-command-unsafe.ps1' -Source @'
+function Invoke-Capsulenv { Initialize-CapsulenvScoopBootstrap }
+'@
+        $violations = @(Get-CapsulenvScoopBootstrapHotPathViolations `
+            -BootstrapPath $bootstrapFixture `
+            -IntegrationsPath $integrationFixture `
+            -CommandsPath $commandsFixture)
+        @($violations.Rule) | Should -Contain 'ScoopBootstrapReadyMetadataOnly'
+        @($violations.Rule) | Should -Contain 'ScoopBootstrapReadyGateRequired'
+        @($violations.Rule) | Should -Contain 'ScoopBootstrapSteadyActivationNotForced'
+        @($violations.Rule) | Should -Contain 'ScoopBootstrapExplicitRepairForced'
+    }
+
+    It 'accepts repository bootstrap readiness and explicit repair boundaries' {
+        @(Get-CapsulenvScoopBootstrapHotPathViolations `
+            -BootstrapPath (Join-Path (Join-Path $script:Root 'src') '41-ScoopBootstrap.ps1') `
+            -IntegrationsPath (Join-Path (Join-Path $script:Root 'src') '70-Doctor.ps1') `
+            -CommandsPath (Join-Path (Join-Path $script:Root 'src') '90-Commands.ps1')
         ).Count | Should -Be 0
     }
 

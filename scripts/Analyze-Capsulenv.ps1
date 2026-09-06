@@ -265,6 +265,17 @@ if ($bitwardenStateBoundaryViolations.Count -gt 0) {
     $detail = $bitwardenStateBoundaryViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
     throw "Capsulenv Bitwarden state-boundary analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
+
+$scoopBootstrapHotPathViolations = @(
+    Get-CapsulenvScoopBootstrapHotPathViolations `
+        -BootstrapPath (Join-Path (Join-Path $root 'src') '41-ScoopBootstrap.ps1') `
+        -IntegrationsPath (Join-Path (Join-Path $root 'src') '70-Doctor.ps1') `
+        -CommandsPath (Join-Path (Join-Path $root 'src') '90-Commands.ps1')
+)
+if ($scoopBootstrapHotPathViolations.Count -gt 0) {
+    $detail = $scoopBootstrapHotPathViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv Scoop bootstrap hot-path analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
 if ($testHarnessIsolationViolations.Count -gt 0) {
     $detail = $testHarnessIsolationViolations | ForEach-Object {
         '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
@@ -314,6 +325,7 @@ if ($diagnostics.Count -gt 0) {
     ModeIsolationBoundaryViolations = $modeIsolationBoundaryViolations.Count
     ProcessIsolationBoundaryViolations = $processIsolationBoundaryViolations.Count
     BitwardenStateBoundaryViolations = $bitwardenStateBoundaryViolations.Count
+    ScoopBootstrapHotPathViolations = $scoopBootstrapHotPathViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }
 } finally {

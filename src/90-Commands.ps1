@@ -943,7 +943,7 @@ function Invoke-Capsulenv {
                 throw 'Usage: bootstrap'
             }
             [void](Set-CapsulenvSessionEnvironment)
-            Initialize-CapsulenvScoopBootstrap | Format-List
+            Initialize-CapsulenvScoopBootstrap -ForceRepair | Format-List
         }
         'run' {
             if ($remaining.Count -lt 1) {

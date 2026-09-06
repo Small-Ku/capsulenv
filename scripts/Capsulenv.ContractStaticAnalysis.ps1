@@ -479,3 +479,92 @@ function Get-CapsulenvModeIsolationBoundaryViolations {
 
     return $violations.ToArray()
 }
+
+function Get-CapsulenvScoopBootstrapHotPathViolations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$BootstrapPath,
+        [Parameter(Mandatory = $true)][string]$IntegrationsPath,
+        [Parameter(Mandatory = $true)][string]$CommandsPath
+    )
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    function Add-BootstrapViolation {
+        param($Ast, [string]$Path, [string]$Rule, [string]$Detail)
+        $violations.Add([pscustomobject]@{
+            Rule = $Rule
+            Path = [System.IO.Path]::GetFullPath($Path)
+            Line = [int]$Ast.Extent.StartLineNumber
+            Column = [int]$Ast.Extent.StartColumnNumber
+            Detail = $Detail
+        })
+    }
+    function Get-BootstrapCommands {
+        param($FunctionAst)
+        return @($FunctionAst.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+    }
+    function Test-CommandHasParameter {
+        param($CommandAst, [string]$Name)
+        return @($CommandAst.CommandElements | Where-Object {
+            $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+            [string]$_.ParameterName -eq $Name
+        }).Count -gt 0
+    }
+
+    $ready = Get-CapsulenvFunctionAst -Path $BootstrapPath -Name 'Test-CapsulenvScoopBootstrapReady'
+    foreach ($commandAst in @(Get-BootstrapCommands $ready)) {
+        $name = [string]$commandAst.GetCommandName()
+        if ($name -in @(
+            'New-Item', 'Remove-Item', 'Set-Content', 'Add-Content', 'Get-Content', 'Get-ChildItem',
+            'Copy-Item', 'Move-Item', 'Invoke-WebRequest', 'Ensure-CapsulenvScoopPortableConfig',
+            'Install-CapsulenvBootstrapRepository', 'Install-CapsulenvScoopShim',
+            'Remove-CapsulenvLegacyScoopPowerShellShim', 'Complete-CapsulenvScoopBootstrapMarker'
+        )) {
+            Add-BootstrapViolation -Ast $commandAst -Path $BootstrapPath -Rule 'ScoopBootstrapReadyMetadataOnly' -Detail "steady bootstrap readiness must not perform mutation/content enumeration: $name"
+        }
+    }
+    foreach ($memberAst in @($ready.Body.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst]
+    }, $true))) {
+        $member = [string]$memberAst.Member.Value
+        if ($member -in @('ReadAllText', 'WriteAllText', 'ReadAllBytes', 'WriteAllBytes', 'Open', 'OpenRead', 'OpenWrite')) {
+            Add-BootstrapViolation -Ast $memberAst -Path $BootstrapPath -Rule 'ScoopBootstrapReadyMetadataOnly' -Detail "steady bootstrap readiness must not read/write file contents: $member"
+        }
+    }
+
+    $initialize = Get-CapsulenvFunctionAst -Path $BootstrapPath -Name 'Initialize-CapsulenvScoopBootstrap'
+    $initializeCommands = @(Get-BootstrapCommands $initialize | Sort-Object { $_.Extent.StartOffset })
+    $readyCall = @($initializeCommands | Where-Object { [string]$_.GetCommandName() -eq 'Test-CapsulenvScoopBootstrapReady' } | Select-Object -First 1)
+    $firstRepair = @($initializeCommands | Where-Object {
+        [string]$_.GetCommandName() -in @('Ensure-CapsulenvScoopPortableConfig', 'Install-CapsulenvScoopShim', 'Install-CapsulenvBootstrapRepository')
+    } | Select-Object -First 1)
+    if ($readyCall.Count -eq 0) {
+        Add-BootstrapViolation -Ast $initialize -Path $BootstrapPath -Rule 'ScoopBootstrapReadyGateRequired' -Detail 'Initialize-CapsulenvScoopBootstrap must gate steady activation through Test-CapsulenvScoopBootstrapReady'
+    } elseif ($firstRepair.Count -gt 0 -and $readyCall[0].Extent.StartOffset -gt $firstRepair[0].Extent.StartOffset) {
+        Add-BootstrapViolation -Ast $readyCall[0] -Path $BootstrapPath -Rule 'ScoopBootstrapReadyGateRequired' -Detail 'bootstrap readiness gate must run before repair/mutation work'
+    }
+
+    $integrations = Get-CapsulenvFunctionAst -Path $IntegrationsPath -Name 'Initialize-CapsulenvIntegrations'
+    foreach ($call in @(Get-BootstrapCommands $integrations | Where-Object { [string]$_.GetCommandName() -eq 'Initialize-CapsulenvScoopBootstrap' })) {
+        if (Test-CommandHasParameter -CommandAst $call -Name 'ForceRepair') {
+            Add-BootstrapViolation -Ast $call -Path $IntegrationsPath -Rule 'ScoopBootstrapSteadyActivationNotForced' -Detail 'normal activation must use bootstrap readiness fast path, not ForceRepair'
+        }
+    }
+
+    $explicitInit = Get-CapsulenvFunctionAst -Path $IntegrationsPath -Name 'Initialize-Capsulenv'
+    foreach ($call in @(Get-BootstrapCommands $explicitInit | Where-Object { [string]$_.GetCommandName() -eq 'Initialize-CapsulenvScoopBootstrap' })) {
+        if (-not (Test-CommandHasParameter -CommandAst $call -Name 'ForceRepair')) {
+            Add-BootstrapViolation -Ast $call -Path $IntegrationsPath -Rule 'ScoopBootstrapExplicitRepairForced' -Detail 'explicit init must force bootstrap normalization/repair'
+        }
+    }
+
+    $dispatcher = Get-CapsulenvFunctionAst -Path $CommandsPath -Name 'Invoke-Capsulenv'
+    foreach ($call in @(Get-BootstrapCommands $dispatcher | Where-Object { [string]$_.GetCommandName() -eq 'Initialize-CapsulenvScoopBootstrap' })) {
+        if (-not (Test-CommandHasParameter -CommandAst $call -Name 'ForceRepair')) {
+            Add-BootstrapViolation -Ast $call -Path $CommandsPath -Rule 'ScoopBootstrapExplicitRepairForced' -Detail 'capsulenv bootstrap command must force bootstrap normalization/repair'
+        }
+    }
+
+    return $violations.ToArray()
+}

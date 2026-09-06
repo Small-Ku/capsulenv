@@ -242,6 +242,77 @@ function Remove-CapsulenvLegacyScoopPowerShellShim {
     return $true
 }
 
+function Get-CapsulenvScoopCmdShimText {
+    [CmdletBinding()]
+    param()
+
+    return @'
+@echo off
+setlocal EnableExtensions DisableDelayedExpansion
+set "CAPSULENV_UPSTREAM_SCOOP=%~dp0..\apps\scoop\current\bin\scoop.ps1"
+set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%CAPSULENV_CONTROL_POWERSHELL%" set "CAPSULENV_CONTROL_POWERSHELL=powershell.exe"
+"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_UPSTREAM_SCOOP%" %*
+exit /b %ERRORLEVEL%
+'@
+}
+
+function Get-CapsulenvScoopBootstrapMarkerPath {
+    [CmdletBinding()]
+    param()
+
+    $payload = "bootstrap-schema=1`n" + (Get-CapsulenvScoopCmdShimText)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+    return Join-Path (Join-Path (Get-CapsulenvScoopRoot) '.capsulenv') ("bootstrap-{0}.ready" -f $hash.Substring(0, 16))
+}
+
+function Test-CapsulenvScoopBootstrapReady {
+    [CmdletBinding()]
+    param()
+
+    $bootstrap = Get-CapsulenvScoopBootstrapConfiguration
+    if (-not $bootstrap.Enabled) {
+        return $true
+    }
+
+    $scoopRoot = Get-CapsulenvScoopRoot
+    $required = @(
+        [pscustomobject]@{ Path = (Get-CapsulenvScoopBootstrapMarkerPath); Type = 'Leaf' },
+        [pscustomobject]@{ Path = (Join-Path $scoopRoot 'config.json'); Type = 'Leaf' },
+        [pscustomobject]@{ Path = (Join-Path $scoopRoot 'apps/scoop/current/bin/scoop.ps1'); Type = 'Leaf' },
+        [pscustomobject]@{ Path = (Join-Path $scoopRoot 'buckets/main/bucket'); Type = 'Container' },
+        [pscustomobject]@{ Path = (Join-Path $scoopRoot 'shims/scoop.cmd'); Type = 'Leaf' }
+    )
+    foreach ($entry in $required) {
+        if (-not (Test-Path -LiteralPath $entry.Path -PathType $entry.Type)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Complete-CapsulenvScoopBootstrapMarker {
+    [CmdletBinding()]
+    param()
+
+    $markerPath = Get-CapsulenvScoopBootstrapMarkerPath
+    $markerRoot = Split-Path -Parent $markerPath
+    [void](New-Item -ItemType Directory -Path $markerRoot -Force)
+    foreach ($stale in @(Get-ChildItem -LiteralPath $markerRoot -Filter 'bootstrap-*.ready' -File -ErrorAction SilentlyContinue)) {
+        if (-not (Test-CapsulenvSamePath -Left $stale.FullName -Right $markerPath)) {
+            Remove-Item -LiteralPath $stale.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+    [System.IO.File]::WriteAllText($markerPath, 'ready', [System.Text.UTF8Encoding]::new($false))
+    return $markerPath
+}
+
 function Install-CapsulenvScoopShim {
     [CmdletBinding()]
     param()
@@ -254,15 +325,7 @@ function Install-CapsulenvScoopShim {
     # so `scoop` is the genuine upstream scoop.ps1. Only cmd.exe needs a .cmd
     # trampoline because .ps1 is normally absent from PATHEXT.
     $cmdPath = Join-Path $shimsRoot 'scoop.cmd'
-    $cmdText = @'
-@echo off
-setlocal EnableExtensions DisableDelayedExpansion
-set "CAPSULENV_UPSTREAM_SCOOP=%~dp0..\apps\scoop\current\bin\scoop.ps1"
-set "CAPSULENV_CONTROL_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
-if not exist "%CAPSULENV_CONTROL_POWERSHELL%" set "CAPSULENV_CONTROL_POWERSHELL=powershell.exe"
-"%CAPSULENV_CONTROL_POWERSHELL%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CAPSULENV_UPSTREAM_SCOOP%" %*
-exit /b %ERRORLEVEL%
-'@
+    $cmdText = Get-CapsulenvScoopCmdShimText
     if (-not (Test-Path -LiteralPath $cmdPath -PathType Leaf) -or [System.IO.File]::ReadAllText($cmdPath) -ne $cmdText) {
         [System.IO.File]::WriteAllText($cmdPath, $cmdText, [System.Text.UTF8Encoding]::new($false))
     }
@@ -272,7 +335,7 @@ exit /b %ERRORLEVEL%
 
 function Initialize-CapsulenvScoopBootstrap {
     [CmdletBinding()]
-    param()
+    param([switch]$ForceRepair)
 
     $bootstrap = Get-CapsulenvScoopBootstrapConfiguration
     if (-not $bootstrap.Enabled) {
@@ -282,7 +345,24 @@ function Initialize-CapsulenvScoopBootstrap {
             MainInstalled = $false
             ScoopTransport = $null
             MainTransport = $null
+            BootstrapPerformed = $false
         }
+    }
+
+    if (-not $ForceRepair -and (Test-CapsulenvScoopBootstrapReady)) {
+        return [pscustomobject]@{
+            Enabled = $true
+            ScoopInstalled = $true
+            MainInstalled = $true
+            ScoopTransport = $null
+            MainTransport = $null
+            BootstrapPerformed = $false
+        }
+    }
+
+    $markerPath = Get-CapsulenvScoopBootstrapMarkerPath
+    if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+        Remove-Item -LiteralPath $markerPath -Force -ErrorAction SilentlyContinue
     }
 
     [void](Ensure-CapsulenvScoopPortableConfig)
@@ -311,12 +391,14 @@ function Initialize-CapsulenvScoopBootstrap {
             -Name 'Main'
     }
 
+    [void](Complete-CapsulenvScoopBootstrapMarker)
     return [pscustomobject]@{
         Enabled = $true
         ScoopInstalled = $true
         MainInstalled = $true
         ScoopTransport = $scoopTransport
         MainTransport = $mainTransport
+        BootstrapPerformed = $true
     }
 }
 
