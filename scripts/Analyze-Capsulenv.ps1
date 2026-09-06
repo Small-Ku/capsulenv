@@ -251,7 +251,7 @@ if ($modeIsolationBoundaryViolations.Count -gt 0) {
 $processIsolationBoundaryViolations = @(
     Get-CapsulenvProcessIsolationBoundaryViolations `
         -ProcessPlanPath (Join-Path (Join-Path $root 'src') '03-ProcessPlan.ps1') `
-        -AppLauncherPath (Join-Path (Join-Path $root 'src') '42-AppLauncher.ps1') `
+        -AppLauncherPath (Join-Path (Join-Path $root 'src') '42-40-AppShortcut.ps1') `
         -PackageProcessPath (Join-Path (Join-Path $root 'src') '44-40-PackageProcess.ps1') `
         -ToolRelocationPath (Join-Path (Join-Path $root 'src') '37-ToolRelocation.ps1')
 )

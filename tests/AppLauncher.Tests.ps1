@@ -465,10 +465,4 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
         }
     }
 
-    It 'keeps the launcher free of Start Menu and shortcut file integration' {
-        $source = Get-Content -LiteralPath (Join-Path $script:Root 'src/42-AppLauncher.ps1') -Raw
-        $source | Should -Not -Match 'WScript\.Shell|CreateShortcut|\.lnk|Start Menu|StartMenu'
-        $source | Should -Match 'current.*manifest\.json|ManifestPath'
-        $source | Should -Match 'install\.json|InstallPath'
-    }
 }

@@ -150,7 +150,7 @@ Describe 'Capsulenv PortableSafe package executor' {
         '{}' | Set-Content -LiteralPath (Join-Path $scoopCurrent 'manifest.json') -Encoding UTF8
         '{"architecture":"64bit"}' | Set-Content -LiteralPath (Join-Path $scoopCurrent 'install.json') -Encoding UTF8
 
-        $resolved = & $script:Module { Get-CapsulenvInstalledScoopApp -Selector demo }
+        $resolved = & $script:Module { Get-CapsulenvInstalledApp -Selector demo }
         $resolved.Scope | Should -Be 'Capsule'
         $resolved.Selector | Should -Be 'capsule/demo'
         $legacy = & $script:Module { Get-CapsulenvInstalledApp -Selector user/demo }

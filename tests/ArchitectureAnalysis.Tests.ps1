@@ -704,7 +704,7 @@ function New-CapsulenvNativeProcessStartInfo { New-Object Diagnostics.ProcessSta
     It 'accepts repository child-local detached process boundaries' {
         @(Get-CapsulenvProcessIsolationBoundaryViolations `
             -ProcessPlanPath (Join-Path (Join-Path $script:Root 'src') '03-ProcessPlan.ps1') `
-            -AppLauncherPath (Join-Path (Join-Path $script:Root 'src') '42-AppLauncher.ps1') `
+            -AppLauncherPath (Join-Path (Join-Path $script:Root 'src') '42-40-AppShortcut.ps1') `
             -PackageProcessPath (Join-Path (Join-Path $script:Root 'src') '44-40-PackageProcess.ps1') `
             -ToolRelocationPath (Join-Path (Join-Path $script:Root 'src') '37-ToolRelocation.ps1')
         ).Count | Should -Be 0
