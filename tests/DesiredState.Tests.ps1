@@ -41,6 +41,19 @@ Describe 'Capsulenv desired-state graph' {
         $errors.Cycle | Should -BeTrue
     }
 
+    It 'cascades no-op dependencies before dispatching a newly-ready apply' {
+        $result = & $script:Module {
+            $a=New-CapsulenvDesiredStateNode -Id a -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d) throw 'no-op apply must not run'} -Verify {param($c,$d,$o)$true}
+            $b=New-CapsulenvDesiredStateNode -Id b -DependsOn a -Plan {param($c)[pscustomobject]@{Operation='NoOp';CanApply=$true}} -Apply {param($c,$d) throw 'no-op apply must not run'} -Verify {param($c,$d,$o)$true}
+            $c=New-CapsulenvDesiredStateNode -Id c -DependsOn b -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)'C'} -Verify {param($c,$d,$o)$o -eq 'C'}
+            $plan=Get-CapsulenvDesiredStatePlan -Nodes @($c,$b,$a)
+            @(Invoke-CapsulenvDesiredStatePlan -Plan $plan -ExecutionMode Auto -ThrottleLimit 1)
+        }
+        @($result.Id) -join ',' | Should -Be 'a,b,c'
+        ($result | Where-Object Id -eq c).Output | Should -Be 'C'
+        @($result | Where-Object { $_.Id -in @('a','b') -and $_.Applied }) | Should -HaveCount 0
+    }
+
     It 'does not materialize diagnostic topology for an execution-only plan' {
         $shape = & $script:Module {
             $a=New-CapsulenvDesiredStateNode -Id a -ReadResources @('capsule:///diag/a') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}

@@ -543,19 +543,6 @@ function Receive-CapsulenvDesiredStateWorkerJob {
     }
 }
 
-function Test-CapsulenvDesiredStateDecisionReady {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]$Decision,
-        [Parameter(Mandatory = $true)]$CompletedNodeIds
-    )
-
-    foreach ($dependency in @($Decision.Node.DependsOn)) {
-        if (-not $CompletedNodeIds.Contains([string]$dependency)) { return $false }
-    }
-    return $true
-}
-
 function Test-CapsulenvDesiredStateDecisionCompatibleWithActive {
     [CmdletBinding()]
     param(
@@ -577,20 +564,61 @@ function Invoke-CapsulenvDesiredStateReadyQueue {
         [ValidateRange(1, 32)][int]$ThrottleLimit = 4
     )
 
-    $pendingApply = New-Object System.Collections.Generic.List[object]
-    $pendingNoOp = New-Object System.Collections.Generic.List[object]
-    foreach ($decision in @($Plan.Nodes)) {
-        if ($decision.Operation -eq 'Apply') { $pendingApply.Add($decision) }
-        elseif ($decision.Operation -eq 'NoOp') { $pendingNoOp.Add($decision) }
+    $decisions = @($Plan.Nodes)
+    $indexById = @{}
+    $dependents = @{}
+    for ($index = 0; $index -lt $decisions.Count; $index++) {
+        $id = [string]$decisions[$index].Id
+        $indexById[$id] = $index
+        $dependents[$id] = [System.Collections.Generic.List[int]]::new()
+    }
+
+    $unmetDependencies = [int[]]::new($decisions.Count)
+    for ($index = 0; $index -lt $decisions.Count; $index++) {
+        foreach ($dependency in @($decisions[$index].Node.DependsOn)) {
+            $dependencyId = [string]$dependency
+            $unmetDependencies[$index]++
+            if ($dependents.ContainsKey($dependencyId)) { $dependents[$dependencyId].Add($index) }
+        }
+    }
+
+    $pendingApply = [bool[]]::new($decisions.Count)
+    $pendingNoOp = [bool[]]::new($decisions.Count)
+    $pendingApplyCount = 0
+    $pendingNoOpCount = 0
+    $readyApply = [System.Collections.Generic.SortedSet[int]]::new()
+    $readyNoOp = [System.Collections.Generic.SortedSet[int]]::new()
+    for ($index = 0; $index -lt $decisions.Count; $index++) {
+        $operation = [string]$decisions[$index].Operation
+        if ($operation -eq 'Apply') {
+            $pendingApply[$index] = $true
+            $pendingApplyCount++
+            if ($unmetDependencies[$index] -eq 0) { [void]$readyApply.Add($index) }
+        } elseif ($operation -eq 'NoOp') {
+            $pendingNoOp[$index] = $true
+            $pendingNoOpCount++
+            if ($unmetDependencies[$index] -eq 0) { [void]$readyNoOp.Add($index) }
+        }
     }
 
     $completed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $resultsById = @{}
-    $activeWorkers = New-Object System.Collections.Generic.List[object]
+    $activeWorkers = [System.Collections.Generic.List[object]]::new()
     $workerPool = $null
+    $publishCompletion = {
+        param([int]$CompletedIndex)
+        $completedId = [string]$decisions[$CompletedIndex].Id
+        [void]$completed.Add($completedId)
+        foreach ($dependentIndex in @($dependents[$completedId])) {
+            $unmetDependencies[$dependentIndex]--
+            if ($unmetDependencies[$dependentIndex] -ne 0) { continue }
+            if ($pendingNoOp[$dependentIndex]) { [void]$readyNoOp.Add([int]$dependentIndex) }
+            elseif ($pendingApply[$dependentIndex]) { [void]$readyApply.Add([int]$dependentIndex) }
+        }
+    }
 
     try {
-        while ($pendingApply.Count -gt 0 -or $pendingNoOp.Count -gt 0 -or $activeWorkers.Count -gt 0) {
+        while ($pendingApplyCount -gt 0 -or $pendingNoOpCount -gt 0 -or $activeWorkers.Count -gt 0) {
             $madeProgress = $false
 
             foreach ($job in @($activeWorkers.ToArray())) {
@@ -600,34 +628,34 @@ function Invoke-CapsulenvDesiredStateReadyQueue {
                 [void]$activeWorkers.Remove($job)
                 $Context.Outputs[[string]$result.Id] = $result.Output
                 $resultsById[[string]$result.Id] = $result
-                [void]$completed.Add([string]$result.Id)
+                & $publishCompletion ([int]$indexById[[string]$result.Id])
                 $madeProgress = $true
             }
 
-            $advancedNoOp = $true
-            while ($advancedNoOp) {
-                $advancedNoOp = $false
-                foreach ($decision in @($pendingNoOp.ToArray())) {
-                    if (-not (Test-CapsulenvDesiredStateDecisionReady -Decision $decision -CompletedNodeIds $completed)) { continue }
-                    $result = [pscustomobject][ordered]@{ Id=$decision.Id; Operation='NoOp'; Applied=$false; Verified=$true; Output=$null }
-                    $resultsById[[string]$decision.Id] = $result
-                    [void]$completed.Add([string]$decision.Id)
-                    [void]$pendingNoOp.Remove($decision)
-                    $advancedNoOp = $true
-                    $madeProgress = $true
-                }
+            while ($readyNoOp.Count -gt 0) {
+                $decisionIndex = [int]$readyNoOp.Min
+                [void]$readyNoOp.Remove($decisionIndex)
+                if (-not $pendingNoOp[$decisionIndex]) { continue }
+                $pendingNoOp[$decisionIndex] = $false
+                $pendingNoOpCount--
+                $decision = $decisions[$decisionIndex]
+                $result = [pscustomobject][ordered]@{ Id=$decision.Id; Operation='NoOp'; Applied=$false; Verified=$true; Output=$null }
+                $resultsById[[string]$decision.Id] = $result
+                & $publishCompletion $decisionIndex
+                $madeProgress = $true
             }
 
-            if ($pendingApply.Count -eq 0 -and $pendingNoOp.Count -eq 0 -and $activeWorkers.Count -eq 0) { break }
+            if ($pendingApplyCount -eq 0 -and $pendingNoOpCount -eq 0 -and $activeWorkers.Count -eq 0) { break }
 
-            $ready = @($pendingApply.ToArray() | Where-Object { Test-CapsulenvDesiredStateDecisionReady -Decision $_ -CompletedNodeIds $completed })
-            $activeDecisions = New-Object System.Collections.Generic.List[object]
+            $activeDecisions = [System.Collections.Generic.List[object]]::new()
             foreach ($job in $activeWorkers.ToArray()) { $activeDecisions.Add($job.Decision) }
-            $selectedWorkers = New-Object System.Collections.Generic.List[object]
+            $selectedWorkers = [System.Collections.Generic.List[object]]::new()
             $selectedMain = $null
             $workerCapacity = [Math]::Max(0, $ThrottleLimit - $activeWorkers.Count)
 
-            foreach ($decision in $ready) {
+            foreach ($decisionIndex in @($readyApply)) {
+                if (-not $pendingApply[$decisionIndex]) { continue }
+                $decision = $decisions[$decisionIndex]
                 $candidateDecisions = @($activeDecisions.ToArray())
                 if (-not (Test-CapsulenvDesiredStateDecisionCompatibleWithActive -Decision $decision -ActiveDecisions $candidateDecisions)) { continue }
 
@@ -655,18 +683,24 @@ function Invoke-CapsulenvDesiredStateReadyQueue {
             if ($selectedWorkers.Count -gt 0) {
                 if ($null -eq $workerPool) { $workerPool = New-CapsulenvDesiredStateWorkerPool -ThrottleLimit $ThrottleLimit }
                 foreach ($decision in $selectedWorkers.ToArray()) {
+                    $decisionIndex = [int]$indexById[[string]$decision.Id]
+                    [void]$readyApply.Remove($decisionIndex)
+                    $pendingApply[$decisionIndex] = $false
+                    $pendingApplyCount--
                     $activeWorkers.Add((Start-CapsulenvDesiredStateWorkerJob -WorkerPool $workerPool -Decision $decision -Context $Context))
-                    [void]$pendingApply.Remove($decision)
                     $madeProgress = $true
                 }
             }
 
             if ($null -ne $selectedMain) {
-                [void]$pendingApply.Remove($selectedMain)
+                $selectedMainIndex = [int]$indexById[[string]$selectedMain.Id]
+                [void]$readyApply.Remove($selectedMainIndex)
+                $pendingApply[$selectedMainIndex] = $false
+                $pendingApplyCount--
                 $result = Invoke-CapsulenvDesiredStateDecisionSequential -Decision $selectedMain -Context $Context
                 $Context.Outputs[[string]$result.Id] = $result.Output
                 $resultsById[[string]$result.Id] = $result
-                [void]$completed.Add([string]$result.Id)
+                & $publishCompletion $selectedMainIndex
                 $madeProgress = $true
                 continue
             }
@@ -676,7 +710,13 @@ function Invoke-CapsulenvDesiredStateReadyQueue {
                     [System.Threading.Thread]::Sleep(10)
                     continue
                 }
-                throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ReadyQueueStalled' -Message 'Desired-state ready queue could not make progress.' -Context ([ordered]@{ PendingApplyNodeIds=@($pendingApply.Id); PendingNoOpNodeIds=@($pendingNoOp.Id); CompletedNodeIds=@($completed) }))
+                $pendingApplyNodeIds = [System.Collections.Generic.List[string]]::new()
+                $pendingNoOpNodeIds = [System.Collections.Generic.List[string]]::new()
+                for ($index = 0; $index -lt $decisions.Count; $index++) {
+                    if ($pendingApply[$index]) { $pendingApplyNodeIds.Add([string]$decisions[$index].Id) }
+                    if ($pendingNoOp[$index]) { $pendingNoOpNodeIds.Add([string]$decisions[$index].Id) }
+                }
+                throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.DesiredState.ReadyQueueStalled' -Message 'Desired-state ready queue could not make progress.' -Context ([ordered]@{ PendingApplyNodeIds=$pendingApplyNodeIds.ToArray(); PendingNoOpNodeIds=$pendingNoOpNodeIds.ToArray(); CompletedNodeIds=@($completed) }))
             }
         }
     } finally {
@@ -689,8 +729,8 @@ function Invoke-CapsulenvDesiredStateReadyQueue {
         if ($null -ne $workerPool -and -not [string]::IsNullOrWhiteSpace([string]$workerPool.WorkerModuleRoot)) { try { [System.IO.Directory]::Delete([string]$workerPool.WorkerModuleRoot, $true) } catch { } }
     }
 
-    $orderedResults = New-Object System.Collections.Generic.List[object]
-    foreach ($decision in @($Plan.Nodes)) {
+    $orderedResults = [System.Collections.Generic.List[object]]::new()
+    foreach ($decision in $decisions) {
         if ($resultsById.ContainsKey([string]$decision.Id)) { $orderedResults.Add($resultsById[[string]$decision.Id]) }
     }
     return $orderedResults.ToArray()
