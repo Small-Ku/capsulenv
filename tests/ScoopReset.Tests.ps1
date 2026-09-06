@@ -55,7 +55,7 @@ Describe 'Capsulenv package projection repair boundary' {
         Mock Get-CapsulenvProjectCacheRepairDescriptorSet { [pscustomobject]@{ Records=@(); RegistryError=$null } } -ModuleName Capsulenv
 
         $integration = & $script:Module {
-            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false
+            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true
         }
         $projectionNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'package-projection:*' })
         $projectionNodes | Should -HaveCount 3
@@ -83,7 +83,7 @@ Describe 'Capsulenv package projection repair boundary' {
             }
         } -ModuleName Capsulenv
 
-        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $false }
+        $integration = & $script:Module { Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode ShellOnly -RehydrationRequired $true }
         $linkNodes = @($integration.Plan.Nodes | Where-Object { $_.Id -like 'project-cache-link:*' })
         $linkNodes | Should -HaveCount 2
         @($linkNodes | Where-Object { $_.Node.ExecutionAffinity -ne 'AnyRunspace' -or $_.Node.ConcurrencyPolicy -ne 'ResourceBound' }) | Should -HaveCount 0
@@ -122,14 +122,30 @@ Describe 'Capsulenv package projection repair boundary' {
         foreach ($decision in @($integration.Plan.Nodes)) { $operations[[string]$decision.Id] = [string]$decision.Operation }
 
         $operations['session-environment'] | Should -Be 'Apply'
-        $operations['package-projections'] | Should -Be 'Apply'
-        $operations['project-cache-links'] | Should -Be 'Apply'
+        $operations['package-projections'] | Should -Be 'NoOp'
+        $operations['project-cache-links'] | Should -Be 'NoOp'
         $operations['user-environment-backup'] | Should -Be 'NoOp'
         $operations['package-host-integration'] | Should -Be 'NoOp'
         $operations['persist-relocation'] | Should -Be 'NoOp'
         $operations['tool-relocation'] | Should -Be 'NoOp'
         $operations['user-integration'] | Should -Be 'NoOp'
         $operations['rehydration-state'] | Should -Be 'NoOp'
+        Should -Invoke Get-CapsulenvPackageProjectionRepairDescriptors -ModuleName Capsulenv -Times 0 -Exactly
+        Should -Invoke Get-CapsulenvProjectCacheRepairDescriptorSet -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
+    It 'keeps User host projection repair off the steady activation path' {
+        Mock Get-CapsulenvRelocationContext { [pscustomobject]@{ HasPathChanges = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvToolRelocationConfiguration { [pscustomobject]@{ Enabled = $false; AutoRepair = $false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvPackageProjectionRepairDescriptors { throw 'steady activation must not enumerate package projections' } -ModuleName Capsulenv
+        Mock Get-CapsulenvProjectCacheRepairDescriptorSet { throw 'steady activation must not enumerate project-cache repairs' } -ModuleName Capsulenv
+
+        $integration = & $script:Module {
+            Get-CapsulenvIntegrationDesiredStatePlan -IntegrationMode User -RehydrationRequired $false
+        }
+        $operations = @{}
+        foreach ($decision in @($integration.Plan.Nodes)) { $operations[[string]$decision.Id] = [string]$decision.Operation }
+        $operations['package-host-integration'] | Should -Be 'NoOp'
     }
 
     It 'delegates the compatibility reset command to bounded projection repair only' {

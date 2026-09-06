@@ -46,6 +46,7 @@ Describe 'Capsulenv test harness isolation' {
             'Z:\tests\DesiredState.Tests.ps1',
             'Z:\tests\Diagnostics.Tests.ps1',
             'Z:\tests\PackageExecutor.Tests.ps1',
+            'Z:\tests\ProjectCacheLifecycle.Tests.ps1',
             'Z:\tests\ScoopReset.Tests.ps1',
             'Z:\tests\Static.Tests.ps1',
             'Z:\tests\TestHarness.Tests.ps1',
@@ -59,6 +60,7 @@ Describe 'Capsulenv test harness isolation' {
             'DesiredState.Tests.ps1',
             'Diagnostics.Tests.ps1',
             'PackageExecutor.Tests.ps1',
+            'ProjectCacheLifecycle.Tests.ps1',
             'ScoopReset.Tests.ps1',
             'Static.Tests.ps1',
             'TestHarness.Tests.ps1'

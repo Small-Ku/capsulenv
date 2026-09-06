@@ -16,6 +16,7 @@ function Get-CapsulenvTestProfileSuiteNames {
                 'DesiredState.Tests.ps1',
                 'Diagnostics.Tests.ps1',
                 'PackageExecutor.Tests.ps1',
+                'ProjectCacheLifecycle.Tests.ps1',
                 'ScoopReset.Tests.ps1',
                 'Static.Tests.ps1',
                 'TestHarness.Tests.ps1'

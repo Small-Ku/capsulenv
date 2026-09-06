@@ -250,7 +250,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         StrictToolRepairs=[bool]$StrictToolRepairs
         RehydrationRequired=[bool]$RehydrationRequired
     }
-    $packageProjectionDescriptors = @(Get-CapsulenvPackageProjectionRepairDescriptors -Apps @('*'))
+    $packageProjectionDescriptors = if ($RehydrationRequired) { @(Get-CapsulenvPackageProjectionRepairDescriptors -Apps @('*')) } else { @() }
     $packageProjectionDescriptorMap = @{}
     $packageProjectionNodeIds = New-Object System.Collections.Generic.List[string]
     $packageProjectionNodes = New-Object System.Collections.Generic.List[object]
@@ -288,7 +288,11 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         [string[]]@('session-environment','user-environment-backup')
     }
 
-    $projectCacheDescriptorSet = Get-CapsulenvProjectCacheRepairDescriptorSet -Strict:$StrictToolRepairs -Quiet
+    $projectCacheDescriptorSet = if ($RehydrationRequired) {
+        Get-CapsulenvProjectCacheRepairDescriptorSet -Strict:$StrictToolRepairs -Quiet
+    } else {
+        [pscustomobject]@{ Records=@(); RegistryError=$null }
+    }
     $projectCacheRecordMap = @{}
     $projectCacheNodeIds = New-Object System.Collections.Generic.List[string]
     $projectCacheNodes = New-Object System.Collections.Generic.List[object]
@@ -341,14 +345,14 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -DependsOn $packageProjectionBarrierDependencies `
             -ReadResources @() `
             -WriteResources @() `
-            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) $results=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.PackageProjectionNodeIds)){ $results.Add($c.Outputs[[string]$nodeId]) }; Merge-CapsulenvPackageProjectionResults -Results $results.ToArray() } `
             -Verify { param($c,$d,$o) $null -ne $o -and $null -ne $o.PSObject.Properties['Complete'] })
         (New-CapsulenvDesiredStateNode -Id 'package-host-integration' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn 'package-projections' `
             -ReadResources @('capsule:///packages/installed-state') `
             -WriteResources @('host:///start-menu/capsulenv') `
-            -Plan { param($c) [pscustomobject]@{ Operation=if($c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and $c.IntegrationMode -eq 'User'){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) Sync-CapsulenvPackageStartMenuShortcuts -IntegrationMode $c.IntegrationMode } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'persist-relocation' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
@@ -363,7 +367,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -DependsOn $projectCacheBarrierDependencies `
             -ReadResources @('capsule:///project-cache/registry') `
             -WriteResources @('capsule:///project-cache/registry') `
-            -Plan { param($c) [pscustomobject]@{ Operation='Apply'; CanApply=$true } } `
+            -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `
             -Apply { param($c,$d) if($null -ne $c.ProjectCacheRegistryError){ return @([pscustomobject]@{ Profile=$null; ProjectPath=$null; LinkPath=$null; StorePath=$null; LinkType=$null; Changed=$false; Status='RegistryError'; Detail=[string]$c.ProjectCacheRegistryError }) }; $repairs=New-Object System.Collections.Generic.List[object]; foreach($nodeId in @($c.ProjectCacheNodeIds)){ $repairs.Add($c.Outputs[[string]$nodeId]) }; @(Complete-CapsulenvProjectCacheRepairBatch -Repairs $repairs.ToArray()) } `
             -Verify { param($c,$d,$o) $null -ne $o })
         (New-CapsulenvDesiredStateNode -Id 'tool-relocation' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound `
