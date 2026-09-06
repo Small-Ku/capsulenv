@@ -428,6 +428,7 @@ function Invoke-CapsulenvInstalledAppProjectionRepair {
         [string]$IntegrationMode = (Get-CapsulenvInstallMode)
     )
 
+    Initialize-CapsulenvFileIdentityRuntime
     $results = New-Object System.Collections.Generic.List[object]
     foreach ($descriptor in @(Get-CapsulenvPackageProjectionRepairDescriptors -Apps $Apps)) {
         $results.Add((Invoke-CapsulenvPackageProjectionDescriptor `

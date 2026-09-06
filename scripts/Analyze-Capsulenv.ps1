@@ -166,6 +166,26 @@ if ($desiredStateNodeContractViolations.Count -gt 0) {
     throw "Capsulenv desired-state node contract analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
+$desiredStateWorkerReachabilityViolations = @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths $runtimePaths)
+if ($desiredStateWorkerReachabilityViolations.Count -gt 0) {
+    $detail = $desiredStateWorkerReachabilityViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv desired-state worker call-graph analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
+$desiredStateWorkerPreflightViolations = @(
+    Get-CapsulenvDesiredStateWorkerPreflightViolations `
+        -IntegrationPath (Join-Path (Join-Path $root 'src') '40-Scoop.ps1') `
+        -PackageGraphPath (Join-Path (Join-Path $root 'src') '45-PackageExecutionGraph.ps1')
+)
+if ($desiredStateWorkerPreflightViolations.Count -gt 0) {
+    $detail = $desiredStateWorkerPreflightViolations | ForEach-Object {
+        '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail
+    }
+    throw "Capsulenv desired-state worker preflight analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
+
 $desiredStateSchedulerViolations = @(
     Get-CapsulenvDesiredStateSchedulerBoundaryViolations -Path (Join-Path (Join-Path $root 'src') '01-DesiredStateCore.ps1')
 )
@@ -228,6 +248,8 @@ if ($diagnostics.Count -gt 0) {
     MandatoryParameterBindingViolations = $mandatoryBindingViolations.Count
     DesiredStateNodeBindingViolations = $desiredStateNodeBindingViolations.Count
     DesiredStateNodeContractViolations = $desiredStateNodeContractViolations.Count
+    DesiredStateWorkerReachabilityViolations = $desiredStateWorkerReachabilityViolations.Count
+    DesiredStateWorkerPreflightViolations = $desiredStateWorkerPreflightViolations.Count
     DesiredStateSchedulerViolations = $desiredStateSchedulerViolations.Count
     PortablePackageExecutionViolations = $portablePackageExecutionViolations.Count
     TestHarnessIsolationViolations = $testHarnessIsolationViolations.Count

@@ -370,6 +370,24 @@ namespace Capsulenv {
 '@
 }
 
+function Initialize-CapsulenvFileIdentityRuntime {
+    [CmdletBinding()]
+    param()
+
+    if (Test-CapsulenvWindows) {
+        Initialize-CapsulenvFileIdentityType
+    }
+}
+
+function Assert-CapsulenvFileIdentityRuntime {
+    [CmdletBinding()]
+    param()
+
+    if ((Test-CapsulenvWindows) -and -not ('Capsulenv.NativeFileIdentity' -as [type])) {
+        throw 'Capsulenv native file-identity runtime was not initialized in the parent runspace before worker execution.'
+    }
+}
+
 function Get-CapsulenvFileIdentity {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -380,7 +398,7 @@ function Get-CapsulenvFileIdentity {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
         throw 'File hard-link identity checks are supported on Windows only.'
     }
-    Initialize-CapsulenvFileIdentityType
+    Assert-CapsulenvFileIdentityRuntime
     return [Capsulenv.NativeFileIdentity]::Get([System.IO.Path]::GetFullPath($Path))
 }
 
@@ -481,6 +499,7 @@ function New-CapsulenvProjectCacheLink {
         [ValidateSet('Junction', 'SymbolicLink', 'HardLink')][string]$LinkType
     )
 
+    Initialize-CapsulenvFileIdentityRuntime
     $plan = Resolve-CapsulenvProjectLinkPlan -Profile $Profile -ProjectPath $ProjectPath -LinkType $LinkType
     $currentLink = Get-CapsulenvProjectLinkInfo -Plan $plan
     if ($currentLink.Linked) {
@@ -573,6 +592,7 @@ function Remove-CapsulenvProjectCacheLink {
         [switch]$Restore
     )
 
+    Initialize-CapsulenvFileIdentityRuntime
     $plan = Resolve-CapsulenvProjectLinkPlan -Profile $Profile -ProjectPath $ProjectPath
     $currentLink = Get-CapsulenvProjectLinkInfo -Plan $plan
     if (-not $currentLink.Linked) {
@@ -627,6 +647,7 @@ function Get-CapsulenvProjectCacheStatus {
     [CmdletBinding()]
     param([string]$ProjectPath = '.')
 
+    Initialize-CapsulenvFileIdentityRuntime
     $configuration = Get-CapsulenvConfiguration
     foreach ($profile in @($configuration.ToolStorage.ProjectLinks.Keys | Sort-Object)) {
         $plan = Resolve-CapsulenvProjectLinkPlan -Profile ([string]$profile) -ProjectPath $ProjectPath

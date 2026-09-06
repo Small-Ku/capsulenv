@@ -346,6 +346,29 @@ function Get-CapsulenvPackageCachedArtifact {
     return $path
 }
 
+function Initialize-CapsulenvPortablePackageWorkerRuntime {
+    [CmdletBinding()]
+    param()
+
+    # Identity state and runtime types are process-wide prerequisites. They are
+    # initialized by the parent before any package worker is dispatched.
+    [void](Get-CapsulenvIdentity)
+    Initialize-CapsulenvFileIdentityRuntime
+    if (-not ('System.IO.Compression.ZipArchive' -as [type])) {
+        Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+    }
+}
+
+function Assert-CapsulenvPortablePackageWorkerRuntime {
+    [CmdletBinding()]
+    param()
+
+    if (-not ('System.IO.Compression.ZipArchive' -as [type])) {
+        throw 'Capsulenv package archive runtime was not initialized in the parent runspace before worker execution.'
+    }
+    Assert-CapsulenvFileIdentityRuntime
+}
+
 function Expand-CapsulenvSafeZip {
     [CmdletBinding()]
     param(
@@ -354,7 +377,7 @@ function Expand-CapsulenvSafeZip {
     )
 
     [void](New-Item -ItemType Directory -Path $Destination -Force)
-    Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+    Assert-CapsulenvPortablePackageWorkerRuntime
     $destinationRoot = [System.IO.Path]::GetFullPath($Destination).TrimEnd([char[]]'\/')
     $prefix = $destinationRoot + [System.IO.Path]::DirectorySeparatorChar
     $stream = [System.IO.File]::OpenRead($Archive)
@@ -989,6 +1012,7 @@ function Repair-CapsulenvPackageProjections {
     [CmdletBinding()]
     param()
 
+    Initialize-CapsulenvFileIdentityRuntime
     foreach ($state in @(Get-CapsulenvInstalledPackageStates -Strict)) {
         Repair-CapsulenvPackageProjection -State $state
     }

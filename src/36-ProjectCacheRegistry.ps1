@@ -416,6 +416,7 @@ function Repair-CapsulenvProjectCacheLinks {
         [switch]$Quiet
     )
 
+    Initialize-CapsulenvFileIdentityRuntime
     $descriptorSet = Get-CapsulenvProjectCacheRepairDescriptorSet -Strict:$Strict -Quiet:$Quiet
     if ($null -ne $descriptorSet.RegistryError) {
         return @([pscustomobject]@{

@@ -364,4 +364,134 @@ function Invoke-StillBad {
         ($violations.Detail -join "`n") | Should -Match 'CAPSULENV_TEST_ARTIFACT_ROOT'
     }
 
+    It 'rejects process-global mutations reached through nested AnyRunspace helpers' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-reachable-global.ps1' -Source @'
+function Invoke-CapsulenvWorkerLeaf {
+    $env:DEMO = 'bad'
+}
+function Invoke-CapsulenvWorkerMiddle {
+    Invoke-CapsulenvWorkerLeaf
+}
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvWorkerMiddle
+} -Verify { $true })
+'@
+        $violations = @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerReachableProcessMutation'
+        @($violations.Detail -join "`n") | Should -Match 'Invoke-CapsulenvWorkerMiddle.*Invoke-CapsulenvWorkerLeaf'
+    }
+
+    It 'rejects Add-Type reached through an AnyRunspace helper' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-reachable-add-type.ps1' -Source @'
+function Initialize-CapsulenvWorkerType {
+    Add-Type -TypeDefinition 'public static class DemoType {}'
+}
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {
+    Initialize-CapsulenvWorkerType
+} -Verify { $true })
+'@
+        $violations = @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerReachableProcessMutation'
+    }
+
+    It 'fails closed on unresolved Capsulenv helpers in AnyRunspace call graphs' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-unresolved.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvMissingWorkerHelper
+} -Verify { $true })
+'@
+        $violations = @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerUnresolvedCapsulenvCall'
+    }
+
+    It 'accepts a statically resolvable worker-safe helper chain' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-reachable-safe.ps1' -Source @'
+function Get-CapsulenvWorkerLeaf {
+    Get-Item -LiteralPath .
+}
+function Invoke-CapsulenvWorkerMiddle {
+    Get-CapsulenvWorkerLeaf
+}
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvWorkerMiddle
+} -Verify { $true })
+'@
+        @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
+    It 'requires worker runtime preflight before worker-dependent graph construction' {
+        $integration = New-CapsulenvStaticFixture -Name 'integration-preflight-missing.ps1' -Source @'
+function Get-CapsulenvIntegrationDesiredStatePlan {
+    $descriptors = Get-CapsulenvPackageProjectionRepairDescriptors
+    Initialize-CapsulenvFileIdentityRuntime
+    New-CapsulenvDesiredStateNode
+}
+'@
+        $packageGraph = New-CapsulenvStaticFixture -Name 'package-preflight-missing.ps1' -Source @'
+function Get-CapsulenvPortablePackageDesiredStatePlan {
+    New-CapsulenvDesiredStateNode
+}
+'@
+        $violations = @(Get-CapsulenvDesiredStateWorkerPreflightViolations -IntegrationPath $integration -PackageGraphPath $packageGraph)
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerParentPreflightOrder'
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerParentPreflightRequired'
+    }
+
+    It 'accepts worker runtime preflight before graph construction' {
+        $integration = New-CapsulenvStaticFixture -Name 'integration-preflight-good.ps1' -Source @'
+function Get-CapsulenvIntegrationDesiredStatePlan {
+    Initialize-CapsulenvFileIdentityRuntime
+    $descriptors = Get-CapsulenvPackageProjectionRepairDescriptors
+    New-CapsulenvDesiredStateNode
+}
+'@
+        $packageGraph = New-CapsulenvStaticFixture -Name 'package-preflight-good.ps1' -Source @'
+function Get-CapsulenvPortablePackageDesiredStatePlan {
+    Initialize-CapsulenvPortablePackageWorkerRuntime
+    New-CapsulenvDesiredStateNode
+}
+'@
+        @(Get-CapsulenvDesiredStateWorkerPreflightViolations -IntegrationPath $integration -PackageGraphPath $packageGraph).Count | Should -Be 0
+    }
+
+    It 'accepts the repository AnyRunspace call graph and parent preflights' {
+        $runtimePaths = @(Get-ChildItem -LiteralPath (Join-Path $script:Root 'src') -Filter '*.ps1' -File | Select-Object -ExpandProperty FullName)
+        @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths $runtimePaths).Count | Should -Be 0
+        @(Get-CapsulenvDesiredStateWorkerPreflightViolations `
+            -IntegrationPath (Join-Path (Join-Path $script:Root 'src') '40-Scoop.ps1') `
+            -PackageGraphPath (Join-Path (Join-Path $script:Root 'src') '45-PackageExecutionGraph.ps1')).Count | Should -Be 0
+    }
+
+    It 'rejects dynamic and dot-sourced execution reachable from AnyRunspace workers' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-opaque-invoke.ps1' -Source @'
+function Invoke-CapsulenvOpaqueWorker {
+    $handler = 'tool.exe'
+    & $handler
+    . ./worker-extra.ps1
+}
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvOpaqueWorker
+} -Verify { $true })
+'@
+        $violations = @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerOpaqueDynamicInvocation'
+    }
+
+    It 'rejects opaque commands and detached async work reachable from AnyRunspace workers' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-detached.ps1' -Source @'
+function Invoke-CapsulenvDetachedWorker {
+    Invoke-Expression '$x = 1'
+    Start-Job { Get-Date } | Out-Null
+    1..3 | ForEach-Object -Parallel { $_ }
+    [System.Threading.ThreadPool]::QueueUserWorkItem({ param($state) $null }) | Out-Null
+}
+(New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvDetachedWorker
+} -Verify { $true })
+'@
+        $violations = @(Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerOpaqueExecutionCommand'
+        @($violations.Rule) | Should -Contain 'DesiredStateWorkerDetachedAsyncExecution'
+    }
+
 }

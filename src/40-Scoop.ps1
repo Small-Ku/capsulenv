@@ -239,6 +239,9 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
         [bool]$RehydrationRequired = $false
     )
 
+    # Process-wide worker prerequisites are initialized once in the parent
+    # runspace before worker-dependent descriptors or nodes are constructed.
+    Initialize-CapsulenvFileIdentityRuntime
     $relocationContext = Get-CapsulenvRelocationContext
     $toolRelocation = Get-CapsulenvToolRelocationConfiguration
     $context = @{
@@ -368,7 +371,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -ReadResources @('capsule:///tool-storage/configuration','capsule:///state/tool-workspaces') `
             -WriteResources @('capsule:///tool-data','capsule:///tool-storage','capsule:///state/tool-workspaces','host:///workspaces/registered') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired -and (-not $SkipToolRepairs) -and $c.RelocationContext.HasPathChanges -and $toolRelocation.Enabled -and $toolRelocation.AutoRepair){'Apply'}else{'NoOp'}; CanApply=$true } } `
-            -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepair -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs -SessionEnvironmentReady } `
+            -Apply { param($c,$d) Invoke-CapsulenvToolRelocationRepairCore -RelocationContext $c.RelocationContext -Strict:$c.StrictToolRepairs } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'user-integration' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
             -DependsOn @('persist-relocation','tool-relocation','package-host-integration') `

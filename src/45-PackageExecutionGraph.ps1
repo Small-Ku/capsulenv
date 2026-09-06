@@ -79,10 +79,9 @@ function Get-CapsulenvPortablePackageDesiredStatePlan {
         throw "Portable package execution graph requires a PortableSafe install plan: $($InstallPlan.Reference)"
     }
 
-    # Identity validation is part of installed-state reads. Initialize it once
-    # in the parent runspace before workers are allowed to read package state;
-    # otherwise two first-time package workers could race creating identity.json.
-    [void](Get-CapsulenvIdentity)
+    # Initialize all process-wide worker prerequisites in the parent before
+    # package nodes are constructed or dispatched.
+    Initialize-CapsulenvPortablePackageWorkerRuntime
 
     $nodeIdByReference = @{}
     $packagePlans = @{}

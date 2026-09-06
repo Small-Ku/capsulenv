@@ -637,7 +637,7 @@ function Repair-CapsulenvUvRelocation {
     return $results.ToArray()
 }
 
-function Invoke-CapsulenvToolRelocationRepair {
+function Invoke-CapsulenvToolRelocationRepairCore {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]$RelocationContext,
@@ -645,13 +645,9 @@ function Invoke-CapsulenvToolRelocationRepair {
         [switch]$DryRun,
         [switch]$Strict,
         [switch]$SkipWorkspaces,
-        [switch]$IncludePixiGlobal,
-        [switch]$SessionEnvironmentReady
+        [switch]$IncludePixiGlobal
     )
 
-    if (-not $SessionEnvironmentReady) {
-        [void](Set-CapsulenvSessionEnvironment)
-    }
     $results = New-Object System.Collections.Generic.List[object]
 
     if ($Tool -in @('uv', 'all')) {
@@ -696,6 +692,34 @@ function Invoke-CapsulenvToolRelocationRepair {
         }
     }
     return $results.ToArray()
+}
+
+function Invoke-CapsulenvToolRelocationRepair {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$RelocationContext,
+        [ValidateSet('uv', 'pixi', 'all')][string]$Tool = 'all',
+        [switch]$DryRun,
+        [switch]$Strict,
+        [switch]$SkipWorkspaces,
+        [switch]$IncludePixiGlobal,
+        [switch]$SessionEnvironmentReady
+    )
+
+    # The public repair entry point owns session preparation. Desired-state
+    # workers call the core directly after the parent runspace has prepared the
+    # session; keeping this wrapper out of AnyRunspace call graphs prevents a
+    # worker from ever mutating process-scoped environment state.
+    if (-not $SessionEnvironmentReady) {
+        [void](Set-CapsulenvSessionEnvironment)
+    }
+    return Invoke-CapsulenvToolRelocationRepairCore `
+        -RelocationContext $RelocationContext `
+        -Tool $Tool `
+        -DryRun:$DryRun `
+        -Strict:$Strict `
+        -SkipWorkspaces:$SkipWorkspaces `
+        -IncludePixiGlobal:$IncludePixiGlobal
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Invoke-CapsulenvToolRelocationRepair, Repair-CapsulenvUvRelocation
