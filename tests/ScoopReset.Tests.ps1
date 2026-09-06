@@ -86,7 +86,7 @@ Describe 'Capsulenv package projection repair boundary' {
         foreach ($node in $projectionNodes) { @($aggregate.Node.DependsOn) | Should -Contain ([string]$node.Id) }
         $projectionWave = @($integration.Plan.ExecutionWaves | Where-Object { @($_.NodeIds | Where-Object { $_ -like 'package-projection:*' }).Count -gt 0 })[0]
         @($projectionWave.ParallelNodeIds | Where-Object { $_ -like 'package-projection:*' }) | Should -HaveCount 3
-        @($projectionWave.NodeIds) | Should -Contain 'user-environment-backup'
+        @($projectionWave.NodeIds) | Should -Not -Contain 'user-environment-backup'
     }
 
     It 'expands project-cache repairs into parallel link nodes with one registry commit barrier' {
@@ -171,7 +171,7 @@ Describe 'Capsulenv package projection repair boundary' {
     It 'retains the full desired-state graph when the generation requires rehydration' {
         Mock Test-CapsulenvScoopRehydrationRequired { $true } -ModuleName Capsulenv
         Mock Get-CapsulenvIntegrationDesiredStatePlan {
-            [pscustomobject]@{ Plan='rehydrate-plan'; Context='rehydrate-context' }
+            [pscustomobject]@{ Plan='rehydrate-plan'; Context=@{ Marker='rehydrate-context' } }
         } -ModuleName Capsulenv
         Mock Invoke-CapsulenvDesiredStatePlan {
             @([pscustomobject]@{ Id='rehydration-state'; Output=[pscustomobject]@{ ProjectionRepairComplete=$true; ProjectionRepairRetryRequired=$false; ProjectionRepairIssues=@() } })
