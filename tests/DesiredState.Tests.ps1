@@ -123,6 +123,23 @@ Describe 'Capsulenv desired-state resource claims' {
         @($diagnostics.UnorderedWriteWrite) | Should -HaveCount 0
     }
 
+    It 'preserves segment-boundary resource overlap semantics without path-part allocation' {
+        $result = & $script:Module {
+            [pscustomobject]@{
+                ParentChild=(Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri 'CAPSULE:///Tool-Data/' -RightResourceUri 'capsule:///tool-data/project')
+                Exact=(Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri 'host:///State/Demo' -RightResourceUri 'HOST:///state/demo/')
+                PrefixOnly=(Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri 'capsule:///tool-data' -RightResourceUri 'capsule:///tool-database')
+                Sibling=(Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri 'capsule:///a/b' -RightResourceUri 'capsule:///a/c')
+                Scheme=(Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri 'capsule:///a' -RightResourceUri 'host:///a')
+            }
+        }
+        $result.ParentChild | Should -BeTrue
+        $result.Exact | Should -BeTrue
+        $result.PrefixOnly | Should -BeFalse
+        $result.Sibling | Should -BeFalse
+        $result.Scheme | Should -BeFalse
+    }
+
     It 'stores normalized execution claims on each plan decision' {
         $claims = & $script:Module {
             $node=New-CapsulenvDesiredStateNode -Id demo -ReadResources @('CAPSULE:///Tool-Data/') -WriteResources @('host:///State/Demo/') -Plan {param($c)[pscustomobject]@{Operation='Apply';CanApply=$true}} -Apply {param($c,$d)} -Verify {param($c,$d,$o)$true}

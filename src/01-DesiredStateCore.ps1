@@ -12,16 +12,27 @@ function Normalize-CapsulenvDesiredStateResourceUri {
     return ('{0}:///{1}' -f $scheme, $tail)
 }
 
-function Get-CapsulenvDesiredStateResourcePathParts {
+function Test-CapsulenvDesiredStateNormalizedResourceOverlap {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$ResourceUri)
+    param(
+        [Parameter(Mandatory = $true)][string]$LeftResourceUri,
+        [Parameter(Mandatory = $true)][string]$RightResourceUri
+    )
 
-    $normalized = Normalize-CapsulenvDesiredStateResourceUri -ResourceUri $ResourceUri
-    $separator = $normalized.IndexOf(':///')
-    $scheme = $normalized.Substring(0, $separator)
-    $tail = $normalized.Substring($separator + 4)
-    $segments = if ([string]::IsNullOrWhiteSpace($tail)) { @() } else { @($tail -split '/') }
-    return [pscustomobject][ordered]@{ Uri=$normalized; Scheme=$scheme; Segments=[string[]]$segments }
+    $leftSeparator = $LeftResourceUri.IndexOf(':///')
+    $rightSeparator = $RightResourceUri.IndexOf(':///')
+    $leftScheme = $LeftResourceUri.Substring(0, $leftSeparator)
+    $rightScheme = $RightResourceUri.Substring(0, $rightSeparator)
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($leftScheme, $rightScheme)) { return $false }
+
+    $leftTail = $LeftResourceUri.Substring($leftSeparator + 4)
+    $rightTail = $RightResourceUri.Substring($rightSeparator + 4)
+    if ([string]::IsNullOrEmpty($leftTail) -or [string]::IsNullOrEmpty($rightTail)) { return $true }
+    if ([System.StringComparer]::OrdinalIgnoreCase.Equals($leftTail, $rightTail)) { return $true }
+    return (
+        $leftTail.StartsWith(($rightTail + '/'), [System.StringComparison]::OrdinalIgnoreCase) -or
+        $rightTail.StartsWith(($leftTail + '/'), [System.StringComparison]::OrdinalIgnoreCase)
+    )
 }
 
 function Test-CapsulenvDesiredStateResourceOverlap {
@@ -31,14 +42,9 @@ function Test-CapsulenvDesiredStateResourceOverlap {
         [Parameter(Mandatory = $true)][string]$RightResourceUri
     )
 
-    $left = Get-CapsulenvDesiredStateResourcePathParts -ResourceUri $LeftResourceUri
-    $right = Get-CapsulenvDesiredStateResourcePathParts -ResourceUri $RightResourceUri
-    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$left.Scheme, [string]$right.Scheme)) { return $false }
-    $count = [Math]::Min($left.Segments.Count, $right.Segments.Count)
-    for ($index = 0; $index -lt $count; $index++) {
-        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$left.Segments[$index], [string]$right.Segments[$index])) { return $false }
-    }
-    return $true
+    $left = Normalize-CapsulenvDesiredStateResourceUri -ResourceUri $LeftResourceUri
+    $right = Normalize-CapsulenvDesiredStateResourceUri -ResourceUri $RightResourceUri
+    return Test-CapsulenvDesiredStateNormalizedResourceOverlap -LeftResourceUri $left -RightResourceUri $right
 }
 
 function Get-CapsulenvDesiredStateResourceClaims {
@@ -66,7 +72,7 @@ function Test-CapsulenvDesiredStateClaimConflict {
     foreach ($leftClaim in @($LeftClaims)) {
         foreach ($rightClaim in @($RightClaims)) {
             if ($leftClaim.Access -ne 'Write' -and $rightClaim.Access -ne 'Write') { continue }
-            if (Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri ([string]$leftClaim.ResourceUri) -RightResourceUri ([string]$rightClaim.ResourceUri)) { return $true }
+            if (Test-CapsulenvDesiredStateNormalizedResourceOverlap -LeftResourceUri ([string]$leftClaim.ResourceUri) -RightResourceUri ([string]$rightClaim.ResourceUri)) { return $true }
         }
     }
     return $false
@@ -112,7 +118,7 @@ function Get-CapsulenvDesiredStateResourceConflicts {
             foreach ($leftClaim in $leftClaims) {
                 foreach ($rightClaim in $rightClaims) {
                     if ($leftClaim.Access -ne 'Write' -and $rightClaim.Access -ne 'Write') { continue }
-                    if (-not (Test-CapsulenvDesiredStateResourceOverlap -LeftResourceUri ([string]$leftClaim.ResourceUri) -RightResourceUri ([string]$rightClaim.ResourceUri))) { continue }
+                    if (-not (Test-CapsulenvDesiredStateNormalizedResourceOverlap -LeftResourceUri ([string]$leftClaim.ResourceUri) -RightResourceUri ([string]$rightClaim.ResourceUri))) { continue }
                     $leftAfterRight = Test-CapsulenvDesiredStateDependencyPath -Node $leftDecision.Node -DependencyId ([string]$rightDecision.Id) -NodesById $nodesById
                     $rightAfterLeft = Test-CapsulenvDesiredStateDependencyPath -Node $rightDecision.Node -DependencyId ([string]$leftDecision.Id) -NodesById $nodesById
                     $conflicts.Add([pscustomobject][ordered]@{

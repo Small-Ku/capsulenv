@@ -31,3 +31,9 @@ A static architecture gate now rejects conflict/wave construction outside the `I
 After diagnostic topology was removed from the critical path, the remaining scheduler cost showed a second duplication: each candidate-versus-active comparison rebuilt and normalized both nodes' claims. `ResourceClaims` are not diagnostics; they are execution metadata. The plan compiler now stores normalized claims on each decision exactly once. Contract validation, the dynamic ready queue, and opt-in diagnostic views all reuse those decision claims. The node-level conflict wrappers that existed only to regenerate claims were removed.
 
 Static analysis rejects `Get-CapsulenvDesiredStateResourceClaims` calls outside `Get-CapsulenvDesiredStatePlan`, keeping claim normalization out of the live admission loop.
+
+## Follow-up: remove repeated URI path decomposition
+
+Compiled claims already carry canonical resource URIs, but conflict admission still routed each pair through a helper that normalized both strings again, split both paths into segment arrays, and allocated path-part objects. The live/diagnostic claim-conflict paths now use a canonical URI overlap helper that compares scheme plus slash-delimited prefix boundaries directly. The general overlap entrypoint still normalizes arbitrary callers before delegating, so validation semantics are unchanged.
+
+A finite differential check over 9,604 canonical URI pairs, including case variation, root claims, and empty interior path segments, produced identical overlap results between the old segment-array algorithm and the new boundary-prefix algorithm. Pester regression cases cover parent/child, exact, misleading string prefix, sibling, and cross-scheme behavior.
