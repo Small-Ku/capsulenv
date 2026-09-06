@@ -86,18 +86,50 @@ python = "C:/Old Capsule/tool-data/uv/python/cpython"
                 $missingFingerprintIsStale = Test-CapsulenvScoopRehydrationRequired
                 Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null
                 Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null
-                $saved = Get-Content -LiteralPath (Get-CapsulenvRehydrationStatePath) -Raw | ConvertFrom-Json
+                $statePath = Get-CapsulenvRehydrationStatePath
+                $saved = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+                $fingerprint = Get-CapsulenvRelocationFingerprint
+                $caseVariant = [ordered]@{}
+                foreach ($name in @('CapsuleId', 'Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
+                    $caseVariant[$name] = ([string]$fingerprint[$name]).ToUpperInvariant()
+                }
+                $markerPaths = Get-CapsulenvScoopRehydrationMarkerPaths -Fingerprint $fingerprint -StatePath $statePath
+                $caseVariantMarkerPaths = Get-CapsulenvScoopRehydrationMarkerPaths -Fingerprint $caseVariant -StatePath $statePath
+                $readyAfterSave = -not (Test-CapsulenvScoopRehydrationRequired)
+                '{broken-json' | Set-Content -LiteralPath $statePath -Encoding UTF8
+                $corruptStateDeferredFromSteadyPath = -not (Test-CapsulenvScoopRehydrationRequired)
+                $corruptStateDoctor = @(Invoke-CapsulenvDoctorChecks -Ids @('Capsulenv.Doctor.Scoop.ProjectionRepairState')) | Select-Object -First 1
+                Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null -PendingProjectionRepair $true
+                [void](Publish-CapsulenvScoopRehydrationMarker -MarkerPath $markerPaths.Ready)
+                $pendingWinsOverReady = Test-CapsulenvScoopRehydrationRequired
+                Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null
+                $successClearsPending = -not (Test-CapsulenvScoopRehydrationRequired)
                 Save-CapsulenvRehydrationState -RelocationContext $null -PersistRepairResult $null -PendingProjectionRepair $true
                 [pscustomobject]@{
                     RepairCount = $replacementConfig.Scoop.RelocationRepairs.Count
                     MissingFingerprintIsStale = $missingFingerprintIsStale
                     SchemaVersion = [int]$saved.SchemaVersion
+                    CaseInsensitiveFingerprintMarker = (
+                        [System.StringComparer]::OrdinalIgnoreCase.Equals($markerPaths.Ready, $caseVariantMarkerPaths.Ready) -and
+                        [System.StringComparer]::OrdinalIgnoreCase.Equals($markerPaths.Pending, $caseVariantMarkerPaths.Pending)
+                    )
+                    ReadyAfterSave = $readyAfterSave
+                    CorruptStateDeferredFromSteadyPath = $corruptStateDeferredFromSteadyPath
+                    CorruptStateDoctorStatus = [string]$corruptStateDoctor.Status
+                    PendingWinsOverReady = $pendingWinsOverReady
+                    SuccessClearsPending = $successClearsPending
                     Pending = Test-CapsulenvScoopRehydrationRequired
                 }
             } $tempRoot
             $result.RepairCount | Should -Be 0
             $result.MissingFingerprintIsStale | Should -BeTrue
             $result.SchemaVersion | Should -Be 5
+            $result.CaseInsensitiveFingerprintMarker | Should -BeTrue
+            $result.ReadyAfterSave | Should -BeTrue
+            $result.CorruptStateDeferredFromSteadyPath | Should -BeTrue
+            $result.CorruptStateDoctorStatus | Should -Be 'Advisory'
+            $result.PendingWinsOverReady | Should -BeTrue
+            $result.SuccessClearsPending | Should -BeTrue
             $result.Pending | Should -BeTrue
             @(Get-ChildItem -LiteralPath (Join-Path $tempRoot '.capsulenv') -Filter '.capsulenv-rehydration-*.rollback' -ErrorAction SilentlyContinue).Count | Should -Be 0
         } finally {

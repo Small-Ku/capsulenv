@@ -9,8 +9,9 @@ This phase uses ablation before deletion: remove one steady-state responsibility
 | Full package projection enumeration and repair | Manual/out-of-band deletion or replacement of `current`, persist projection, or owned shim while root/host is unchanged | Low | Medium; one package may fail to launch | relocation/pending retry, `capsulenv reset`, package install/update, `doctor` projection state | Remove from steady activation |
 | Full project-cache link enumeration and repair | User/manual deletion or replacement of a managed project link while root/host is unchanged | Low | Medium; project cache falls back or becomes unavailable | `capsulenv cache status`, `capsulenv cache repair`, relocation repair; link/unlink update registry synchronously | Remove from steady activation |
 | PortableSafe Start Menu namespace rebuild | User manually deletes a Capsulenv-owned shortcut after a correct install | Low | Low; CLI/app execution still works | package install/update sync, relocation sync, HostIntegration doctor check | Remove from steady activation |
+| Rehydration detail JSON parse and fingerprint comparison | Detail state is manually corrupted after a successful unchanged generation | Low | Low; diagnostic history is unreadable but materialized projections are unchanged | `doctor` parses/reports detail state; explicit `capsulenv rehydrate` republishes it; root/host changes select different marker paths; retry publishes a `.pending` tombstone | Replace with generation marker |
 
-The ablation deliberately does **not** suppress repair when `Test-CapsulenvScoopRehydrationRequired` is true. That signal already covers root/host changes, unreadable/missing rehydration state, and retryable pending projection repair.
+The ablation deliberately does **not** suppress repair when `Test-CapsulenvScoopRehydrationRequired` is true. The steady signal now covers missing readiness, root/host/fingerprint generation changes, and a retryable `.pending` tombstone. Unreadable detail JSON after a committed generation is intentionally a `doctor` / explicit-rehydrate concern rather than a per-activation parse.
 
 ## Evidence
 

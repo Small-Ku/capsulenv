@@ -88,3 +88,69 @@ function Get-CapsulenvToolStorageHotPathViolations {
 
     return $violations.ToArray()
 }
+
+function Get-CapsulenvRehydrationHotPathViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$ScoopPath)
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    function Add-RehydrationHotPathViolation {
+        param($Ast, [string]$Rule, [string]$Detail)
+        $violations.Add([pscustomobject]@{
+            Rule = $Rule
+            Path = [System.IO.Path]::GetFullPath($ScoopPath)
+            Line = [int]$Ast.Extent.StartLineNumber
+            Column = [int]$Ast.Extent.StartColumnNumber
+            Detail = $Detail
+        })
+    }
+    function Get-RehydrationCommands {
+        param($FunctionAst)
+        return @($FunctionAst.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+    }
+    function Get-RehydrationFileMembers {
+        param($FunctionAst)
+        return @($FunctionAst.Body.FindAll({
+            param($node)
+            if ($node -isnot [System.Management.Automation.Language.InvokeMemberExpressionAst]) { return $false }
+            if ([string]$node.Member.Value -notin @('ReadAllText','ReadAllBytes','WriteAllText','WriteAllBytes','Open','OpenRead','OpenWrite','Replace','Move')) { return $false }
+            if ($node.Expression -isnot [System.Management.Automation.Language.TypeExpressionAst]) { return $false }
+            return [string]$node.Expression.TypeName.FullName -eq 'System.IO.File'
+        }, $true))
+    }
+
+    foreach ($functionName in @('Get-CapsulenvScoopRehydrationMarkerPaths','Test-CapsulenvScoopRehydrationRequired')) {
+        $functionAst = Get-CapsulenvFunctionAst -Path $ScoopPath -Name $functionName
+        foreach ($commandAst in @(Get-RehydrationCommands $functionAst)) {
+            $name = [string]$commandAst.GetCommandName()
+            if ($name -in @('Get-Content','ConvertFrom-Json','Get-ChildItem','New-Item','Remove-Item','Set-Content','Add-Content','Copy-Item','Move-Item')) {
+                Add-RehydrationHotPathViolation -Ast $commandAst -Rule 'RehydrationReadyNoDetailIo' -Detail "rehydration readiness must not parse or mutate detail state on the steady path: $functionName -> $name"
+            }
+        }
+        foreach ($memberAst in @(Get-RehydrationFileMembers $functionAst)) {
+            Add-RehydrationHotPathViolation -Ast $memberAst -Rule 'RehydrationReadyNoDetailIo' -Detail "rehydration readiness must not read/write detail-state contents: $functionName -> $([string]$memberAst.Member.Value)"
+        }
+    }
+
+    $test = Get-CapsulenvFunctionAst -Path $ScoopPath -Name 'Test-CapsulenvScoopRehydrationRequired'
+    $markerCalls = @(Get-RehydrationCommands $test | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvScoopRehydrationMarkerPaths' })
+    if ($markerCalls.Count -ne 1) {
+        Add-RehydrationHotPathViolation -Ast $test -Rule 'RehydrationReadyMarkerRequired' -Detail 'steady rehydration detection must derive exactly one generation/fingerprint marker set'
+    }
+
+    $save = Get-CapsulenvFunctionAst -Path $ScoopPath -Name 'Save-CapsulenvRehydrationState'
+    $saveCommands = @(Get-RehydrationCommands $save | Sort-Object { $_.Extent.StartOffset })
+    $invalidate = @($saveCommands | Where-Object { [string]$_.GetCommandName() -eq 'Remove-CapsulenvScoopRehydrationMarker' } | Select-Object -First 1)
+    $commit = @($saveCommands | Where-Object { [string]$_.GetCommandName() -eq 'Publish-CapsulenvScoopRehydrationMarker' } | Select-Object -First 1)
+    $stateWrites = @(Get-RehydrationFileMembers $save | Where-Object { [string]$_.Member.Value -in @('WriteAllText','WriteAllBytes','Replace','Move') } | Sort-Object { $_.Extent.StartOffset })
+    if ($invalidate.Count -ne 1) {
+        Add-RehydrationHotPathViolation -Ast $save -Rule 'RehydrationReadyInvalidationRequired' -Detail 'rehydration state publication must invalidate readiness before mutation'
+    } elseif ($stateWrites.Count -gt 0 -and $invalidate[0].Extent.StartOffset -gt $stateWrites[0].Extent.StartOffset) {
+        Add-RehydrationHotPathViolation -Ast $invalidate[0] -Rule 'RehydrationReadyInvalidatedBeforeStateWrite' -Detail 'readiness must be invalidated before the first rehydration state write'
+    }
+    if ($commit.Count -ne 1) {
+        Add-RehydrationHotPathViolation -Ast $save -Rule 'RehydrationReadyCommitRequired' -Detail 'rehydration state publication must publish an outcome marker'
+    }
+
+    return $violations.ToArray()
+}

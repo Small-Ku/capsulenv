@@ -97,36 +97,72 @@ function Get-CapsulenvRelocationFingerprint {
     }
 }
 
+function Get-CapsulenvScoopRehydrationMarkerPaths {
+    [CmdletBinding()]
+    param(
+        $Fingerprint = (Get-CapsulenvRelocationFingerprint),
+        [string]$StatePath = (Get-CapsulenvRehydrationStatePath)
+    )
+
+    $payload = New-Object System.Collections.Generic.List[string]
+    $payload.Add('scoop-rehydration-generation-schema=1')
+    foreach ($name in @('CapsuleId', 'Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
+        $value = if ($Fingerprint -is [System.Collections.IDictionary]) {
+            if ($Fingerprint.Contains($name)) { [string]$Fingerprint[$name] } else { '' }
+        } else {
+            $property = $Fingerprint.PSObject.Properties[$name]
+            if ($null -ne $property) { [string]$property.Value } else { '' }
+        }
+        $payload.Add(('{0}={1}' -f $name, $value.ToLowerInvariant()))
+    }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($payload -join "`n"))
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+    $prefix = Join-Path (Split-Path -Parent $StatePath) ("scoop-rehydration-{0}" -f $hash.Substring(0, 16))
+    return [pscustomobject][ordered]@{
+        Ready = $prefix + '.ready'
+        Pending = $prefix + '.pending'
+    }
+}
+
+function Remove-CapsulenvScoopRehydrationMarker {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$MarkerPath)
+
+    if (Test-Path -LiteralPath $MarkerPath -PathType Leaf) {
+        Remove-Item -LiteralPath $MarkerPath -Force
+    }
+}
+
+function Publish-CapsulenvScoopRehydrationMarker {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$MarkerPath)
+
+    $markerRoot = Split-Path -Parent $MarkerPath
+    if (-not (Test-Path -LiteralPath $markerRoot -PathType Container)) {
+        [void](New-Item -ItemType Directory -Path $markerRoot -Force)
+    }
+    # Marker content is not authority.  Existence after the already-atomic
+    # detail-state commit is the generation signal, so an idempotent direct
+    # write is safer under concurrent activations than a temp-file rename.
+    [System.IO.File]::WriteAllText($MarkerPath, 'ready', [System.Text.UTF8Encoding]::new($false))
+    return $MarkerPath
+}
+
 function Test-CapsulenvScoopRehydrationRequired {
     [CmdletBinding()]
     param()
 
-    $statePath = Get-CapsulenvRehydrationStatePath
-    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+    $markers = Get-CapsulenvScoopRehydrationMarkerPaths
+    if (Test-Path -LiteralPath $markers.Pending -PathType Leaf) {
         return $true
     }
-
-    try {
-        $saved = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-    } catch {
-        return $true
-    }
-    $pendingRepairProperty = $saved.PSObject.Properties['PendingProjectionRepair']
-    if ($null -eq $pendingRepairProperty) {
-        # Schema <=3 used this name for the same retry signal.
-        $pendingRepairProperty = $saved.PSObject.Properties['PendingScoopReset']
-    }
-    if ($null -ne $pendingRepairProperty -and [bool]$pendingRepairProperty.Value) {
-        return $true
-    }
-    $current = Get-CapsulenvRelocationFingerprint
-    foreach ($name in @('CapsuleId', 'Root', 'ScoopRoot', 'ScoopGlobalRoot', 'ComputerName', 'User')) {
-        $property = $saved.PSObject.Properties[$name]
-        if ($null -eq $property -or [string]$property.Value -ne [string]$current[$name]) {
-            return $true
-        }
-    }
-    return $false
+    return -not (Test-Path -LiteralPath $markers.Ready -PathType Leaf)
 }
 
 function ConvertTo-CapsulenvFingerprintSnapshot {
@@ -165,6 +201,8 @@ function Save-CapsulenvRehydrationState {
     $stateDirectory = Split-Path -Parent $statePath
     [void](New-Item -ItemType Directory -Path $stateDirectory -Force)
     $state = Get-CapsulenvRelocationFingerprint
+    $rehydrationMarkers = Get-CapsulenvScoopRehydrationMarkerPaths -Fingerprint $state -StatePath $statePath
+    Remove-CapsulenvScoopRehydrationMarker -MarkerPath $rehydrationMarkers.Ready
     $state.Insert(0, 'SchemaVersion', 5)
     $state['PendingProjectionRepair'] = $PendingProjectionRepair
     $state['ProjectionRepairIssues'] = @(
@@ -226,6 +264,12 @@ function Save-CapsulenvRehydrationState {
         if (Test-Path -LiteralPath $rollbackPath -PathType Leaf) {
             Remove-Item -LiteralPath $rollbackPath -Force -ErrorAction SilentlyContinue
         }
+    }
+    if ($PendingProjectionRepair) {
+        [void](Publish-CapsulenvScoopRehydrationMarker -MarkerPath $rehydrationMarkers.Pending)
+    } else {
+        Remove-CapsulenvScoopRehydrationMarker -MarkerPath $rehydrationMarkers.Pending
+        [void](Publish-CapsulenvScoopRehydrationMarker -MarkerPath $rehydrationMarkers.Ready)
     }
 }
 
@@ -535,9 +579,9 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.ProjectionRepairState'
             -Area 'Scoop' `
             -Status Advisory `
             -Importance Optional `
-            -Summary "The rehydration state is unreadable and will be regenerated: $statePath" `
+            -Summary "The rehydration detail state is unreadable: $statePath" `
             -Data ([ordered]@{ StatePath=$statePath; Pending=$true; Issues=@() }) `
-            -Remediation @('Run capsulenv rehydrate after resolving any filesystem or media errors affecting the capsule state directory.')
+            -Remediation @('Run capsulenv rehydrate after resolving any filesystem or media errors affecting the capsule state directory; ordinary activation intentionally does not parse this detail state.')
     }
     $pendingProperty = $saved.PSObject.Properties['PendingProjectionRepair']
     $pending = ($null -ne $pendingProperty -and [bool]$pendingProperty.Value)

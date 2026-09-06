@@ -869,4 +869,26 @@ function Invoke-CapsulenvDoctor { Get-CapsulenvToolStoragePlan }
             -DoctorPath (Join-Path (Join-Path $script:Root 'src') '70-Doctor.ps1')).Count | Should -Be 0
     }
 
+    It 'rejects rehydration readiness that parses state or publishes readiness unsafely' {
+        $fixture = New-CapsulenvStaticFixture -Name 'rehydration-ready-unsafe.ps1' -Source @'
+function Get-CapsulenvScoopRehydrationMarkerPaths { Get-Content state.json; return 'state.ready' }
+function Test-CapsulenvScoopRehydrationRequired { Get-Content state.json | ConvertFrom-Json; Get-CapsulenvScoopRehydrationMarkerPaths; return $false }
+function Remove-CapsulenvScoopRehydrationMarker { }
+function Publish-CapsulenvScoopRehydrationMarker { }
+function Save-CapsulenvRehydrationState {
+    [System.IO.File]::WriteAllText('state.json', '{}')
+    Remove-CapsulenvScoopRehydrationMarker
+}
+'@
+        $violations = @(Get-CapsulenvRehydrationHotPathViolations -ScoopPath $fixture)
+        @($violations.Rule) | Should -Contain 'RehydrationReadyNoDetailIo'
+        @($violations.Rule) | Should -Contain 'RehydrationReadyInvalidatedBeforeStateWrite'
+        @($violations.Rule) | Should -Contain 'RehydrationReadyCommitRequired'
+    }
+
+    It 'accepts generation-gated rehydration readiness publication' {
+        @(Get-CapsulenvRehydrationHotPathViolations `
+            -ScoopPath (Join-Path (Join-Path $script:Root 'src') '40-Scoop.ps1')).Count | Should -Be 0
+    }
+
 }
