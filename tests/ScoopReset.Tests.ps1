@@ -40,6 +40,12 @@ Describe 'Capsulenv package projection repair boundary' {
         $hostNode.ConcurrencyPolicy | Should -Be 'ResourceBound'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/user-environment-backup'
         @($userNode.WriteResources) | Should -Contain 'capsule:///state/install-mode'
+        $stateNode = @($rehydrate.Plan.Nodes | Where-Object Id -eq 'rehydration-state')[0].Node
+        @($stateNode.DependsOn) | Should -HaveCount 3
+        @($stateNode.DependsOn) | Should -Contain 'package-projections'
+        @($stateNode.DependsOn) | Should -Contain 'persist-relocation'
+        @($stateNode.DependsOn) | Should -Contain 'user-integration'
+        @($stateNode.DependsOn) | Should -Not -Contain 'tool-relocation'
     }
 
     It 'expands package projections into claim-safe parallel nodes with an aggregate barrier' {

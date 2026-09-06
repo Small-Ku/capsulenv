@@ -305,6 +305,27 @@ $apply = { 2 }
             Should -BeGreaterOrEqual 3
     }
 
+    It 'rejects literal desired-state output reads without a direct producer dependency' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-output-dependency-missing.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id consumer -DependsOn unrelated -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound -ReadResources @() -WriteResources @('capsule:///consumer') -Plan { 1 } -Apply {
+    param($context, $decision)
+    $context.Outputs['producer']
+} -Verify { $true })
+'@
+        $violations = @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture))
+        @($violations.Rule) | Should -Contain 'DesiredStateOutputDependencyRequired'
+    }
+
+    It 'accepts literal desired-state output reads with an explicit producer dependency' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-output-dependency-explicit.ps1' -Source @'
+(New-CapsulenvDesiredStateNode -Id consumer -DependsOn producer -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound -ReadResources @() -WriteResources @('capsule:///consumer') -Plan { 1 } -Apply {
+    param($context, $decision)
+    $context.Outputs['producer']
+} -Verify { $true })
+'@
+        @(Get-CapsulenvDesiredStateNodeContractViolations -Paths @($fixture)).Count | Should -Be 0
+    }
+
     It 'accepts a fully explicit resource-bound worker node with child-local effects' {
         $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-safe.ps1' -Source @'
 (New-CapsulenvDesiredStateNode -Id demo -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///input') -WriteResources @('capsule:///output') -Plan { 1 } -Apply {

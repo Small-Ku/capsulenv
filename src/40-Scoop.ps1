@@ -430,7 +430,7 @@ function Get-CapsulenvIntegrationDesiredStatePlan {
             -Apply { param($c,$d) Sync-CapsulenvUserEnvironment -RelocationContext $c.RelocationContext } `
             -Verify { param($c,$d,$o) $true })
         (New-CapsulenvDesiredStateNode -Id 'rehydration-state' -ExecutionAffinity MainRunspace -ConcurrencyPolicy ResourceBound `
-            -DependsOn @('persist-relocation','tool-relocation','user-integration') `
+            -DependsOn @('package-projections','persist-relocation','user-integration') `
             -ReadResources @('capsule:///state/rehydration') `
             -WriteResources @('capsule:///state/rehydration') `
             -Plan { param($c) [pscustomobject]@{ Operation=if($c.RehydrationRequired){'Apply'}else{'NoOp'}; CanApply=$true } } `

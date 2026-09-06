@@ -49,3 +49,9 @@ Project-cache nodes and the empty project-cache barrier now depend directly on `
 `package-projections` is a main-runspace reducer over already-published worker outputs. It performs no independent external mutation, yet it was declared `Exclusive`, so the live ready queue could not run that reducer while any unrelated project-cache/tool worker was still active. That turned an in-memory join into a global serialization point.
 
 The reducer is now `MainRunspace + ResourceBound` with a narrow read claim on `process:///desired-state/outputs/package-projections`. Its dependency barrier still guarantees every package-projection result exists before reduction, while disjoint workers from the project-cache branch no longer block it merely because they are active.
+
+## Follow-up: distinguish data edges from sequencing edges at final publication
+
+A first ablation considered making `rehydration-state` depend only on the terminal `user-integration` join. FMEA rejected that version: the publication callback directly consumes `persist-relocation` and `package-projections` outputs, so hiding those producers behind transitive ordering would make the DAG less complete even if the current scheduler happened to preserve execution order.
+
+The final publication node therefore keeps explicit edges to both output producers and to `user-integration`, which remains the terminal join for host/tool repair branches. The old direct `tool-relocation` edge is removed because it carries no data and is already represented by `tool-relocation -> user-integration -> rehydration-state`. A static node-contract gate now requires literal `$context.Outputs['producer']` reads in desired-state callbacks to have a matching direct `DependsOn` producer, preventing future edge ablations from silently degrading data-flow correctness.

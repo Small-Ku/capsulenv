@@ -78,6 +78,75 @@ function Get-CapsulenvDesiredStateNodeContractViolations {
                 }
             }
 
+            $dependencyNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+            if ($parameters.ContainsKey('DependsOn')) {
+                $dependsAst = $parameters['DependsOn']
+                if ($dependsAst -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                    [void]$dependencyNames.Add([string]$dependsAst.Value)
+                }
+                if ($null -ne $dependsAst) {
+                    foreach ($literalAst in @(
+                        $dependsAst.FindAll(
+                            { param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] },
+                            $true
+                        )
+                    )) {
+                        [void]$dependencyNames.Add([string]$literalAst.Value)
+                    }
+                }
+            }
+
+            foreach ($callbackName in @('Plan','Apply','Verify')) {
+                if (-not $parameters.ContainsKey($callbackName)) {
+                    continue
+                }
+                $callbackAst = $parameters[$callbackName]
+                if ($callbackAst -isnot [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+                    continue
+                }
+                $scriptBlockAst = $callbackAst.ScriptBlock
+                if ($null -eq $scriptBlockAst.ParamBlock -or @($scriptBlockAst.ParamBlock.Parameters).Count -eq 0) {
+                    continue
+                }
+                $contextParameterName = [string]$scriptBlockAst.ParamBlock.Parameters[0].Name.VariablePath.UserPath
+                if ([string]::IsNullOrWhiteSpace($contextParameterName)) {
+                    continue
+                }
+                foreach ($indexAst in @(
+                    $scriptBlockAst.FindAll(
+                        { param($node) $node -is [System.Management.Automation.Language.IndexExpressionAst] },
+                        $true
+                    )
+                )) {
+                    if ($indexAst.Target -isnot [System.Management.Automation.Language.MemberExpressionAst]) {
+                        continue
+                    }
+                    if ([string]$indexAst.Target.Member.Value -ne 'Outputs') {
+                        continue
+                    }
+                    if ($indexAst.Target.Expression -isnot [System.Management.Automation.Language.VariableExpressionAst]) {
+                        continue
+                    }
+                    if ([string]$indexAst.Target.Expression.VariablePath.UserPath -ne $contextParameterName) {
+                        continue
+                    }
+                    if ($indexAst.Index -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                        continue
+                    }
+                    $producerId = [string]$indexAst.Index.Value
+                    if ($dependencyNames.Contains($producerId)) {
+                        continue
+                    }
+                    $violations.Add([pscustomobject]@{
+                        Rule = 'DesiredStateOutputDependencyRequired'
+                        Path = $fullPath
+                        Line = $indexAst.Extent.StartLineNumber
+                        Column = $indexAst.Extent.StartColumnNumber
+                        Detail = "desired-state callback -$callbackName reads output '$producerId' without declaring it as a direct dependency"
+                    })
+                }
+            }
+
             $affinity = ''
             if ($parameters.ContainsKey('ExecutionAffinity')) {
                 $affinityAst = $parameters['ExecutionAffinity']
