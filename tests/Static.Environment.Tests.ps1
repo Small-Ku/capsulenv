@@ -94,4 +94,27 @@ Describe 'Capsulenv portable environment ownership contracts' {
         (& $script:Module { Merge-CapsulenvPath -ExistingPath 'C:\Tools;C:\Else' -Prepend @('c:\tools\', 'C:\New') }) | Should -Be 'c:\tools\;C:\New;C:\Else'
         (& $script:Module { ConvertTo-CapsulenvProcessArgument -Argument 'C:\Path With Space\' }) | Should -Be '"C:\Path With Space\\"'
     }
+
+    It 'removes only foreign Scoop shims that are visible in the current process PATH' {
+        $oldScoop = $env:SCOOP
+        $oldGlobal = $env:SCOOP_GLOBAL
+        try {
+            $visibleRoot = Join-Path $TestDrive 'visible-host-scoop'
+            $hiddenRoot = Join-Path $TestDrive 'hidden-host-scoop'
+            $visibleShim = [System.IO.Path]::GetFullPath((Join-Path $visibleRoot 'shims'))
+            $hiddenShim = [System.IO.Path]::GetFullPath((Join-Path $hiddenRoot 'shims'))
+            $env:SCOOP = $visibleRoot
+            $env:SCOOP_GLOBAL = $hiddenRoot
+            $existing = @($visibleShim, (Join-Path $TestDrive 'ordinary-bin')) -join ';'
+
+            $result = @(& $script:Module { param($ExistingPath) Get-CapsulenvForeignScoopShimPaths -ExistingPath $ExistingPath } $existing)
+
+            $result | Should -Contain $visibleShim
+            $result | Should -Not -Contain $hiddenShim
+        } finally {
+            if ($null -eq $oldScoop) { Remove-Item Env:SCOOP -ErrorAction SilentlyContinue } else { $env:SCOOP = $oldScoop }
+            if ($null -eq $oldGlobal) { Remove-Item Env:SCOOP_GLOBAL -ErrorAction SilentlyContinue } else { $env:SCOOP_GLOBAL = $oldGlobal }
+        }
+    }
+
 }

@@ -171,41 +171,92 @@ function Merge-CapsulenvModulePath {
     return ($result -join [string]$separator)
 }
 
-function Get-CapsulenvForeignScoopShimPaths {
+function Select-CapsulenvForeignScoopShimPaths {
     [CmdletBinding()]
-    param()
+    param(
+        [string]$ExistingPath,
+        [string[]]$CandidateRoots
+    )
 
     $capsuleRoots = @(
         ([System.IO.Path]::GetFullPath((Get-CapsulenvScoopRoot))).TrimEnd('\', '/'),
         ([System.IO.Path]::GetFullPath((Get-CapsulenvScoopGlobalRoot))).TrimEnd('\', '/')
     )
-    $candidateRoots = New-Object System.Collections.Generic.List[string]
-    $addCandidate = {
-        param([AllowNull()][string]$Value)
-        if ([string]::IsNullOrWhiteSpace($Value)) {
-            return
-        }
+    $pathEntries = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($ExistingPath -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry)) { continue }
         try {
-            $full = [System.IO.Path]::GetFullPath($Value).TrimEnd('\', '/')
+            $full = [System.IO.Path]::GetFullPath($entry.Trim()).TrimEnd('\', '/')
         } catch {
-            return
+            continue
         }
-        foreach ($capsuleRoot in $capsuleRoots) {
-            if ([System.StringComparer]::OrdinalIgnoreCase.Equals($full, $capsuleRoot)) {
-                return
-            }
-        }
-        if (-not ($candidateRoots | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals($_, $full) })) {
-            $candidateRoots.Add($full)
+        if (-not ($pathEntries | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals($_, $full) })) {
+            $pathEntries.Add($full)
         }
     }
 
+    $result = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($CandidateRoots)) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        try {
+            $root = [System.IO.Path]::GetFullPath($candidate).TrimEnd('\', '/')
+        } catch {
+            continue
+        }
+        $owned = $false
+        foreach ($capsuleRoot in $capsuleRoots) {
+            if ([System.StringComparer]::OrdinalIgnoreCase.Equals($root, $capsuleRoot)) {
+                $owned = $true
+                break
+            }
+        }
+        if ($owned) { continue }
+
+        $shim = [System.IO.Path]::GetFullPath((Join-Path $root 'shims')).TrimEnd('\', '/')
+        if (-not ($pathEntries | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals($_, $shim) })) { continue }
+        if (-not ($result | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals($_, $shim) })) {
+            $result.Add($shim)
+        }
+    }
+    return $result.ToArray()
+}
+
+function Get-CapsulenvForeignScoopShimPaths {
+    [CmdletBinding()]
+    param([string]$ExistingPath = $env:PATH)
+
+    # Steady session setup only needs evidence visible to the current process.
+    # Persistent User/Machine environment and the reversible User backup cannot
+    # affect current command resolution unless their paths were inherited into
+    # this process, in which case Process SCOOP* / PATH already provide evidence.
+    $candidateRoots = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @('SCOOP', 'SCOOP_GLOBAL')) {
+        $value = [Environment]::GetEnvironmentVariable($name, 'Process')
+        if (-not [string]::IsNullOrWhiteSpace($value)) { $candidateRoots.Add($value) }
+    }
+    if (Test-CapsulenvWindows) {
+        $userProfile = [Environment]::GetFolderPath('UserProfile')
+        if (-not [string]::IsNullOrWhiteSpace($userProfile)) { $candidateRoots.Add((Join-Path $userProfile 'scoop')) }
+        $programData = [Environment]::GetEnvironmentVariable('ProgramData', 'Process')
+        if (-not [string]::IsNullOrWhiteSpace($programData)) { $candidateRoots.Add((Join-Path $programData 'scoop')) }
+    }
+    return @(Select-CapsulenvForeignScoopShimPaths -ExistingPath $ExistingPath -CandidateRoots $candidateRoots.ToArray())
+}
+
+function Get-CapsulenvPersistentForeignScoopShimPaths {
+    [CmdletBinding()]
+    param([string]$ExistingPath)
+
+    # Persistent User synchronization is explicit/low-frequency, so it may use
+    # broader evidence to clean stale host Scoop paths from persistent PATH.
+    $candidateRoots = New-Object System.Collections.Generic.List[string]
     foreach ($name in @('SCOOP', 'SCOOP_GLOBAL')) {
         foreach ($target in @('Process', 'User', 'Machine')) {
             try {
-                & $addCandidate ([Environment]::GetEnvironmentVariable($name, $target))
+                $value = [Environment]::GetEnvironmentVariable($name, $target)
+                if (-not [string]::IsNullOrWhiteSpace($value)) { $candidateRoots.Add($value) }
             } catch {
-                # User/Machine targets are not available on every test host.
+                # User/Machine targets are unavailable on some test hosts.
             }
         }
     }
@@ -216,8 +267,8 @@ function Get-CapsulenvForeignScoopShimPaths {
             $backup = Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
             foreach ($name in @('SCOOP', 'SCOOP_GLOBAL')) {
                 $property = $backup.PSObject.Properties[$name]
-                if ($null -ne $property -and [bool]$property.Value.Exists) {
-                    & $addCandidate ([string]$property.Value.Value)
+                if ($null -ne $property -and [bool]$property.Value.Exists -and -not [string]::IsNullOrWhiteSpace([string]$property.Value.Value)) {
+                    $candidateRoots.Add([string]$property.Value.Value)
                 }
             }
         } catch {
@@ -227,16 +278,11 @@ function Get-CapsulenvForeignScoopShimPaths {
 
     if (Test-CapsulenvWindows) {
         $userProfile = [Environment]::GetFolderPath('UserProfile')
-        if (-not [string]::IsNullOrWhiteSpace($userProfile)) {
-            & $addCandidate (Join-Path $userProfile 'scoop')
-        }
+        if (-not [string]::IsNullOrWhiteSpace($userProfile)) { $candidateRoots.Add((Join-Path $userProfile 'scoop')) }
         $programData = [Environment]::GetEnvironmentVariable('ProgramData', 'Process')
-        if (-not [string]::IsNullOrWhiteSpace($programData)) {
-            & $addCandidate (Join-Path $programData 'scoop')
-        }
+        if (-not [string]::IsNullOrWhiteSpace($programData)) { $candidateRoots.Add((Join-Path $programData 'scoop')) }
     }
-
-    return @($candidateRoots | ForEach-Object { Join-Path $_ 'shims' })
+    return @(Select-CapsulenvForeignScoopShimPaths -ExistingPath $ExistingPath -CandidateRoots $candidateRoots.ToArray())
 }
 
 function Set-CapsulenvSessionEnvironment {
@@ -261,7 +307,7 @@ function Set-CapsulenvSessionEnvironment {
             [void](New-Item -ItemType Directory -Path $modulePathEntry -Force)
         }
     }
-    $foreignScoopShimPaths = @(Get-CapsulenvForeignScoopShimPaths)
+    $foreignScoopShimPaths = @(Get-CapsulenvForeignScoopShimPaths -ExistingPath $env:PATH)
     foreach ($name in $plan.Variables.Keys) {
         [Environment]::SetEnvironmentVariable($name, [string]$plan.Variables[$name], 'Process')
     }
@@ -659,7 +705,7 @@ function Sync-CapsulenvUserEnvironment {
     $staleScoopPathEntries = @(Get-CapsulenvRelocatedScoopPathEntries `
         -ExistingPath $userPath `
         -RelocationContext $RelocationContext)
-    $foreignScoopShimPaths = @(Get-CapsulenvForeignScoopShimPaths)
+    $foreignScoopShimPaths = @(Get-CapsulenvPersistentForeignScoopShimPaths -ExistingPath $userPath)
     $userPath = Remove-CapsulenvPathEntries `
         -ExistingPath $userPath `
         -Remove (@($previousEntries) + @($staleScoopPathEntries) + @($foreignScoopShimPaths))

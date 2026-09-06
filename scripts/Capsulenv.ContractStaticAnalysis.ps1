@@ -480,6 +480,88 @@ function Get-CapsulenvModeIsolationBoundaryViolations {
     return $violations.ToArray()
 }
 
+function Get-CapsulenvEnvironmentHotPathViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$EnvironmentPath)
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    function Add-EnvironmentHotPathViolation {
+        param($Ast, [string]$Rule, [string]$Detail)
+        $violations.Add([pscustomobject]@{
+            Rule = $Rule
+            Path = [System.IO.Path]::GetFullPath($EnvironmentPath)
+            Line = [int]$Ast.Extent.StartLineNumber
+            Column = [int]$Ast.Extent.StartColumnNumber
+            Detail = $Detail
+        })
+    }
+    function Get-EnvironmentCommands {
+        param($FunctionAst)
+        return @($FunctionAst.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+    }
+    function Get-NamedParameterArgument {
+        param($CommandAst, [string]$Name)
+        $elements = @($CommandAst.CommandElements)
+        for ($i = 0; $i -lt $elements.Count; $i++) {
+            $element = $elements[$i]
+            if ($element -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
+            if ([string]$element.ParameterName -ne $Name) { continue }
+            if ($i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [System.Management.Automation.Language.CommandParameterAst]) {
+                return $elements[$i + 1]
+            }
+            return $null
+        }
+        return $null
+    }
+
+    $discover = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Get-CapsulenvForeignScoopShimPaths'
+    foreach ($commandAst in @(Get-EnvironmentCommands $discover)) {
+        $name = [string]$commandAst.GetCommandName()
+        if ($name -in @('Get-CapsulenvUserEnvironmentBackupPath', 'Get-Content', 'ConvertFrom-Json')) {
+            Add-EnvironmentHotPathViolation -Ast $commandAst -Rule 'SessionScoopDiscoveryProcessOnly' -Detail "steady session Scoop discovery must not read persistent/backup state: $name"
+        }
+    }
+    foreach ($memberAst in @($discover.Body.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+        [string]$node.Member.Value -eq 'GetEnvironmentVariable'
+    }, $true))) {
+        if (@($memberAst.Arguments).Count -lt 2) { continue }
+        $target = $null
+        try { $target = [string]$memberAst.Arguments[1].SafeGetValue() } catch { }
+        if ($target -in @('User', 'Machine')) {
+            Add-EnvironmentHotPathViolation -Ast $memberAst -Rule 'SessionScoopDiscoveryProcessOnly' -Detail "steady session Scoop discovery must not query $target environment"
+        }
+    }
+
+    $session = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Set-CapsulenvSessionEnvironment'
+    $sessionCalls = @(Get-EnvironmentCommands $session | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvForeignScoopShimPaths' })
+    if ($sessionCalls.Count -ne 1) {
+        Add-EnvironmentHotPathViolation -Ast $session -Rule 'SessionScoopDiscoveryCurrentPath' -Detail 'session setup must perform exactly one process-local foreign Scoop shim discovery'
+    } else {
+        $argument = Get-NamedParameterArgument -CommandAst $sessionCalls[0] -Name 'ExistingPath'
+        if ($null -eq $argument -or $argument -isnot [System.Management.Automation.Language.VariableExpressionAst] -or [string]$argument.VariablePath.UserPath -ne 'env:PATH') {
+            Add-EnvironmentHotPathViolation -Ast $sessionCalls[0] -Rule 'SessionScoopDiscoveryCurrentPath' -Detail 'session Scoop discovery must be bounded to the current process PATH'
+        }
+    }
+    foreach ($call in @(Get-EnvironmentCommands $session | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvPersistentForeignScoopShimPaths' })) {
+        Add-EnvironmentHotPathViolation -Ast $call -Rule 'SessionScoopDiscoveryProcessOnly' -Detail 'steady session setup must not enter persistent Scoop discovery'
+    }
+
+    $syncUser = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Sync-CapsulenvUserEnvironment'
+    $persistentCalls = @(Get-EnvironmentCommands $syncUser | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvPersistentForeignScoopShimPaths' })
+    if ($persistentCalls.Count -ne 1) {
+        Add-EnvironmentHotPathViolation -Ast $syncUser -Rule 'PersistentScoopCleanupPreserved' -Detail 'explicit User environment synchronization must retain persistent foreign Scoop cleanup'
+    } else {
+        $argument = Get-NamedParameterArgument -CommandAst $persistentCalls[0] -Name 'ExistingPath'
+        if ($null -eq $argument -or $argument -isnot [System.Management.Automation.Language.VariableExpressionAst] -or [string]$argument.VariablePath.UserPath -ne 'userPath') {
+            Add-EnvironmentHotPathViolation -Ast $persistentCalls[0] -Rule 'PersistentScoopCleanupPreserved' -Detail 'persistent Scoop cleanup must inspect the persistent User PATH being rewritten'
+        }
+    }
+
+    return $violations.ToArray()
+}
+
 function Get-CapsulenvScoopBootstrapHotPathViolations {
     [CmdletBinding()]
     param(

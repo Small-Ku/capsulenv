@@ -762,4 +762,28 @@ function Invoke-Capsulenv { Initialize-CapsulenvScoopBootstrap }
         ).Count | Should -Be 0
     }
 
+
+    It 'rejects steady session Scoop discovery that reads persistent environment or backup state' {
+        $fixture = New-CapsulenvStaticFixture -Name 'environment-hotpath-unsafe.ps1' -Source @'
+function Get-CapsulenvForeignScoopShimPaths {
+    [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+    Get-Content (Get-CapsulenvUserEnvironmentBackupPath)
+}
+function Set-CapsulenvSessionEnvironment {
+    Get-CapsulenvPersistentForeignScoopShimPaths -ExistingPath $env:PATH
+}
+function Sync-CapsulenvUserEnvironment {
+    Get-CapsulenvForeignScoopShimPaths -ExistingPath $env:PATH
+}
+'@
+        $violations = @(Get-CapsulenvEnvironmentHotPathViolations -EnvironmentPath $fixture)
+        @($violations.Rule) | Should -Contain 'SessionScoopDiscoveryProcessOnly'
+        @($violations.Rule) | Should -Contain 'SessionScoopDiscoveryCurrentPath'
+        @($violations.Rule) | Should -Contain 'PersistentScoopCleanupPreserved'
+    }
+
+    It 'accepts process-local session discovery and persistent User cleanup boundaries' {
+        @(Get-CapsulenvEnvironmentHotPathViolations -EnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-Environment.ps1')).Count | Should -Be 0
+    }
+
 }
