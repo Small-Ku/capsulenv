@@ -61,7 +61,7 @@ function Get-CapsulenvEnvironmentPlan {
         )
     }
 
-    $toolStorage = Get-CapsulenvToolStoragePlan
+    $toolStorage = Get-CapsulenvToolStoragePlan -Configuration $configuration
     foreach ($name in $toolStorage.Variables.Keys) {
         $variables[$name] = [string]$toolStorage.Variables[$name]
     }
@@ -121,6 +121,8 @@ function Get-CapsulenvEnvironmentPlan {
         PathEntries = $pathEntries.ToArray()
         ModulePathEntries = $modulePathEntries.ToArray()
         Directories = @($toolStorage.Directories) + @([string]$variables.CAPSULENV_SCRATCH)
+        SessionDirectories = @([string]$variables.CAPSULENV_SCRATCH)
+        ToolStorage = $toolStorage
     }
 }
 
@@ -293,11 +295,10 @@ function Set-CapsulenvSessionEnvironment {
     )
 
     $plan = Get-CapsulenvEnvironmentPlan
-    $configuration = Get-CapsulenvConfiguration
-    if ($configuration.ToolStorage.Enabled -and $configuration.ToolStorage.CreateDirectories) {
-        [void](Initialize-CapsulenvToolStorage)
+    if ($plan.ToolStorage.Enabled -and $plan.ToolStorage.CreateDirectories) {
+        [void](Initialize-CapsulenvToolStorage -Plan $plan.ToolStorage)
     }
-    foreach ($directory in @($plan.Directories)) {
+    foreach ($directory in @($plan.SessionDirectories)) {
         if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
             [void](New-Item -ItemType Directory -Path $directory -Force)
         }

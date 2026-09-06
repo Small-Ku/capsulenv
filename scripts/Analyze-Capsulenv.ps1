@@ -272,6 +272,15 @@ $environmentHotPathViolations = @(
         -SessionEnvironmentPath (Join-Path (Join-Path $root 'src') '30-10-EnvironmentSession.ps1') `
         -UserEnvironmentPath (Join-Path (Join-Path $root 'src') '30-30-UserEnvironment.ps1')
 )
+$environmentPlanReuseViolations = @(
+    Get-CapsulenvEnvironmentPlanReuseViolations `
+        -SessionEnvironmentPath (Join-Path (Join-Path $root 'src') '30-10-EnvironmentSession.ps1') `
+        -ToolStoragePath (Join-Path (Join-Path $root 'src') '35-ToolStorage.ps1')
+)
+if ($environmentPlanReuseViolations.Count -gt 0) {
+    $detail = $environmentPlanReuseViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
+    throw "Capsulenv environment plan-reuse analysis failed:`n$($detail -join [Environment]::NewLine)"
+}
 if ($environmentHotPathViolations.Count -gt 0) {
     $detail = $environmentHotPathViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }
     throw "Capsulenv session environment hot-path analysis failed:`n$($detail -join [Environment]::NewLine)"
@@ -337,6 +346,7 @@ if ($diagnostics.Count -gt 0) {
     ProcessIsolationBoundaryViolations = $processIsolationBoundaryViolations.Count
     BitwardenStateBoundaryViolations = $bitwardenStateBoundaryViolations.Count
     EnvironmentHotPathViolations = $environmentHotPathViolations.Count
+    EnvironmentPlanReuseViolations = $environmentPlanReuseViolations.Count
     ScoopBootstrapHotPathViolations = $scoopBootstrapHotPathViolations.Count
     LoopArrayAppendViolations = $loopArrayAppendViolations.Count
 }

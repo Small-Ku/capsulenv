@@ -117,4 +117,19 @@ Describe 'Capsulenv portable environment ownership contracts' {
         }
     }
 
+
+    It 'carries one reusable ToolStorage plan while keeping session-only directories separate' {
+        $plan = & $script:Module { Get-CapsulenvEnvironmentPlan }
+        $plan.PSObject.Properties['ToolStorage'] | Should -Not -BeNullOrEmpty
+        $plan.PSObject.Properties['SessionDirectories'] | Should -Not -BeNullOrEmpty
+        @($plan.SessionDirectories).Count | Should -Be 1
+        [string]$plan.SessionDirectories[0] | Should -Be ([string]$plan.Variables.CAPSULENV_SCRATCH)
+        foreach ($directory in @($plan.ToolStorage.Directories)) {
+            @($plan.SessionDirectories) | Should -Not -Contain $directory
+            @($plan.Directories) | Should -Contain $directory
+        }
+        $reused = & $script:Module { param($ToolStorage) Initialize-CapsulenvToolStorage -Plan $ToolStorage } $plan.ToolStorage
+        [object]::ReferenceEquals($reused, $plan.ToolStorage) | Should -BeTrue
+    }
+
 }

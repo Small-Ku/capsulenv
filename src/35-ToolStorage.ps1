@@ -28,9 +28,11 @@ function Test-CapsulenvPathNested {
 
 function Get-CapsulenvToolStoragePlan {
     [CmdletBinding()]
-    param()
+    param(
+        [object]$Configuration
+    )
 
-    $configuration = Get-CapsulenvConfiguration
+    $configuration = if ($null -eq $Configuration) { Get-CapsulenvConfiguration } else { $Configuration }
     $variables = [ordered]@{}
     $locations = [ordered]@{}
     $locationKinds = [ordered]@{}
@@ -49,6 +51,7 @@ function Get-CapsulenvToolStoragePlan {
             PathEntries = @()
             Directories = @()
             Files = @()
+            CreateDirectories = $false
         }
     }
 
@@ -121,20 +124,22 @@ function Get-CapsulenvToolStoragePlan {
         PathEntries = $pathEntries.ToArray()
         Directories = $directories.ToArray()
         Files = $files.ToArray()
+        CreateDirectories = [bool]$configuration.ToolStorage.CreateDirectories
     }
 }
 
 function Initialize-CapsulenvToolStorage {
     [CmdletBinding()]
-    param()
+    param(
+        [object]$Plan
+    )
 
-    $configuration = Get-CapsulenvConfiguration
-    $plan = Get-CapsulenvToolStoragePlan
+    $plan = if ($null -eq $Plan) { Get-CapsulenvToolStoragePlan } else { $Plan }
     if (-not $plan.Enabled) {
         return $plan
     }
 
-    if (-not $configuration.ToolStorage.CreateDirectories) {
+    if (-not [bool]$plan.CreateDirectories) {
         return $plan
     }
 

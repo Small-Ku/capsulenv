@@ -790,4 +790,41 @@ function Sync-CapsulenvUserEnvironment {
             -UserEnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-30-UserEnvironment.ps1')).Count | Should -Be 0
     }
 
+
+    It 'rejects session ToolStorage replanning and directory reprobes after environment planning' {
+        $sessionFixture = New-CapsulenvStaticFixture -Name 'environment-plan-reuse-session-unsafe.ps1' -Source @'
+function Get-CapsulenvEnvironmentPlan {
+    $configuration = Get-CapsulenvConfiguration
+    $toolStorage = Get-CapsulenvToolStoragePlan
+}
+function Set-CapsulenvSessionEnvironment {
+    $plan = Get-CapsulenvEnvironmentPlan
+    $configuration = Get-CapsulenvConfiguration
+    Initialize-CapsulenvToolStorage
+    foreach ($directory in $plan.Directories) { Test-Path $directory }
+}
+'@
+        $toolFixture = New-CapsulenvStaticFixture -Name 'environment-plan-reuse-tool-unsafe.ps1' -Source @'
+function Get-CapsulenvToolStoragePlan { Get-CapsulenvConfiguration }
+function Initialize-CapsulenvToolStorage {
+    Get-CapsulenvConfiguration
+    Get-CapsulenvToolStoragePlan
+}
+'@
+        $violations = @(Get-CapsulenvEnvironmentPlanReuseViolations -SessionEnvironmentPath $sessionFixture -ToolStoragePath $toolFixture)
+        @($violations.Rule) | Should -Contain 'EnvironmentToolStoragePlanSingleConfiguration'
+        @($violations.Rule) | Should -Contain 'SessionEnvironmentNoToolStorageReplan'
+        @($violations.Rule) | Should -Contain 'SessionEnvironmentToolStoragePlanInjected'
+        @($violations.Rule) | Should -Contain 'SessionEnvironmentNoToolStorageDirectoryReprobe'
+        @($violations.Rule) | Should -Contain 'ToolStoragePlanAcceptsConfiguration'
+        @($violations.Rule) | Should -Contain 'ToolStorageInitializeAcceptsPlan'
+        @($violations.Rule) | Should -Contain 'ToolStorageInitializeNoConfigurationReread'
+    }
+
+    It 'accepts single-source EnvironmentPlan ToolStorage initialization' {
+        @(Get-CapsulenvEnvironmentPlanReuseViolations `
+            -SessionEnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-10-EnvironmentSession.ps1') `
+            -ToolStoragePath (Join-Path (Join-Path $script:Root 'src') '35-ToolStorage.ps1')).Count | Should -Be 0
+    }
+
 }

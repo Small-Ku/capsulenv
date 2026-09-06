@@ -654,3 +654,90 @@ function Get-CapsulenvScoopBootstrapHotPathViolations {
 
     return $violations.ToArray()
 }
+
+function Get-CapsulenvEnvironmentPlanReuseViolations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SessionEnvironmentPath,
+        [Parameter(Mandatory = $true)][string]$ToolStoragePath
+    )
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    function Add-EnvironmentPlanReuseViolation {
+        param($Ast, [string]$Path, [string]$Rule, [string]$Detail)
+        $violations.Add([pscustomobject]@{
+            Rule = $Rule
+            Path = [System.IO.Path]::GetFullPath($Path)
+            Line = [int]$Ast.Extent.StartLineNumber
+            Column = [int]$Ast.Extent.StartColumnNumber
+            Detail = $Detail
+        })
+    }
+    function Get-ReuseCommands {
+        param($FunctionAst)
+        return @($FunctionAst.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+    }
+    function Test-ReuseCommandParameter {
+        param($CommandAst, [string]$Name)
+        return @($CommandAst.CommandElements | Where-Object {
+            $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+            [string]$_.ParameterName -eq $Name
+        }).Count -gt 0
+    }
+    function Test-FunctionParameter {
+        param($FunctionAst, [string]$Name)
+        $paramBlock = $FunctionAst.Body.ParamBlock
+        if ($null -eq $paramBlock) { return $false }
+        foreach ($parameterAst in @($paramBlock.Parameters)) {
+            if ([string]$parameterAst.Name.VariablePath.UserPath -eq $Name) { return $true }
+        }
+        return $false
+    }
+
+    $environmentPlan = Get-CapsulenvFunctionAst -Path $SessionEnvironmentPath -Name 'Get-CapsulenvEnvironmentPlan'
+    $planCalls = @(Get-ReuseCommands $environmentPlan | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvToolStoragePlan' })
+    if ($planCalls.Count -ne 1) {
+        Add-EnvironmentPlanReuseViolation -Ast $environmentPlan -Path $SessionEnvironmentPath -Rule 'EnvironmentToolStoragePlanSingleSource' -Detail 'environment planning must compute the ToolStorage plan exactly once'
+    } elseif (-not (Test-ReuseCommandParameter -CommandAst $planCalls[0] -Name 'Configuration')) {
+        Add-EnvironmentPlanReuseViolation -Ast $planCalls[0] -Path $SessionEnvironmentPath -Rule 'EnvironmentToolStoragePlanSingleConfiguration' -Detail 'environment planning must pass its existing configuration into Get-CapsulenvToolStoragePlan'
+    }
+
+    $session = Get-CapsulenvFunctionAst -Path $SessionEnvironmentPath -Name 'Set-CapsulenvSessionEnvironment'
+    foreach ($commandAst in @(Get-ReuseCommands $session)) {
+        $name = [string]$commandAst.GetCommandName()
+        if ($name -in @('Get-CapsulenvConfiguration', 'Get-CapsulenvToolStoragePlan')) {
+            Add-EnvironmentPlanReuseViolation -Ast $commandAst -Path $SessionEnvironmentPath -Rule 'SessionEnvironmentNoToolStorageReplan' -Detail "session apply must reuse its EnvironmentPlan instead of recomputing configuration/ToolStorage state: $name"
+        }
+    }
+    $initializeCalls = @(Get-ReuseCommands $session | Where-Object { [string]$_.GetCommandName() -eq 'Initialize-CapsulenvToolStorage' })
+    if ($initializeCalls.Count -ne 1) {
+        Add-EnvironmentPlanReuseViolation -Ast $session -Path $SessionEnvironmentPath -Rule 'SessionEnvironmentToolStoragePlanInjected' -Detail 'session apply must initialize ToolStorage exactly once from the precomputed plan'
+    } elseif (-not (Test-ReuseCommandParameter -CommandAst $initializeCalls[0] -Name 'Plan')) {
+        Add-EnvironmentPlanReuseViolation -Ast $initializeCalls[0] -Path $SessionEnvironmentPath -Rule 'SessionEnvironmentToolStoragePlanInjected' -Detail 'session apply must pass EnvironmentPlan.ToolStorage to Initialize-CapsulenvToolStorage'
+    }
+    foreach ($memberAst in @($session.Body.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.MemberExpressionAst] -and
+        [string]$node.Member.Value -eq 'Directories'
+    }, $true))) {
+        if ($memberAst.Expression -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            [string]$memberAst.Expression.VariablePath.UserPath -eq 'plan') {
+            Add-EnvironmentPlanReuseViolation -Ast $memberAst -Path $SessionEnvironmentPath -Rule 'SessionEnvironmentNoToolStorageDirectoryReprobe' -Detail 'session apply must use SessionDirectories instead of reprobling EnvironmentPlan.Directories after ToolStorage initialization'
+        }
+    }
+
+    $toolPlan = Get-CapsulenvFunctionAst -Path $ToolStoragePath -Name 'Get-CapsulenvToolStoragePlan'
+    if (-not (Test-FunctionParameter -FunctionAst $toolPlan -Name 'Configuration')) {
+        Add-EnvironmentPlanReuseViolation -Ast $toolPlan -Path $ToolStoragePath -Rule 'ToolStoragePlanAcceptsConfiguration' -Detail 'ToolStorage planning must accept a precomputed configuration so EnvironmentPlan does not reread it'
+    }
+
+    $initialize = Get-CapsulenvFunctionAst -Path $ToolStoragePath -Name 'Initialize-CapsulenvToolStorage'
+    if (-not (Test-FunctionParameter -FunctionAst $initialize -Name 'Plan')) {
+        Add-EnvironmentPlanReuseViolation -Ast $initialize -Path $ToolStoragePath -Rule 'ToolStorageInitializeAcceptsPlan' -Detail 'ToolStorage initialization must accept a precomputed plan while preserving its no-argument public fallback'
+    }
+    foreach ($commandAst in @(Get-ReuseCommands $initialize | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvConfiguration' })) {
+        Add-EnvironmentPlanReuseViolation -Ast $commandAst -Path $ToolStoragePath -Rule 'ToolStorageInitializeNoConfigurationReread' -Detail 'ToolStorage initialization must derive creation policy from its plan rather than rereading configuration'
+    }
+
+    return $violations.ToArray()
+}
