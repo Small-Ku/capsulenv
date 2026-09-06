@@ -147,7 +147,7 @@ Describe 'Capsulenv portable workflow contracts' {
     }
 
     It 'makes user-shell explicit and keeps persistent ownership separate from default session mode' {
-        $environmentSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/30-Environment.ps1') -Raw
+        $environmentSource = ((Get-ChildItem -LiteralPath (Join-Path $script:Root 'src') -Filter '30-*.ps1' -File | Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n")
         $commandsSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/90-Commands.ps1') -Raw
         $lifecycleSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/72-Lifecycle.ps1') -Raw
         $doctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw

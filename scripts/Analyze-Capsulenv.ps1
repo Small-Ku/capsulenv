@@ -106,9 +106,9 @@ if ($scoopRuntimeAdapterViolations.Count -gt 0) {
     throw "Capsulenv Scoop runtime-adapter analysis failed:`n$($detail -join [Environment]::NewLine)"
 }
 
-$environmentPath = Join-Path (Join-Path $root 'src') '30-Environment.ps1'
+$installModePath = Join-Path (Join-Path $root 'src') '30-20-InstallMode.ps1'
 $sessionModeViolations = @(
-    Get-CapsulenvSessionModeBoundaryViolations -Path $environmentPath
+    Get-CapsulenvSessionModeBoundaryViolations -Path $installModePath
 )
 if ($sessionModeViolations.Count -gt 0) {
     $detail = $sessionModeViolations | ForEach-Object {
@@ -238,7 +238,8 @@ if ($projectCacheOrderingViolations.Count -gt 0) {
 
 $modeIsolationBoundaryViolations = @(
     Get-CapsulenvModeIsolationBoundaryViolations `
-        -EnvironmentPath (Join-Path (Join-Path $root 'src') '30-Environment.ps1') `
+        -UserModePath (Join-Path (Join-Path $root 'src') '30-40-UserShell.ps1') `
+        -SessionShellPath (Join-Path (Join-Path $root 'src') '30-50-SessionShell.ps1') `
         -PackageHostIntegrationPath (Join-Path (Join-Path $root 'src') '45-PackageHostIntegration.ps1') `
         -BitwardenPath (Join-Path (Join-Path $root 'src') '50-Bitwarden.ps1') `
         -LegacyProjectionPath (Join-Path (Join-Path $root 'src') '46-LegacyScoopProjection.ps1')
@@ -267,7 +268,9 @@ if ($bitwardenStateBoundaryViolations.Count -gt 0) {
 }
 
 $environmentHotPathViolations = @(
-    Get-CapsulenvEnvironmentHotPathViolations -EnvironmentPath (Join-Path (Join-Path $root 'src') '30-Environment.ps1')
+    Get-CapsulenvEnvironmentHotPathViolations `
+        -SessionEnvironmentPath (Join-Path (Join-Path $root 'src') '30-10-EnvironmentSession.ps1') `
+        -UserEnvironmentPath (Join-Path (Join-Path $root 'src') '30-30-UserEnvironment.ps1')
 )
 if ($environmentHotPathViolations.Count -gt 0) {
     $detail = $environmentHotPathViolations | ForEach-Object { '{0}:{1}:{2} [{3}] {4}' -f $_.Path, $_.Line, $_.Column, $_.Rule, $_.Detail }

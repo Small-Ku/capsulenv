@@ -656,7 +656,8 @@ function Repair-CapsulenvInstalledAppProjections {
 '@
         $violations = @(
             Get-CapsulenvModeIsolationBoundaryViolations `
-                -EnvironmentPath $environmentFixture `
+                -UserModePath $environmentFixture `
+                -SessionShellPath $environmentFixture `
                 -PackageHostIntegrationPath $hostFixture `
                 -BitwardenPath $bitwardenFixture `
                 -LegacyProjectionPath $legacyFixture
@@ -672,7 +673,8 @@ function Repair-CapsulenvInstalledAppProjections {
 
     It 'accepts repository ShellOnly/User ownership boundaries' {
         @(Get-CapsulenvModeIsolationBoundaryViolations `
-            -EnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-Environment.ps1') `
+            -UserModePath (Join-Path (Join-Path $script:Root 'src') '30-40-UserShell.ps1') `
+            -SessionShellPath (Join-Path (Join-Path $script:Root 'src') '30-50-SessionShell.ps1') `
             -PackageHostIntegrationPath (Join-Path (Join-Path $script:Root 'src') '45-PackageHostIntegration.ps1') `
             -BitwardenPath (Join-Path (Join-Path $script:Root 'src') '50-Bitwarden.ps1') `
             -LegacyProjectionPath (Join-Path (Join-Path $script:Root 'src') '46-LegacyScoopProjection.ps1')
@@ -776,14 +778,16 @@ function Sync-CapsulenvUserEnvironment {
     Get-CapsulenvForeignScoopShimPaths -ExistingPath $env:PATH
 }
 '@
-        $violations = @(Get-CapsulenvEnvironmentHotPathViolations -EnvironmentPath $fixture)
+        $violations = @(Get-CapsulenvEnvironmentHotPathViolations -SessionEnvironmentPath $fixture -UserEnvironmentPath $fixture)
         @($violations.Rule) | Should -Contain 'SessionScoopDiscoveryProcessOnly'
         @($violations.Rule) | Should -Contain 'SessionScoopDiscoveryCurrentPath'
         @($violations.Rule) | Should -Contain 'PersistentScoopCleanupPreserved'
     }
 
     It 'accepts process-local session discovery and persistent User cleanup boundaries' {
-        @(Get-CapsulenvEnvironmentHotPathViolations -EnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-Environment.ps1')).Count | Should -Be 0
+        @(Get-CapsulenvEnvironmentHotPathViolations `
+            -SessionEnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-10-EnvironmentSession.ps1') `
+            -UserEnvironmentPath (Join-Path (Join-Path $script:Root 'src') '30-30-UserEnvironment.ps1')).Count | Should -Be 0
     }
 
 }

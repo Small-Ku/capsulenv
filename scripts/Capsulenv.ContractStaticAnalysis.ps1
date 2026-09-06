@@ -349,7 +349,8 @@ function Get-CapsulenvProcessIsolationBoundaryViolations {
 function Get-CapsulenvModeIsolationBoundaryViolations {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string]$EnvironmentPath,
+        [Parameter(Mandatory = $true)][string]$UserModePath,
+        [Parameter(Mandatory = $true)][string]$SessionShellPath,
         [Parameter(Mandatory = $true)][string]$PackageHostIntegrationPath,
         [Parameter(Mandatory = $true)][string]$BitwardenPath,
         [Parameter(Mandatory = $true)][string]$LegacyProjectionPath
@@ -418,7 +419,7 @@ function Get-CapsulenvModeIsolationBoundaryViolations {
 
     # Leaving User mode is a transactional ownership boundary.  Every persistent
     # integration Capsulenv can own must be restored/removed before mode flips.
-    $restoreUser = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Restore-CapsulenvUserEnvironment'
+    $restoreUser = Get-CapsulenvFunctionAst -Path $UserModePath -Name 'Restore-CapsulenvUserEnvironment'
     $restoreCommands = @(Get-CommandsInFunction $restoreUser | ForEach-Object { [string]$_.GetCommandName() })
     foreach ($required in @(
         'Restore-CapsulenvWindowsSshAgent',
@@ -428,12 +429,12 @@ function Get-CapsulenvModeIsolationBoundaryViolations {
         'Set-CapsulenvInstallMode'
     )) {
         if ($restoreCommands -contains $required) { continue }
-        Add-ModeViolation -Ast $restoreUser -Path $EnvironmentPath -Rule 'ModeIsolationRestoreUserOwnership' -Detail "Restore-CapsulenvUserEnvironment must include ownership restoration step: $required"
+        Add-ModeViolation -Ast $restoreUser -Path $UserModePath -Rule 'ModeIsolationRestoreUserOwnership' -Detail "Restore-CapsulenvUserEnvironment must include ownership restoration step: $required"
     }
 
     # A normal child shell may refresh persistent browser registration only in
     # User mode.  ShellOnly activation must not inherit persistent host writes.
-    $childShell = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Invoke-CapsulenvChildShell'
+    $childShell = Get-CapsulenvFunctionAst -Path $SessionShellPath -Name 'Invoke-CapsulenvChildShell'
     foreach ($syncCommand in @(Get-CommandsInFunction $childShell | Where-Object { [string]$_.GetCommandName() -eq 'Sync-CapsulenvConfiguredDefaultBrowser' })) {
         $cursor = $syncCommand.Parent
         $guarded = $false
@@ -447,7 +448,7 @@ function Get-CapsulenvModeIsolationBoundaryViolations {
             $cursor = $cursor.Parent
         }
         if (-not $guarded) {
-            Add-ModeViolation -Ast $syncCommand -Path $EnvironmentPath -Rule 'ModeIsolationBrowserUserGuard' -Detail 'persistent default-browser synchronization from child-shell activation must be guarded by IntegrationMode User'
+            Add-ModeViolation -Ast $syncCommand -Path $SessionShellPath -Rule 'ModeIsolationBrowserUserGuard' -Detail 'persistent default-browser synchronization from child-shell activation must be guarded by IntegrationMode User'
         }
     }
 
@@ -482,14 +483,17 @@ function Get-CapsulenvModeIsolationBoundaryViolations {
 
 function Get-CapsulenvEnvironmentHotPathViolations {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$EnvironmentPath)
+    param(
+        [Parameter(Mandatory = $true)][string]$SessionEnvironmentPath,
+        [Parameter(Mandatory = $true)][string]$UserEnvironmentPath
+    )
 
     $violations = New-Object System.Collections.Generic.List[object]
     function Add-EnvironmentHotPathViolation {
-        param($Ast, [string]$Rule, [string]$Detail)
+        param($Ast, [string]$Path, [string]$Rule, [string]$Detail)
         $violations.Add([pscustomobject]@{
             Rule = $Rule
-            Path = [System.IO.Path]::GetFullPath($EnvironmentPath)
+            Path = [System.IO.Path]::GetFullPath($Path)
             Line = [int]$Ast.Extent.StartLineNumber
             Column = [int]$Ast.Extent.StartColumnNumber
             Detail = $Detail
@@ -514,11 +518,11 @@ function Get-CapsulenvEnvironmentHotPathViolations {
         return $null
     }
 
-    $discover = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Get-CapsulenvForeignScoopShimPaths'
+    $discover = Get-CapsulenvFunctionAst -Path $SessionEnvironmentPath -Name 'Get-CapsulenvForeignScoopShimPaths'
     foreach ($commandAst in @(Get-EnvironmentCommands $discover)) {
         $name = [string]$commandAst.GetCommandName()
         if ($name -in @('Get-CapsulenvUserEnvironmentBackupPath', 'Get-Content', 'ConvertFrom-Json')) {
-            Add-EnvironmentHotPathViolation -Ast $commandAst -Rule 'SessionScoopDiscoveryProcessOnly' -Detail "steady session Scoop discovery must not read persistent/backup state: $name"
+            Add-EnvironmentHotPathViolation -Ast $commandAst -Path $SessionEnvironmentPath -Rule 'SessionScoopDiscoveryProcessOnly' -Detail "steady session Scoop discovery must not read persistent/backup state: $name"
         }
     }
     foreach ($memberAst in @($discover.Body.FindAll({
@@ -530,32 +534,32 @@ function Get-CapsulenvEnvironmentHotPathViolations {
         $target = $null
         try { $target = [string]$memberAst.Arguments[1].SafeGetValue() } catch { }
         if ($target -in @('User', 'Machine')) {
-            Add-EnvironmentHotPathViolation -Ast $memberAst -Rule 'SessionScoopDiscoveryProcessOnly' -Detail "steady session Scoop discovery must not query $target environment"
+            Add-EnvironmentHotPathViolation -Ast $memberAst -Path $SessionEnvironmentPath -Rule 'SessionScoopDiscoveryProcessOnly' -Detail "steady session Scoop discovery must not query $target environment"
         }
     }
 
-    $session = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Set-CapsulenvSessionEnvironment'
+    $session = Get-CapsulenvFunctionAst -Path $SessionEnvironmentPath -Name 'Set-CapsulenvSessionEnvironment'
     $sessionCalls = @(Get-EnvironmentCommands $session | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvForeignScoopShimPaths' })
     if ($sessionCalls.Count -ne 1) {
-        Add-EnvironmentHotPathViolation -Ast $session -Rule 'SessionScoopDiscoveryCurrentPath' -Detail 'session setup must perform exactly one process-local foreign Scoop shim discovery'
+        Add-EnvironmentHotPathViolation -Ast $session -Path $SessionEnvironmentPath -Rule 'SessionScoopDiscoveryCurrentPath' -Detail 'session setup must perform exactly one process-local foreign Scoop shim discovery'
     } else {
         $argument = Get-NamedParameterArgument -CommandAst $sessionCalls[0] -Name 'ExistingPath'
         if ($null -eq $argument -or $argument -isnot [System.Management.Automation.Language.VariableExpressionAst] -or [string]$argument.VariablePath.UserPath -ne 'env:PATH') {
-            Add-EnvironmentHotPathViolation -Ast $sessionCalls[0] -Rule 'SessionScoopDiscoveryCurrentPath' -Detail 'session Scoop discovery must be bounded to the current process PATH'
+            Add-EnvironmentHotPathViolation -Ast $sessionCalls[0] -Path $SessionEnvironmentPath -Rule 'SessionScoopDiscoveryCurrentPath' -Detail 'session Scoop discovery must be bounded to the current process PATH'
         }
     }
     foreach ($call in @(Get-EnvironmentCommands $session | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvPersistentForeignScoopShimPaths' })) {
-        Add-EnvironmentHotPathViolation -Ast $call -Rule 'SessionScoopDiscoveryProcessOnly' -Detail 'steady session setup must not enter persistent Scoop discovery'
+        Add-EnvironmentHotPathViolation -Ast $call -Path $SessionEnvironmentPath -Rule 'SessionScoopDiscoveryProcessOnly' -Detail 'steady session setup must not enter persistent Scoop discovery'
     }
 
-    $syncUser = Get-CapsulenvFunctionAst -Path $EnvironmentPath -Name 'Sync-CapsulenvUserEnvironment'
+    $syncUser = Get-CapsulenvFunctionAst -Path $UserEnvironmentPath -Name 'Sync-CapsulenvUserEnvironment'
     $persistentCalls = @(Get-EnvironmentCommands $syncUser | Where-Object { [string]$_.GetCommandName() -eq 'Get-CapsulenvPersistentForeignScoopShimPaths' })
     if ($persistentCalls.Count -ne 1) {
-        Add-EnvironmentHotPathViolation -Ast $syncUser -Rule 'PersistentScoopCleanupPreserved' -Detail 'explicit User environment synchronization must retain persistent foreign Scoop cleanup'
+        Add-EnvironmentHotPathViolation -Ast $syncUser -Path $UserEnvironmentPath -Rule 'PersistentScoopCleanupPreserved' -Detail 'explicit User environment synchronization must retain persistent foreign Scoop cleanup'
     } else {
         $argument = Get-NamedParameterArgument -CommandAst $persistentCalls[0] -Name 'ExistingPath'
         if ($null -eq $argument -or $argument -isnot [System.Management.Automation.Language.VariableExpressionAst] -or [string]$argument.VariablePath.UserPath -ne 'userPath') {
-            Add-EnvironmentHotPathViolation -Ast $persistentCalls[0] -Rule 'PersistentScoopCleanupPreserved' -Detail 'persistent Scoop cleanup must inspect the persistent User PATH being rewritten'
+            Add-EnvironmentHotPathViolation -Ast $persistentCalls[0] -Path $UserEnvironmentPath -Rule 'PersistentScoopCleanupPreserved' -Detail 'persistent Scoop cleanup must inspect the persistent User PATH being rewritten'
         }
     }
 
