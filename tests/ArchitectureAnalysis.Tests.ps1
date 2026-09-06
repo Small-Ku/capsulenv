@@ -479,6 +479,27 @@ function Invoke-CapsulenvWorkerMiddle {
         @($violations.Detail -join "`n") | Should -Match 'Invoke-CapsulenvWorkerMiddle.*Invoke-CapsulenvWorkerLeaf'
     }
 
+    It 'preserves root-specific worker violations when roots share an unsafe helper' {
+        $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-shared-unsafe.ps1' -Source @'
+function Invoke-CapsulenvSharedUnsafeWorker {
+    $env:DEMO = 'bad'
+}
+(New-CapsulenvDesiredStateNode -Id 'alpha' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///alpha/input') -WriteResources @('capsule:///alpha/output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvSharedUnsafeWorker
+} -Verify { $true })
+(New-CapsulenvDesiredStateNode -Id 'beta' -ExecutionAffinity AnyRunspace -ConcurrencyPolicy ResourceBound -ReadResources @('capsule:///beta/input') -WriteResources @('capsule:///beta/output') -Plan { 1 } -Apply {
+    Invoke-CapsulenvSharedUnsafeWorker
+} -Verify { $true })
+'@
+        $violations = @(
+            Get-CapsulenvDesiredStateWorkerReachabilityViolations -Paths @($fixture) |
+                Where-Object Rule -eq 'DesiredStateWorkerReachableProcessMutation'
+        )
+        $violations.Count | Should -Be 2
+        @($violations.Detail -join "`n") | Should -Match 'alpha/Apply.*Invoke-CapsulenvSharedUnsafeWorker'
+        @($violations.Detail -join "`n") | Should -Match 'beta/Apply.*Invoke-CapsulenvSharedUnsafeWorker'
+    }
+
     It 'rejects Add-Type reached through an AnyRunspace helper' {
         $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-reachable-add-type.ps1' -Source @'
 function Initialize-CapsulenvWorkerType {

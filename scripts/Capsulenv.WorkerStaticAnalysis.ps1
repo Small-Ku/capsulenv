@@ -1,11 +1,31 @@
-function Get-CapsulenvStaticFunctionIndex {
+function Get-CapsulenvWorkerFileAstIndex {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string[]]$Paths)
 
     $index = @{}
     foreach ($path in $Paths) {
         $fullPath = [System.IO.Path]::GetFullPath($path)
-        $ast = Get-CapsulenvStaticAst -Path $fullPath
+        if (-not $index.ContainsKey($fullPath)) {
+            $index[$fullPath] = Get-CapsulenvStaticAst -Path $fullPath
+        }
+    }
+    return $index
+}
+
+function Get-CapsulenvStaticFunctionIndex {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Paths,
+        $AstIndex
+    )
+
+    if ($null -eq $AstIndex) {
+        $AstIndex = Get-CapsulenvWorkerFileAstIndex -Paths $Paths
+    }
+    $index = @{}
+    foreach ($path in $Paths) {
+        $fullPath = [System.IO.Path]::GetFullPath($path)
+        $ast = $AstIndex[$fullPath]
         foreach ($functionAst in @(
             $ast.FindAll(
                 { param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] },
@@ -29,12 +49,18 @@ function Get-CapsulenvStaticFunctionIndex {
 
 function Get-CapsulenvDesiredStateWorkerRootCallbacks {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string[]]$Paths)
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Paths,
+        $AstIndex
+    )
 
+    if ($null -eq $AstIndex) {
+        $AstIndex = Get-CapsulenvWorkerFileAstIndex -Paths $Paths
+    }
     $roots = New-Object System.Collections.Generic.List[object]
     foreach ($path in $Paths) {
         $fullPath = [System.IO.Path]::GetFullPath($path)
-        $ast = Get-CapsulenvStaticAst -Path $fullPath
+        $ast = $AstIndex[$fullPath]
         foreach ($commandAst in @(
             $ast.FindAll(
                 {
@@ -93,24 +119,38 @@ function Get-CapsulenvDesiredStateWorkerRootCallbacks {
     return $roots.ToArray()
 }
 
-function Get-CapsulenvWorkerDirectSafetyViolations {
+function Get-CapsulenvWorkerAstInventory {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]$Ast,
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$RootNodeId,
-        [Parameter(Mandatory = $true)][string]$RootCallback,
-        [Parameter(Mandatory = $true)][string[]]$CallChain
-    )
+    param([Parameter(Mandatory = $true)]$Ast)
 
-    $violations = New-Object System.Collections.Generic.List[object]
-    $chainText = $CallChain -join ' -> '
-    foreach ($assignment in @(
-        $Ast.FindAll(
-            { param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] },
-            $true
+    return [pscustomobject]@{
+        Assignments = @(
+            $Ast.FindAll(
+                { param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] },
+                $true
+            )
         )
-    )) {
+        Commands = @(
+            $Ast.FindAll(
+                { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
+                $true
+            )
+        )
+        MemberInvocations = @(
+            $Ast.FindAll(
+                { param($node) $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] },
+                $true
+            )
+        )
+    }
+}
+
+function Get-CapsulenvWorkerDirectSafetyFindings {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Inventory)
+
+    $findings = New-Object System.Collections.Generic.List[object]
+    foreach ($assignment in @($Inventory.Assignments)) {
         $unsafe = $false
         foreach ($variableAst in @(
             $assignment.Left.FindAll(
@@ -124,49 +164,40 @@ function Get-CapsulenvWorkerDirectSafetyViolations {
             $unsafe = $true
         }
         if ($unsafe) {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerReachableProcessMutation'
-                Path = $Path
                 Line = $assignment.Extent.StartLineNumber
                 Column = $assignment.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback reaches process-global assignment via $chainText"
+                DetailFormat = 'AnyRunspace {0}/{1} reaches process-global assignment via {2}'
             })
         }
     }
 
-    foreach ($commandAst in @(
-        $Ast.FindAll(
-            { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
-            $true
-        )
-    )) {
+    foreach ($commandAst in @($Inventory.Commands)) {
         $commandName = [string]$commandAst.GetCommandName()
         $invocationOperator = [string]$commandAst.InvocationOperator
         if ([string]::IsNullOrWhiteSpace($commandName)) {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerOpaqueDynamicInvocation'
-                Path = $Path
                 Line = $commandAst.Extent.StartLineNumber
                 Column = $commandAst.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback reaches a dynamic command invocation that cannot be statically resolved via $chainText"
+                DetailFormat = 'AnyRunspace {0}/{1} reaches a dynamic command invocation that cannot be statically resolved via {2}'
             })
             continue
         }
         if ($invocationOperator -eq 'Dot') {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerOpaqueDynamicInvocation'
-                Path = $Path
                 Line = $commandAst.Extent.StartLineNumber
                 Column = $commandAst.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback reaches dot-sourced execution '$commandName' via $chainText"
+                DetailFormat = "AnyRunspace {0}/{1} reaches dot-sourced execution '$commandName' via {2}"
             })
         } elseif ($invocationOperator -eq 'Ampersand' -and -not $commandName.StartsWith('Capsulenv', [System.StringComparison]::OrdinalIgnoreCase) -and -not $commandName.Contains('-Capsulenv')) {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerOpaqueDynamicInvocation'
-                Path = $Path
                 Line = $commandAst.Extent.StartLineNumber
                 Column = $commandAst.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback reaches call-operator execution '$commandName' outside the statically indexed Capsulenv call graph via $chainText"
+                DetailFormat = "AnyRunspace {0}/{1} reaches call-operator execution '$commandName' outside the statically indexed Capsulenv call graph via {2}"
             })
         }
         $forbiddenReason = $null
@@ -181,20 +212,18 @@ function Get-CapsulenvWorkerDirectSafetyViolations {
             'Start-Job','Start-ThreadJob',
             'Register-ObjectEvent','Register-EngineEvent','Register-WmiEvent'
         )) {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerOpaqueExecutionCommand'
-                Path = $Path
                 Line = $commandAst.Extent.StartLineNumber
                 Column = $commandAst.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback reaches opaque or detached execution command '$commandName' via $chainText"
+                DetailFormat = "AnyRunspace {0}/{1} reaches opaque or detached execution command '$commandName' via {2}"
             })
         } elseif ($commandName -eq 'ForEach-Object' -and [string]$commandAst.Extent.Text -match '(?i)(^|\s)-Parallel(\s|$)') {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerDetachedAsyncExecution'
-                Path = $Path
                 Line = $commandAst.Extent.StartLineNumber
                 Column = $commandAst.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback must not spawn nested ForEach-Object -Parallel work outside the desired-state scheduler via $chainText"
+                DetailFormat = 'AnyRunspace {0}/{1} must not spawn nested ForEach-Object -Parallel work outside the desired-state scheduler via {2}'
             })
         } elseif (
             $commandName -in @('Set-Item','New-Item','Remove-Item','Clear-Item') -and
@@ -203,71 +232,96 @@ function Get-CapsulenvWorkerDirectSafetyViolations {
             $forbiddenReason = "process-environment provider mutation '$commandName'"
         }
         if ($null -ne $forbiddenReason) {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerReachableProcessMutation'
-                Path = $Path
                 Line = $commandAst.Extent.StartLineNumber
                 Column = $commandAst.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback reaches $forbiddenReason via $chainText"
+                DetailFormat = "AnyRunspace {0}/{1} reaches $forbiddenReason via {2}"
             })
         }
     }
 
-    foreach ($memberInvocation in @(
-        $Ast.FindAll(
-            { param($node) $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] },
-            $true
-        )
-    )) {
+    foreach ($memberInvocation in @($Inventory.MemberInvocations)) {
         $memberName = [string]$memberInvocation.Member.Value
         if ($memberName -in @('BeginInvoke','QueueUserWorkItem','StartNew')) {
-            $violations.Add([pscustomobject]@{
+            $findings.Add([pscustomobject]@{
                 Rule = 'DesiredStateWorkerDetachedAsyncExecution'
-                Path = $Path
                 Line = $memberInvocation.Extent.StartLineNumber
                 Column = $memberInvocation.Extent.StartColumnNumber
-                Detail = "AnyRunspace $RootNodeId/$RootCallback reaches detached asynchronous .NET execution '$memberName' via $chainText"
+                DetailFormat = "AnyRunspace {0}/{1} reaches detached asynchronous .NET execution '$memberName' via {2}"
             })
             continue
         }
         if ($memberName -notin @('SetEnvironmentVariable','SetCurrentDirectory')) { continue }
-        $violations.Add([pscustomobject]@{
+        $findings.Add([pscustomobject]@{
             Rule = 'DesiredStateWorkerReachableProcessMutation'
-            Path = $Path
             Line = $memberInvocation.Extent.StartLineNumber
             Column = $memberInvocation.Extent.StartColumnNumber
-            Detail = "AnyRunspace $RootNodeId/$RootCallback reaches process-global .NET mutation '$memberName' via $chainText"
+            DetailFormat = "AnyRunspace {0}/{1} reaches process-global .NET mutation '$memberName' via {2}"
         })
     }
-    return $violations.ToArray()
+    return $findings.ToArray()
+}
+
+function Get-CapsulenvWorkerDirectSafetyViolations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Ast,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$RootNodeId,
+        [Parameter(Mandatory = $true)][string]$RootCallback,
+        [Parameter(Mandatory = $true)][string[]]$CallChain,
+        $Inventory,
+        $Findings
+    )
+
+    if ($null -eq $Inventory) {
+        $Inventory = Get-CapsulenvWorkerAstInventory -Ast $Ast
+    }
+    if ($null -eq $Findings) {
+        $Findings = @(Get-CapsulenvWorkerDirectSafetyFindings -Inventory $Inventory)
+    }
+    $chainText = $CallChain -join ' -> '
+    return @(
+        foreach ($finding in @($Findings)) {
+            [pscustomobject]@{
+                Rule = [string]$finding.Rule
+                Path = $Path
+                Line = [int]$finding.Line
+                Column = [int]$finding.Column
+                Detail = ([string]$finding.DetailFormat -f $RootNodeId, $RootCallback, $chainText)
+            }
+        }
+    )
 }
 
 function Get-CapsulenvDesiredStateWorkerReachabilityViolations {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string[]]$Paths)
 
-    $functionIndex = Get-CapsulenvStaticFunctionIndex -Paths $Paths
-    $roots = @(Get-CapsulenvDesiredStateWorkerRootCallbacks -Paths $Paths)
+    $astIndex = Get-CapsulenvWorkerFileAstIndex -Paths $Paths
+    $functionIndex = Get-CapsulenvStaticFunctionIndex -Paths $Paths -AstIndex $astIndex
+    $roots = @(Get-CapsulenvDesiredStateWorkerRootCallbacks -Paths $Paths -AstIndex $astIndex)
+    $functionFacts = @{}
     $violations = New-Object System.Collections.Generic.List[object]
 
     foreach ($root in $roots) {
         $visited = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        $rootInventory = Get-CapsulenvWorkerAstInventory -Ast $root.Ast
+        $rootFindings = @(Get-CapsulenvWorkerDirectSafetyFindings -Inventory $rootInventory)
         foreach ($violation in @(Get-CapsulenvWorkerDirectSafetyViolations `
             -Ast $root.Ast `
             -Path ([string]$root.Path) `
             -RootNodeId ([string]$root.NodeId) `
             -RootCallback ([string]$root.Callback) `
-            -CallChain @('<callback>'))) {
+            -CallChain @('<callback>') `
+            -Inventory $rootInventory `
+            -Findings $rootFindings)) {
             $violations.Add($violation)
         }
 
         $pending = New-Object System.Collections.Generic.Stack[object]
-        foreach ($commandAst in @(
-            $root.Ast.FindAll(
-                { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
-                $true
-            )
-        )) {
+        foreach ($commandAst in @($rootInventory.Commands)) {
             $commandName = [string]$commandAst.GetCommandName()
             if ([string]::IsNullOrWhiteSpace($commandName)) { continue }
             if ($functionIndex.ContainsKey($commandName)) {
@@ -288,21 +342,26 @@ function Get-CapsulenvDesiredStateWorkerReachabilityViolations {
             $name = [string]$current.Name
             if (-not $visited.Add($name)) { continue }
             $entry = $functionIndex[$name]
+            if (-not $functionFacts.ContainsKey($name)) {
+                $inventory = Get-CapsulenvWorkerAstInventory -Ast $entry.Ast.Body
+                $functionFacts[$name] = [pscustomobject]@{
+                    Inventory = $inventory
+                    Findings = @(Get-CapsulenvWorkerDirectSafetyFindings -Inventory $inventory)
+                }
+            }
+            $facts = $functionFacts[$name]
             $chain = [string[]]@($current.Chain)
             foreach ($violation in @(Get-CapsulenvWorkerDirectSafetyViolations `
                 -Ast $entry.Ast.Body `
                 -Path ([string]$entry.Path) `
                 -RootNodeId ([string]$root.NodeId) `
                 -RootCallback ([string]$root.Callback) `
-                -CallChain $chain)) {
+                -CallChain $chain `
+                -Inventory $facts.Inventory `
+                -Findings $facts.Findings)) {
                 $violations.Add($violation)
             }
-            foreach ($commandAst in @(
-                $entry.Ast.Body.FindAll(
-                    { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
-                    $true
-                )
-            )) {
+            foreach ($commandAst in @($facts.Inventory.Commands)) {
                 $commandName = [string]$commandAst.GetCommandName()
                 if ([string]::IsNullOrWhiteSpace($commandName)) { continue }
                 if ($functionIndex.ContainsKey($commandName)) {
