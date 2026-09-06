@@ -364,6 +364,39 @@ function Invoke-StillBad {
         ($violations.Detail -join "`n") | Should -Match 'CAPSULENV_TEST_ARTIFACT_ROOT'
     }
 
+    It 'requires the canonical runner to execute its bound analyzer' {
+        $fixture = New-CapsulenvStaticFixture -Name 'test-runner-analyzer-not-executed.ps1' -Source @'
+$analysisScript = Join-Path $PSScriptRoot 'Analyze-Capsulenv.ps1'
+$pester = Get-Module Pester -ListAvailable
+Select-CapsulenvTestPaths -AllTestPaths @() -Profile Full
+'@
+        $violations = @(Get-CapsulenvTestHarnessIsolationViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'TestHarnessStaticAnalysisExecutionRequired'
+    }
+
+    It 'requires canonical static analysis before Pester planning' {
+        $fixture = New-CapsulenvStaticFixture -Name 'test-runner-analyzer-too-late.ps1' -Source @'
+$analysisScript = Join-Path $PSScriptRoot 'Analyze-Capsulenv.ps1'
+$pester = Get-Module Pester -ListAvailable
+Select-CapsulenvTestPaths -AllTestPaths @() -Profile Full
+& $analysisScript
+'@
+        $violations = @(Get-CapsulenvTestHarnessIsolationViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'TestHarnessStaticAnalysisOrder'
+    }
+
+    It 'requires canonical static analysis to execute unconditionally at script scope' {
+        $fixture = New-CapsulenvStaticFixture -Name 'test-runner-analyzer-conditional.ps1' -Source @'
+$analysisScript = Join-Path $PSScriptRoot 'Analyze-Capsulenv.ps1'
+if ($true) {
+    & $analysisScript
+}
+$pester = Get-Module Pester -ListAvailable
+'@
+        $violations = @(Get-CapsulenvTestHarnessIsolationViolations -Path $fixture)
+        @($violations.Rule) | Should -Contain 'TestHarnessStaticAnalysisMustBeUnconditional'
+    }
+
     It 'rejects process-global mutations reached through nested AnyRunspace helpers' {
         $fixture = New-CapsulenvStaticFixture -Name 'desired-state-worker-reachable-global.ps1' -Source @'
 function Invoke-CapsulenvWorkerLeaf {

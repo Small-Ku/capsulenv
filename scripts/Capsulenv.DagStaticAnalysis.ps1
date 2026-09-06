@@ -299,7 +299,26 @@ function Get-CapsulenvTestHarnessIsolationViolations {
         }
     }
 
-    $requiredNames = @(
+    $childEnvironmentNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($indexAst in @(
+        $ast.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.IndexExpressionAst] },
+            $true
+        )
+    )) {
+        if ($indexAst.Target -isnot [System.Management.Automation.Language.MemberExpressionAst]) {
+            continue
+        }
+        if ([string]$indexAst.Target.Member.Value -ne 'EnvironmentVariables') {
+            continue
+        }
+        if ($indexAst.Index -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) {
+            continue
+        }
+        [void]$childEnvironmentNames.Add([string]$indexAst.Index.Value)
+    }
+
+    foreach ($name in @(
         'CAPSULENV_TEST_SUITE_PATH',
         'CAPSULENV_TEST_SUITE_RESULT_PATH',
         'CAPSULENV_TEST_ARTIFACT_ROOT',
@@ -307,17 +326,154 @@ function Get-CapsulenvTestHarnessIsolationViolations {
         'TMP',
         'TEMP',
         'TMPDIR'
-    )
-    $source = [System.IO.File]::ReadAllText($fullPath)
-    foreach ($name in $requiredNames) {
-        $escaped = [regex]::Escape("EnvironmentVariables['$name']")
-        if ($source -notmatch $escaped) {
+    )) {
+        if (-not $childEnvironmentNames.Contains($name)) {
             $violations.Add([pscustomobject]@{
                 Rule = 'TestHarnessChildIsolationVariableRequired'
                 Path = $fullPath
                 Line = 1
                 Column = 1
                 Detail = "canonical test runner must set child isolation variable '$name' through ProcessStartInfo.EnvironmentVariables"
+            })
+        }
+    }
+
+    $analysisBinding = $null
+    foreach ($assignment in @(
+        $ast.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] },
+            $true
+        )
+    )) {
+        $leftVariables = @(
+            $assignment.Left.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                    [string]$node.VariablePath.UserPath -eq 'analysisScript'
+                },
+                $true
+            )
+        )
+        if ($leftVariables.Count -eq 0) {
+            continue
+        }
+        $analysisLiteral = @(
+            $assignment.Right.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+                    [string]$node.Value -eq 'Analyze-Capsulenv.ps1'
+                },
+                $true
+            )
+        )
+        if ($analysisLiteral.Count -gt 0) {
+            $analysisBinding = $assignment
+            break
+        }
+    }
+    if ($null -eq $analysisBinding) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'TestHarnessStaticAnalysisBindingRequired'
+            Path = $fullPath
+            Line = 1
+            Column = 1
+            Detail = 'canonical test runner must bind Analyze-Capsulenv.ps1 to $analysisScript before executing test infrastructure'
+        })
+    }
+
+    $analysisInvocation = $null
+    foreach ($commandAst in @(
+        $ast.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
+            $true
+        )
+    )) {
+        if ($commandAst.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Ampersand) {
+            continue
+        }
+        $elements = @($commandAst.CommandElements)
+        if (
+            $elements.Count -gt 0 -and
+            $elements[0] -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            [string]$elements[0].VariablePath.UserPath -eq 'analysisScript'
+        ) {
+            $analysisInvocation = $commandAst
+            break
+        }
+    }
+    if ($null -eq $analysisInvocation) {
+        $violations.Add([pscustomobject]@{
+            Rule = 'TestHarnessStaticAnalysisExecutionRequired'
+            Path = $fullPath
+            Line = if ($null -ne $analysisBinding) { $analysisBinding.Extent.StartLineNumber } else { 1 }
+            Column = 1
+            Detail = 'canonical test runner must execute the bound analyzer with & $analysisScript'
+        })
+    } else {
+        $ancestor = $analysisInvocation.Parent
+        while ($null -ne $ancestor -and $ancestor -isnot [System.Management.Automation.Language.ScriptBlockAst]) {
+            if (
+                $ancestor -is [System.Management.Automation.Language.IfStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.SwitchStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.ForEachStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.ForStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.WhileStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.DoWhileStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.DoUntilStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.TryStatementAst] -or
+                $ancestor -is [System.Management.Automation.Language.FunctionDefinitionAst]
+            ) {
+                $violations.Add([pscustomobject]@{
+                    Rule = 'TestHarnessStaticAnalysisMustBeUnconditional'
+                    Path = $fullPath
+                    Line = $analysisInvocation.Extent.StartLineNumber
+                    Column = $analysisInvocation.Extent.StartColumnNumber
+                    Detail = 'canonical static analysis must execute unconditionally at script scope before any runtime test planning'
+                })
+                break
+            }
+            $ancestor = $ancestor.Parent
+        }
+
+        $firstRuntimeBoundary = $null
+        foreach ($commandAst in @(
+            $ast.FindAll(
+                { param($node) $node -is [System.Management.Automation.Language.CommandAst] },
+                $true
+            )
+        )) {
+            $commandName = [string]$commandAst.GetCommandName()
+            $isBoundary = $commandName -in @('Select-CapsulenvTestPaths','New-CapsulenvTestCasePlan')
+            if ($commandName -eq 'Get-Module') {
+                $isBoundary = @(
+                    $commandAst.CommandElements | Where-Object {
+                        $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+                        [string]$_.Value -eq 'Pester'
+                    }
+                ).Count -gt 0
+            }
+            if (-not $isBoundary) {
+                continue
+            }
+            if (
+                $null -eq $firstRuntimeBoundary -or
+                $commandAst.Extent.StartOffset -lt $firstRuntimeBoundary.Extent.StartOffset
+            ) {
+                $firstRuntimeBoundary = $commandAst
+            }
+        }
+        if (
+            $null -ne $firstRuntimeBoundary -and
+            $analysisInvocation.Extent.StartOffset -gt $firstRuntimeBoundary.Extent.StartOffset
+        ) {
+            $violations.Add([pscustomobject]@{
+                Rule = 'TestHarnessStaticAnalysisOrder'
+                Path = $fullPath
+                Line = $analysisInvocation.Extent.StartLineNumber
+                Column = $analysisInvocation.Extent.StartColumnNumber
+                Detail = 'canonical static analysis must execute before Pester discovery and test-plan selection'
             })
         }
     }
