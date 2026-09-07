@@ -81,7 +81,7 @@ Describe 'Capsulenv build and install' {
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $buildRoot $sourceOnlyEntrypoint))) `
                     -Message "Release bundle unexpectedly includes source-only entrypoint: $sourceOnlyEntrypoint"
             }
-            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
+            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'README.zh-TW.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition (@($runtimeMetadata.InstallFiles) -notcontains $bundleOnlyFile) `
                     -Message "Runtime install payload unexpectedly includes bundle-only file: $bundleOnlyFile"
@@ -113,7 +113,7 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition ([string]$prebuiltMarker.Version -eq [string]$runtimeMetadata.Version) `
                 -Message 'Prebuilt runtime installation did not preserve bundle version metadata.'
-            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
+            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'README.zh-TW.md', 'scripts/Install-Capsulenv.ps1', '.capsulenv-runtime.json')) {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $prebuiltInstallRoot $bundleOnlyFile))) `
                     -Message "Prebuilt deployment copied bundle-only file into capsule: $bundleOnlyFile"
@@ -139,11 +139,15 @@ Describe 'Capsulenv build and install' {
 
             foreach ($runtimeDoc in @(
                 'README.md',
+                'README.zh-TW.md',
                 'docs/ARCHITECTURE.md',
+                'docs/CLI-UX.md',
                 'docs/DEVELOPMENT.md',
                 'docs/DEPLOYMENT.md',
                 'docs/MIGRATION.md',
-                'docs/TOOLS.md'
+                'docs/TOOLS.md',
+                'docs/USAGE.md',
+                'docs/USAGE.zh-TW.md'
             )) {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition (Test-Path -LiteralPath (Join-Path $buildRoot $runtimeDoc) -PathType Leaf) `
@@ -213,7 +217,7 @@ Describe 'Capsulenv build and install' {
             Assert-CapsulenvBuildInstallTest `
                 -Condition (@($installMarker.ManagedFiles) -notcontains '.capsulenv-runtime.json') `
                 -Message 'Install marker must own only destination runtime files.'
-            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'scripts/Install-Capsulenv.ps1')) {
+            foreach ($bundleOnlyFile in @('install.cmd', 'README.md', 'README.zh-TW.md', 'scripts/Install-Capsulenv.ps1')) {
                 Assert-CapsulenvBuildInstallTest `
                     -Condition (-not (Test-Path -LiteralPath (Join-Path $installRoot $bundleOnlyFile))) `
                     -Message "Deployment copied bundle-only file into capsule: $bundleOnlyFile"

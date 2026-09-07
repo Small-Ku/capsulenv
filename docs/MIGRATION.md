@@ -1,29 +1,29 @@
 # Migration guide
 
-這份文件只記錄**升級時需要做的事**。目前行為不要從舊 release notes 推斷；請以 [`../README.md`](../README.md)、[`ARCHITECTURE.md`](ARCHITECTURE.md) 與 [`TOOLS.md`](TOOLS.md) 為準。
+This document lists only the required upgrade actions. Do not infer current runtime behavior from historical release notes; refer to [README](../README.md), [USAGE](USAGE.md), [ARCHITECTURE](ARCHITECTURE.md), and [TOOLS](TOOLS.md) for canonical specifications.
 
-## 從 `portable-scoop.ps1` 遷移
+## Migrating from `portable-scoop.ps1`
 
-舊 session 入口可直接改成：
+Replace the legacy session entrypoint with:
 
 ```bat
 capsulenv.cmd shell
 ```
 
-舊 `EnableUser` / `RestoreUser` 對應：
+Legacy `EnableUser` and `RestoreUser` commands map to:
 
 ```bat
 capsulenv.cmd install-user
 capsulenv.cmd restore-user
 ```
 
-`enable-user` 目前仍保留 compatibility alias，但新文件與腳本應使用 `install-user`。
+`enable-user` remains a compatibility alias, but new scripts and documentation should use `install-user`.
 
-不要把舊腳本「永遠 `scoop reset *`」或 relocation 時自動重放 `pre_install`/`post_install` 的假設搬過來。0.17 起 Capsulenv 不再執行 manifest hook replay；PortableSafe relocation 只修 Capsulenv-owned projection，legacy Scoop state 只做 bounded `current`/`persist` repair。需要任意 lifecycle code 時，必須由使用者明確執行 upstream Scoop。詳見 [`ARCHITECTURE.md`](ARCHITECTURE.md#relocation-projection-repair)。
+Do not assume scripts will run `scoop reset *` or replay `pre_install`/`post_install` during relocation. Starting in v0.17, Capsulenv no longer executes manifest lifecycle replays; PortableSafe relocation repairs only Capsulenv-owned projections, and legacy Scoop state receives only bounded `current`/`persist` repair. When you need arbitrary lifecycle execution, run upstream Scoop explicitly. See [ARCHITECTURE](ARCHITECTURE.md#relocation-projection-repair).
 
-## 從 v0.1.x 的平行 `data/` model 遷移
+## Migrating from the v0.1.x parallel `data/` model
 
-早期版本曾建立：
+Early versions created directories under `data/`:
 
 ```text
 data/bitwarden
@@ -32,13 +32,13 @@ data/browsers/zen/profile
 data/xdg
 ```
 
-目前版本完全不讀寫這些路徑，也不會自動刪除。先依**已安裝 app** 的 `manifest.json` `persist` 欄位確認資料已合併到相應 Scoop persist store，例如 `scoop/persist/bitwarden/...`、`scoop/persist/firefox/profile`、`scoop/persist/zen-browser/profile`；確認後才手動刪除舊 `data/`。
+Current versions neither read nor write these paths, and do not delete them automatically. Inspect installed app manifests, confirm that persistent data has merged into corresponding Scoop persist stores (such as `scoop/persist/bitwarden/...` or `scoop/persist/firefox/profile`), and then delete the legacy `data/` folder manually.
 
-如果 v0.1.x 曾直接修改 host browser `profiles.ini`／`user.js` 並保留舊版 restore 能力，應在淘汰舊版前先用舊版 restore 還原。新版本不接管那套舊 backup。
+If v0.1.x modified host browser `profiles.ini` or `user.js` and retained backup files, run restore using the old version before decommissioning it. Current versions do not manage legacy browser backups.
 
-## 從 v0.4.x / v0.5.x persisted repair 遷移
+## Migrating from v0.4.x / v0.5.x persisted path repairs
 
-自 v0.5 起，relocation path repair 改成 `Scoop.RelocationRepairs` 明確 allow-list，而不是掃描整個 persist。升級一個已經換過 drive letter、但尚未由新版 rehydrate 的 capsule 時，可先預覽：
+Since v0.5, relocation path repair uses an explicit `Scoop.RelocationRepairs` allow-list instead of scanning all persisted files. When upgrading a capsule that changed drive letters before rehydration, preview repairs first:
 
 ```bat
 capsulenv.cmd doctor
@@ -46,7 +46,7 @@ capsulenv.cmd repair-persist --dry-run
 capsulenv.cmd rehydrate
 ```
 
-如果你不接受任何 built-in persisted-file rewrite，在 `config/capsulenv.local.psd1` 明確設：
+To disallow built-in persisted text rewrites, set an empty map in `config/capsulenv.local.psd1`:
 
 ```powershell
 @{
@@ -56,76 +56,76 @@ capsulenv.cmd rehydrate
 }
 ```
 
-Local `RelocationRepairs` 是整個 allow-list replacement，不是逐 app recursive merge。
+A local `RelocationRepairs` block replaces the entire allow-list rather than merging recursively.
 
-## 從 v0.6/v0.7 tool storage 遷移
+## Migrating from v0.6 / v0.7 tool storage
 
-這些版本開始把 uv/Pixi/npm/pnpm/Bun/Go/Rust/compiler tool state 與 caches 導入 `tool-data/`/`cache/`，並加入 explicit project-cache links/native uv-Pixi repair。
+These versions organized toolchain states and caches into `tool-data/` and `cache/`, adding explicit project cache links and native uv/Pixi relocation repair.
 
-舊 capsule 若仍有自己手工設定的環境變數或 cache paths，先用：
+If an existing capsule relies on manual environment variables or custom cache paths, inspect current locations:
 
 ```bat
 capsulenv.cmd cache paths
 capsulenv.cmd tools status
 ```
 
-確認目前 canonical path，再把必要的 persistent data 搬入 `tool-data/`。不要把整個舊 `CARGO_HOME`、package-manager global state 或 config 當作 disposable cache。完整分類見 [`TOOLS.md`](TOOLS.md)。
+Move required persistent data into `tool-data/`. Do not treat `CARGO_HOME`, global package manager states, or persistent configurations as disposable caches. For path classifications, see [TOOLS](TOOLS.md#storage-classes).
 
-早期已建立 project-cache junction/symlink 的 repository，應保留 `.capsulenv/project-cache-links.json` 與 backing store，然後執行：
+For repositories with existing project-cache links, preserve `.capsulenv/project-cache-links.json` and backing storage, then run:
 
 ```bat
 capsulenv.cmd cache repair
 ```
 
-uv/Pixi project environment 不會被全盤自動發現；需要 relocation repair 的 lock-backed workspace 請明確 `tools register`。
+Workspaces do not undergo automatic discovery; register lock-backed workspaces explicitly via `capsulenv tools register`.
 
-## 從 v0.8.x portable PowerShell module root 遷移
+## Migrating from v0.8.x portable PowerShell module root
 
-私人 modules 現在應放到預設 `PowerShell/Modules/`（或 `Environment.ModulePath` 自訂位置）。在 Capsulenv shell 內，第一個 module root 會以 `CAPSULENV_MODULE_ROOT` 暴露。
+Store private PowerShell modules in `PowerShell/Modules/` (or the location set by `Environment.ModulePath`). Inside a Capsulenv shell, the first module root is exposed as `$env:CAPSULENV_MODULE_ROOT`.
 
-若你的私人 module build script 仍硬編碼 `%USERPROFILE%\Documents\PowerShell\Modules`，建議改成：顯式 `-InstallRoot` > `$env:CAPSULENV_MODULE_ROOT` > 原生 Documents fallback。Capsulenv 不會自動複製 host module directories。
+Update custom module build scripts to target: explicit `-InstallRoot` > `$env:CAPSULENV_MODULE_ROOT` > default Documents path. Capsulenv does not copy host module directories automatically.
 
-## 從 v0.9.x install-mode state 遷移
+## Migrating from v0.9.x install-mode state
 
-v0.9 引入 ShellOnly/User，但較早的實作曾把 mode/backup 看成接近 capsule-global state。現在 ownership 是 machine/user scoped，backup/ledger 位於：
+Install mode ownership is machine- and user-scoped under:
 
 ```text
 .capsulenv/user-integrations/<machine-user-hash>/
 ```
 
-舊 `.capsulenv/user-environment-backup.json`／`install-mode.json` 不應手工複製到另一台主機來宣告 User ownership。Runtime 只會在能證明目前 Windows user 正在使用該 capsule integration 時遷移 legacy state。
+Do not copy legacy `.capsulenv/user-environment-backup.json` or `install-mode.json` to another host to claim User ownership. The runtime migrates legacy state only when ownership evidence confirms the current user session.
 
-在 reset-on-shutdown 共用電腦上，重開機後直接重新執行：
+On shared computers that reset on shutdown, launch User mode directly after reboot:
 
 ```bat
 capsulenv.cmd user-shell
 ```
 
-不需要先用舊 ledger `restore-user`；Capsulenv 會從當前乾淨 User environment 建立新的 host-scoped backup。
+You do not need to run `restore-user` with an old ledger; Capsulenv creates a fresh host-scoped backup from the clean user environment.
 
-## 從 v0.10.x storage ownership 遷移
+## Migrating from v0.10.x storage ownership
 
-Scoop download cache 的 canonical location 是頂層 `cache/scoop`，Git global config、uv/Pixi config、npm user config 等 persistent config 位於 `tool-data/`。如果舊 local config 仍把它們指到過時路徑，先以 `config/capsulenv.local.psd1.example` 與 `capsulenv.cmd cache paths` 對照後移除不必要 override。
+The canonical Scoop download cache is top-level `cache/scoop`. Persistent configurations (Git global config, uv/Pixi configs, npm user config) reside under `tool-data/`. Compare existing local overrides against `config/capsulenv.local.psd1.example` and `capsulenv.cmd cache paths` to eliminate outdated settings.
 
-Capsulenv 不再用 session-wide `XDG_CONFIG_HOME` 強行捕捉 pnpm/Bun 的所有 global config。若舊 workflow 依賴那個 side effect，請改用 package manager 支援的 portable variables/project-local config，而不是把 XDG override 重新加回全 session。
+Capsulenv does not set a session-wide `XDG_CONFIG_HOME` override to capture pnpm or Bun global configs. Configure supported portable environment variables or project-local files instead.
 
-## 從 v0.12.x PowerShell profile isolation / seed 遷移
+## Migrating from v0.12.x PowerShell profile isolation and seeding
 
-PowerShell executable 與 `$PSHOME` profiles 仍由 Scoop package/persist 管理；ShellOnly 不再讓 host CurrentUser profiles 在隔離完成後自動執行。
+PowerShell executables and `$PSHOME` profiles are managed by Scoop packages and persist storage. ShellOnly mode prevents host CurrentUser profiles from executing in the isolated session.
 
-如果你過去靠 host PowerShell profile 自動注入 aliases/modules/config，請把真正要 portable 的 profile 一次性 seed 到 capsule：
+To migrate personal aliases and modules from the host, seed profiles once:
 
 ```bat
 capsulenv.cmd seed powershell
 ```
 
-私人 module 本體仍應部署到 `PowerShell/Modules/`。若需要把 host Git/Scoop inventory 也轉成 USB-owned source of truth，可分別執行 `seed git` / `seed scoop`。Seed 不是雙向同步；詳細 filtering/overwrite semantics 見 [`TOOLS.md`](TOOLS.md#one-way-host-seeding)。
+Deploy module files into `PowerShell/Modules/`. To import host Git configuration or Scoop inventories into capsule ownership, run `seed git` or `seed scoop`. Seeding is one-way import, not synchronization. For filtering and overwrite rules, see [TOOLS](TOOLS.md#one-way-host-seeding).
 
-## 從 v0.14.x app preset/path candidates 遷移
+## Migrating from v0.14.x app presets and candidate paths
 
-v0.15 把 browser、Bitwarden、sing-box，以及 Scoop-installed uv/Pixi 的 executable identity 統一到 installed Scoop app selector。Runtime 讀 selected app 的 installed `manifest.json`／`install.json`，不再靠一組 `scoop\apps\...\current` candidates 猜是哪一個 package。
+v0.15 unified browser, Bitwarden, and tool executable identification into installed Scoop app selectors. The runtime inspects the selected app's installed `manifest.json` and `install.json` instead of probing candidate paths under `scoop\apps\...\current`.
 
-舊 `UserIntegration.DefaultBrowser = 'Firefox'`／`'LibreWolf'` 仍能按 app 名匹配；但舊 `Firefox` preset 曾順帶 fallback 到 `firefox-esr`，v0.15 不再跨 manifest 猜 package，若實際安裝 ESR 請指定 `firefox-esr`。舊 `Zen` preset 同樣應改成實際 manifest selector：
+Update browser presets to exact manifest selectors:
 
 ```powershell
 @{
@@ -133,122 +133,103 @@ v0.15 把 browser、Bitwarden、sing-box，以及 Scoop-installed uv/Pixi 的 ex
 }
 ```
 
-若 local config 曾覆寫 `Bitwarden.ExecutableCandidates`，改為 `Bitwarden.App`，並按需要指定 `ShortcutName`／`BinName`／`ExecutablePath`；persisted `data.json` 仍留在該 Scoop app 的 persist root，不要搬到 Capsulenv 自建資料夾。自訂 Gecko manifest 則加入一個 `Browsers` entry，至少指定 `App`、`ProfilePath`、`ProfileArgument`，interactive executable 可由 manifest 唯一 `bin` 自動解出或以 `BinName`／`ExecutablePath` 消歧。只有當 manifest 公開的是不適合 Windows running-instance URL delegation 的 portable wrapper 時，才另設 app-relative `DefaultExecutablePath`；profile storage 仍不另建副本。
+If local configuration overrides `Bitwarden.ExecutableCandidates`, replace it with `Bitwarden.App` and optional `ShortcutName`, `BinName`, or `ExecutablePath`. Persistent data stays in the app's persist directory. Custom Gecko browsers configure under `Browsers`.
 
-`Scoop.RelocationRepairs` 與 runtime selector 可使用 `user/<app>`／`global/<app>`。0.17 新增 `capsule/<app>` 給 Capsulenv-owned PortableSafe package；舊 `Scoop.ReplayHooks` 設定不再使用，可從 local config 移除。
+Runtime selectors accept `capsule/<app>` for Capsulenv-owned packages and `scoop/<app>` for upstream Scoop packages. Remove obsolete `Scoop.ReplayHooks` from local configuration.
 
-## 從 v0.15.0–v0.15.5 source-only 更新遷移
+## Migrating from v0.15.0–v0.15.5 source-only updates
 
-若曾把 Git/source 增量 patch 套到一個 minimal installed capsule，卻沒有用新版 runtime bundle installer 更新 `modules/Capsulenv`，可能會出現「source 已修，但 `capsulenv.cmd` 仍執行舊行為」。Minimal runtime 故意不攜帶 `src/`／module compiler，不能靠 `CAPSULENV_FORCE_REBUILD=1` 在現場把 module 重新 merge。
+If you applied source patches to an installed capsule without running the runtime installer, `capsulenv.cmd` will continue running the previous module. Minimal runtimes omit `src/` and the module compiler; `CAPSULENV_FORCE_REBUILD=1` does not rebuild modules in an installed capsule.
 
-升級到 v0.15.6 時，請把新版 runtime bundle 解壓到 capsule **外部** staging directory，再執行：
-
-```bat
-X:\capsulenv-0.15.6\install.cmd F:\capenv
-F:\capenv\capsulenv.cmd version
-```
-
-這會 transactional replacement managed runtime，包括 prebuilt `modules/Capsulenv`，並保留 Scoop/persist/local config/workspace 等 mutable state。Development checkout 則相反：launcher 現在每次從 source merge，不再讓殘留 prebuilt module shadow 新 source。
-
-Windows default-browser detection 也不再只讀 legacy `UserChoice`；v0.15.6 以 Shell effective association 為準，因此 Windows 11 使用 rotated `UserChoiceLatest` 的 host 不會再被誤判。
-
-### v0.15.7：修復已追蹤但仍殘留舊 command 的 default-browser registration
-
-若曾使用 v0.15.3 或更早版本註冊 Capsulenv Gecko browser，registry 中可能仍保留含 `-osint` 或直接指向 `scoop\persist` profile target 的舊 `shell\open\command`。Windows 可以繼續把該 ProgID 視為 effective default，但 Gecko 會在收到不合法的 `-profile ... -osint -url ...` 組合時立即退出。
-
-v0.15.7 起，只要 User integration state 仍追蹤該 browser registration，普通 User-mode activation 與 `install-user --force` 都會原地刷新 Capsulenv 自己擁有的 ProgID，即使目前 `UserIntegration.DefaultBrowser` 已留空。留空只會停止 Default Apps 提示，不會阻止 runtime upgrade 修復既有 registration。更新後可用 `capsulenv.cmd doctor` 直接比較 tracked URL handler 的 actual/expected command；不應再需要用 ProcMon 才能確認是否仍在執行舊 handler。
-
-### v0.15.8：control host 隔離 built-in PowerShell modules
-
-若從 Capsulenv interactive shell 再執行 `capsulenv.cmd` 時遇到 `Import-PowerShellDataFile` 無法辨識，請直接用 v0.15.8 或更新的 **外部 runtime bundle** 覆蓋 managed runtime，而不要在故障中的 capsule 內嘗試 `CAPSULENV_FORCE_REBUILD`：
+To upgrade to v0.15.6+, extract the release bundle to a staging directory outside the capsule and run:
 
 ```bat
-X:\capsulenv-0.15.8\install.cmd E:\capenv
-E:\capenv\capsulenv.cmd version
+X:\capsulenv-release\install.cmd D:\Portable\capsulenv
+D:\Portable\capsulenv\capsulenv.cmd version
 ```
 
-v0.15.8 的 control entrypoint 會先以 `$PSHOME/Modules` 隔離並載入 Windows PowerShell 自己的 built-in Utility module，因此從 portable/private `PSModulePath` 繼承回來的 module 不再能 shadow control plane；batch launcher 也明確拒絕 Windows PowerShell 5.0。這只改 managed runtime/bootstrap，不移動 Scoop apps、persist、workspace 或 local config。
+This updates managed files transactionally and preserves packages, persist data, workspaces, and configuration. Development checkouts rebuild modules automatically on launch.
 
+Effective default-browser association detection inspects Shell association status rather than legacy `UserChoice` registry keys, ensuring compatibility with Windows 11 `UserChoiceLatest`.
 
-### v0.16.0：deployment 與 portable relocation 分離
+### v0.15.7: Browser registration command repairs
 
-v0.16.0 把 release bundle 與 installed capsule 的 ownership 明確拆開。Release bundle 的 `.capsulenv-runtime.json` schema 3 同時列出完整 `ManagedFiles` 與 destination-only `InstallFiles`；正常安裝只把 `capsulenv.cmd`、config/bin helpers 與 generated `modules/Capsulenv/**` 寫到長期 capsule。Installer、README/docs 與 bundle metadata 留在 staging directory。
+Early versions (v0.15.3 and earlier) registered default browser handlers containing `-osint` or direct persist paths in `shell\open\command`. Gecko browsers exit immediately when encountering `-profile ... -osint -url ...`.
 
-更新自 v0.15.x 時仍從新版 development checkout／release bundle 對既有 destination 執行一次 installer。新版 install marker 會把舊版本曾管理的 root `scripts/` helper、installed installer/docs/runtime metadata 從 managed surface 移除，同時保留 Scoop/persist/cache/workspace/private modules/local config 等 mutable data。
+Starting in v0.15.7, User mode activation and `install-user --force` refresh tracked Capsulenv ProgID command strings in place. Run `capsulenv.cmd doctor` to compare actual and expected URL handler commands.
 
-完成這次程式更新後，日常 relocation 不再與 installer 有任何關係。例如把 `E:\capenv` 整個搬到 `F:\capenv` 或插到另一台 Windows，只需：
+### v0.15.8: Control host isolation for built-in PowerShell modules
+
+If running `capsulenv.cmd` from an interactive shell fails with `Import-PowerShellDataFile` not recognized, deploy an updated runtime bundle from an external staging directory:
 
 ```bat
-F:\capenv\capsulenv.cmd
+X:\capsulenv-release\install.cmd D:\Portable\capsulenv
+D:\Portable\capsulenv\capsulenv.cmd version
 ```
 
-Installed launcher 直接進 `modules\Capsulenv\runtime\Invoke-Capsulenv.ps1`；gateway/reset/replay/policy/control-host bootstrap 也都由同一 module package 擁有。`.capsulenv-runtime.json` 缺席不影響啟動。`CAPSULENV_FORCE_REBUILD=1` 在 deployed runtime 只會提示從 development checkout／新版 bundle 更新 generated module，不再嘗試依靠 installed source/compiler 自救。
+The control entrypoint isolates `$PSHOME/Modules` to load built-in utility modules reliably, preventing private `PSModulePath` entries from shadowing control commands.
 
-Installer 自 v0.16.0 起也不再 bootstrap Scoop、建立 mutable directories、import installed module 或切換 ShellOnly/User。Fresh deploy 後第一次 `capsulenv.cmd` 自己完成必要 bootstrap/rehydrate；User integration 仍以 runtime commands 顯式管理。
+### v0.16.0: Separating deployment from relocation
 
-### v0.16.1：移除 control plane 對 `Import-PowerShellDataFile` 的依賴
+v0.16.0 separated release bundle contents from destination runtime installations. Release bundle metadata (`.capsulenv-runtime.json` schema 3) distinguishes `ManagedFiles` from destination-only `InstallFiles`. Installation deploys only `capsulenv.cmd`, config/bin helpers, and `modules/Capsulenv/**`. Installers, documentation, and bundle manifests remain in staging.
 
-v0.16.0 的 bootstrap 仍假設 Windows PowerShell 5.1 built-in `Microsoft.PowerShell.Utility` 一定會 export `Import-PowerShellDataFile`。若 host 的 Utility module 不提供該 cmdlet，installer 會在真正 deployment 前直接失敗。v0.16.1 不再 import/probe Utility；bootstrap 只恢復 `$PSHOME/Modules`，而 Capsulenv 自己的 `.psd1` 由 safe AST reader 讀取。
+When upgrading from v0.15.x, run the installer once from the new bundle. The installer removes obsolete root `scripts/` helpers and staging files while preserving all mutable user state.
 
-遇到下列 v0.16.0 錯誤時，直接從 v0.16.1 或更新的 development checkout/release bundle 重跑 deployment 即可；這是 Capsulenv 程式更新，不是 relocation/reinstall Scoop：
+Subsequent relocation requires no installer. Move the directory to another drive or machine and launch `capsulenv.cmd` directly:
 
 ```bat
-X:\capsulenv-0.16.1\install.cmd E:\capenv
-E:\capenv\capsulenv.cmd version
+D:\Portable\capsulenv\capsulenv.cmd
 ```
 
-Installer 仍只 transactional replacement managed program files；`scoop/`、persist、cache、workspace、private modules、local config 與 host integration state 都不因此重建。
+The installed launcher executes `modules/Capsulenv/runtime/Invoke-Capsulenv.ps1`. The installer does not bootstrap Scoop, create mutable runtime state, or apply User integration.
 
+### v0.16.1: Removing control-plane dependency on Import-PowerShellDataFile
 
-## v0.16.2 session mode / User shortcut isolation
+v0.16.1 removed reliance on `Import-PowerShellDataFile` in the control plane. Configuration files are read using a safe AST parser.
 
-0.16.2 將兩個先前容易混淆的概念拆開：新的 Capsulenv invocation **預設永遠是 ShellOnly session**；`.capsulenv/user-integrations/<machine-user-hash>/` 中的 User ledger 只代表 persistent takeover/restore ownership，不再自動把之後從普通 host terminal 啟動的 `capsulenv.cmd` 變成 User。需要 User semantics 時明確使用 `user-shell`／`install-user`；在 `user-shell` process tree 內的 nested commands 會繼承 User。離開 child shell 不會自動 undo takeover，仍以 `restore-user` 還原 host。
+If you encounter v0.16.0 deployment errors relating to `Import-PowerShellDataFile`, reinstall the runtime from a v0.16.1+ bundle:
 
-0.16.1 及更早的 User reset/native Scoop lifecycle 可能把 portable app shortcut 寫進 Scoop 預設的 `Programs\Scoop Apps`，與主機既有 Scoop 共用 namespace。0.16.2 起 Capsulenv User policy 將自己的 Scoop shortcuts 隔離到：
+```bat
+X:\capsulenv-release\install.cmd D:\Portable\capsulenv
+D:\Portable\capsulenv\capsulenv.cmd version
+```
+
+### v0.16.2: Session mode and User shortcut isolation
+
+Every fresh invocation defaults to a ShellOnly session. The User ledger under `.capsulenv/user-integrations/<machine-user-hash>/` records persistent integration for rollback, but does not convert subsequent independent terminal launches into User mode. Use `user-shell` or `install-user` to enter User mode. Run `restore-user` to revert host integrations.
+
+User mode shortcuts are isolated to:
 
 ```text
 Programs\Capsulenv Apps\<capsule-id-prefix>
 ```
 
-`restore-user` 只會刪除此 capsule-specific namespace。升級時**不會自動清理舊 `Scoop Apps`**，因為其中可能同時有 foreign Scoop 擁有的 `.lnk`，Capsulenv 沒有足夠 ownership evidence 可以安全區分。若舊版已污染該資料夾，請只移除 target 明確落在此 capsule root 下的舊 shortcut；若主機 Scoop shortcut 曾被同名覆寫，讓主機自己的 Scoop 再執行其正常 reset/reinstall 來重建，而不要讓 Capsulenv 猜測原始 target。
+`restore-user` deletes only this capsule-specific namespace. Upstream `Programs\Scoop Apps` shortcuts are not removed automatically because ownership cannot be verified.
 
-同版也讓 uv managed-Python relocation 對外部 JSON schema fail-safe：缺少 `key`/`path` 的 record 只警告並跳過，不再因 PowerShell StrictMode property access 中止整批 rehydrate。
+uv managed-Python relocation handles external JSON schemas fail-safe: records missing `key` or `path` trigger warnings and skip safely without halting rehydration under StrictMode.
 
+### v0.16.4: Scoop gateway bootstrap context
 
-## v0.16.4 Scoop gateway bootstrap context
+v0.16.4 resolved an issue where intercepting mutation commands in earlier gateways caused `CommandNotFoundException` for Scoop internal helpers. Starting in v0.17, the gateway model was replaced entirely. Upgrading to v0.17+ resolves this by invoking upstream Scoop without interception.
 
-v0.16.3 及更早的 module-owned Scoop gateway 在 intercept `install` / `update` / `uninstall` / `reset` / `shim` 等 mutation command 時，會直接執行 transformed `libexec/scoop-*.ps1`。Scoop 的 libexec 並不是獨立 entrypoint；正常 `bin/scoop.ps1` 會先建立 core/config/bucket/command helper context。因此某些 command（例如在 option parser 前已呼叫 `get_config` 的 install path）會在 Capsulenv gateway 下以 `CommandNotFoundException` 失敗。
+### v0.17.0: Package and runtime boundary
 
-v0.16.4 起 gateway 先從**目前安裝的 Scoop 版本**擷取並驗證 `bin/scoop.ps1` 的 pre-dispatch bootstrap，再把它 prepend 到 transformed libexec，之後才注入 ShellOnly/User policy。若 Scoop upstream dispatcher/bootstrap layout 已變得無法安全辨識，Capsulenv 會明確 fail closed，而不是在缺少 helper 的半初始化 context 中繼續執行。
+v0.17.0 removed the Scoop gateway, policy injection, and reset adapter architecture:
 
-遇到 `get_config`（或其他 Scoop core helper）找不到時，只需要由 v0.16.4 或更新的 development checkout/release bundle 重新部署 Capsulenv runtime：
+- `scoop ...` invokes **unmodified upstream Scoop**. Capsulenv no longer rewrites libexec, overrides `shortcut_folder`, or injects lifecycle policies.
+- Safe package operations use `capsulenv.cmd app plan <ref>` and `capsulenv.cmd app install <ref>`. Only packages whose complete dependency graph belongs to the declarative subset enter the `PortableSafe` executor.
+- Packages with `pre_install`, `post_install`, or custom installers classify as TrustedExecution. To install them, pass `--allow-trusted` or invoke upstream `scoop install`. These operations fall outside Capsulenv reversibility guarantees.
+- PortableSafe packages reside in `packages/`, `package-persist/`, `shims/`, and `.capsulenv/packages/`. The selector prefix is `capsule/<app>`. Upstream Scoop packages use `scoop/<app>`.
+- The planner fails closed on unsupported manifest properties (`cookie`, `psmodule`, unknown active properties). Artifact support requires SHA-256, `http`/`https`/`file`, and ZIP or plain files.
+- Relocation projection repair does not invoke Scoop private helpers. Capsulenv repairs its own package projections and performs bounded `current`/`persist` repair for legacy Scoop packages. If an active version cannot be verified, repair fails closed and guides explicit resolution.
+- Obsolete `capsulenv hooks` and `Scoop.ReplayHooks` have been removed.
+- User mode synchronization rebuilds the `Programs\Capsulenv Apps\<capsule-id>\PortableSafe` namespace with targets pointing to `capsulenv.cmd app run capsule/<app>`.
 
-```bat
-X:\capsulenv-0.16.4\install.cmd E:\capenv
-```
+Upgrades do not require deleting `scoop/` or reinstalling packages. Activation automatically migrates rehydration metadata to the new schema. Remove obsolete `Scoop.ReplayHooks` from local configuration. For the package trust model, see [ARCHITECTURE](ARCHITECTURE.md#package-planner-and-portablesafe-subset).
 
-這不會重裝 `scoop/apps`、persist、workspace 或其他 portable state；更新完成後原有 `scoop install ...` 等命令直接經新版 gateway 執行。
+## Verification after upgrade
 
-
-## v0.17.0 package/runtime boundary
-
-0.17.0 把 0.14–0.16 的 Scoop gateway/policy/reset adapter 架構正式拆掉。升級後最重要的語義變更：
-
-- `scoop ...` 現在是**未修改的 upstream Scoop**；Capsulenv 不再 intercept、rewrite libexec、注入 ShellOnly lifecycle fingerprint policy 或 override `shortcut_folder`。
-- 安全 package path 改成 `capsulenv.cmd app plan <ref>` / `capsulenv.cmd app install <ref>`。只有整個 dependency graph 都屬 bounded declarative subset 才會進 `PortableSafe` executor。
-- `pre_install` / `post_install` / installer script 等會分類為 Trusted/unsupported；需要執行時使用 `--allow-trusted` 或直接 upstream `scoop ...`。這些 host mutation 不屬 Capsulenv PortableSafe/restore guarantee。
-- PortableSafe package 改存於 `packages/`、`package-persist/`、`shims/` 和 `.capsulenv/packages/`，runtime selector 新增 `capsule/<app>`。既有 stock Scoop install 仍可由 `user/<app>` / `global/<app>` 啟動。
-- PortableSafe planner 對 manifest schema fail closed：第一版只支援 SHA-256、`http/https/file`、ZIP/plain-file artifact 與已實作的 declarative fields。`cookie`、`psmodule` 或未知 active property 不會被當 no-op；manifest/installed metadata fingerprint 漂移也會要求明確 reinstall/update，而不是沿用舊 ownership state。
-- relocation 不再透過 Scoop private helpers。Capsulenv只重建自己的 package projection，並以 installed metadata bounded repair legacy Scoop `current`/`persist`。若 stale `current` 有多個 version candidate 等情況無法證明 active version，會 fail closed，這時才明確執行 upstream `scoop reset <app>` 或重新安裝/遷移。
-- 舊 `capsulenv hooks` 與 `Scoop.ReplayHooks` 已移除。`--skip-hooks` 只暫時保留為 `init/rehydrate` compatibility flag，沒有 lifecycle replay 可跳過。
-- User sync 會重建本 capsule 的 `Programs\Capsulenv Apps\<capsule-id>\PortableSafe` namespace，shortcut target 改為 `capsulenv.cmd app run capsule/<app> ...`。0.16 時 Capsulenv-owned namespace 中由 Scoop policy 產生的舊 shortcut 因此會被清掉；foreign `Programs\Scoop Apps` 仍不會被猜測或清理。
-
-升級不需要刪除 `scoop/` 或重裝既有 app。第一次 0.17 activation 會把 rehydration state 升到新的 projection-repair schema。若你有 local config，建議刪除已無效的 `Scoop.ReplayHooks` / lifecycle-policy override；未知 extra key不會取得執行權。當前 package/trust model 見 [`ARCHITECTURE.md`](ARCHITECTURE.md#package-planner-and-portablesafe-subset)。
-
-
-## 升級後驗證
-
-完成任何跨代 migration 後建議：
+After completing any upgrade across major versions, verify runtime health:
 
 ```bat
 capsulenv.cmd doctor
@@ -257,15 +238,25 @@ capsulenv.cmd tools status
 capsulenv.cmd offline status
 ```
 
-若 capsule 剛換過 path/drive，再執行一次 `capsulenv.cmd rehydrate`。不要為了「清乾淨」而先手動刪 `.capsulenv/`：identity、上一個 relocation context、User backup 和 link registries 正是新版用來安全判斷 ownership 的證據。
+If the capsule changed drive letters or paths, run `capsulenv.cmd rehydrate`. Do not delete `.capsulenv/` to clear warnings; it contains identity, relocation context, and registry evidence required for ownership verification.
 
-## Historical ShellOnly Scoop host-state cleanup (0.14.1–0.16.x)
+## Cleaning historical ShellOnly Scoop host state (0.14.1–0.16.x)
 
-0.14.1–0.16.x 曾以 Capsulenv Scoop gateway 阻擋/改寫 ShellOnly mutation；**0.17 已移除此架構**。若更早版本曾讓 upstream Scoop 把 capsule path 寫進 Windows User PATH 或 `Programs\Scoop Apps`，升級仍不能盲目刪除，因為 Capsulenv 無法證明 foreign Scoop 與舊 capsule shortcut/variable 的 ownership。
+0.14.1–0.16.x used a gateway to intercept ShellOnly mutations. In v0.17, this gateway was removed. If an earlier version allowed upstream Scoop to register capsule paths in Windows User PATH or `Programs\Scoop Apps`:
 
-只移除你能確認 target/path 落在此 capsule 的 historical host state；主機 Scoop 自己擁有的內容應由主機 Scoop 修復。既有 `scoop/apps`、`scoop/persist`、installed manifests 不需要因 0.17 migration 刪除。之後若你直接執行 `scoop ...`，它就是 upstream TrustedExecution，而不是 ShellOnly-safe command；安全 package install 請改用 `capsulenv.cmd app install`。
+1. Inspect and remove only shortcuts or environment variables whose targets point directly inside this capsule root.
+2. Allow the host's foreign Scoop to repair host-owned shortcuts.
+3. Existing `scoop/apps`, `scoop/persist`, and installed manifests do not require deletion.
 
+Directly executing `scoop ...` represents upstream TrustedExecution; for safe package management, use `capsulenv app install`.
 
 ## Installed app selector namespace migration
 
-Current Capsulenv separates package provider from Scoop's provider-local root scope. Prefer `capsule/<app>` for Capsulenv-owned PortableSafe packages and `scoop/<app>` for upstream Scoop installs. Existing `user/<app>` / `global/<app>` configuration remains accepted as a compatibility alias and does not require an immediate config rewrite; when the same app exists in both upstream roots, the explicit canonical forms are `scoop:user/<app>` and `scoop:global/<app>`. `scoop-global/` remains only the capsule-local compatibility path used by unmodified upstream `scoop -g`.
+Capsulenv separates package providers from Scoop's provider-local root scopes:
+
+- Use `capsule/<app>` for Capsulenv-owned PortableSafe packages.
+- Use `scoop/<app>` for upstream Scoop packages.
+- Existing `user/<app>` and `global/<app>` references remain accepted as compatibility aliases.
+- When identical app names exist in both Scoop roots, use `scoop:user/<app>` or `scoop:global/<app>` for disambiguation.
+
+For selector resolution rules, see [ARCHITECTURE](ARCHITECTURE.md#provisioning-and-runtime-separation). For usage syntax, see [USAGE](USAGE.md#installed-apps).

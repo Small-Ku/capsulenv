@@ -55,6 +55,7 @@ try {
         @{ Source = 'packaging/capsulenv-runtime.ps1'; Destination = 'capsulenv-runtime.ps1' }
         @{ Source = 'packaging/install.cmd'; Destination = 'install.cmd' }
         @{ Source = 'README.md'; Destination = 'README.md' }
+        @{ Source = 'README.zh-TW.md'; Destination = 'README.zh-TW.md' }
         @{ Source = 'scripts/Install-Capsulenv.ps1'; Destination = 'scripts/Install-Capsulenv.ps1' }
         @{ Source = 'bin/firefox-capsulenv.cmd'; Destination = 'bin/firefox-capsulenv.cmd' }
         @{ Source = 'bin/zen-capsulenv.cmd'; Destination = 'bin/zen-capsulenv.cmd' }
@@ -62,10 +63,13 @@ try {
         @{ Source = 'config/capsulenv.psd1'; Destination = 'config/capsulenv.psd1' }
         @{ Source = 'config/capsulenv.local.psd1.example'; Destination = 'config/capsulenv.local.psd1.example' }
         @{ Source = 'docs/ARCHITECTURE.md'; Destination = 'docs/ARCHITECTURE.md' }
+        @{ Source = 'docs/CLI-UX.md'; Destination = 'docs/CLI-UX.md' }
         @{ Source = 'docs/DEVELOPMENT.md'; Destination = 'docs/DEVELOPMENT.md' }
         @{ Source = 'docs/DEPLOYMENT.md'; Destination = 'docs/DEPLOYMENT.md' }
         @{ Source = 'docs/MIGRATION.md'; Destination = 'docs/MIGRATION.md' }
         @{ Source = 'docs/TOOLS.md'; Destination = 'docs/TOOLS.md' }
+        @{ Source = 'docs/USAGE.md'; Destination = 'docs/USAGE.md' }
+        @{ Source = 'docs/USAGE.zh-TW.md'; Destination = 'docs/USAGE.zh-TW.md' }
     )
     foreach ($entry in $files) {
         $source = Join-Path $sourceRoot $entry.Source
