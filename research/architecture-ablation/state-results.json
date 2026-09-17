@@ -1,0 +1,35 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
+{
+  "schema": 1,
+  "kind": "derived-state-reconstruction-prototype-measured",
+  "rows": [
+    {
+      "mode": "baseline",
+      "observable_resolution_equal": true,
+      "authority_unchanged": true,
+      "derived_index_rebuilt": false
+    },
+    {
+      "mode": "delete-index",
+      "observable_resolution_equal": true,
+      "authority_unchanged": true,
+      "derived_index_rebuilt": true
+    },
+    {
+      "mode": "delete-cache",
+      "observable_resolution_equal": true,
+      "authority_unchanged": true,
+      "derived_index_rebuilt": false
+    },
+    {
+      "mode": "mutate-index",
+      "observable_resolution_equal": true,
+      "authority_unchanged": true,
+      "derived_index_rebuilt": true
+    }
+  ],
+  "limitations": [
+    "The authority is a bounded synthetic manifest/generation set.",
+    "This does not prove every current Scoop state file is derivable."
+  ]
+}
