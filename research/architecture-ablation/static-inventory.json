@@ -1,0 +1,752 @@
+{
+  "schema": 1,
+  "commit_expected": "2412f2a4f115eae2e1218c240a8d142e5013d458",
+  "inventory": {
+    "files_scanned": 77,
+    "source_files": 37,
+    "source_lines": 16766,
+    "test_files": 26,
+    "function_count": 475,
+    "configured_storage_roots": {
+      "Root": "scoop",
+      "Shims": "shims",
+      "Persist": "package-persist",
+      "Cache": "cache\\scoop",
+      "GlobalRoot": "scoop-global"
+    },
+    "package_projection_function_count": 96,
+    "legacy_or_relocation_function_count": 58
+  },
+  "rehydrate_graph": {
+    "node_count": 8,
+    "edge_count": 11,
+    "nodes": [
+      {
+        "id": "session-environment",
+        "depends_on": [],
+        "read_resources": [],
+        "write_resources": [
+          "process:///environment"
+        ],
+        "parallel_safe": false
+      },
+      {
+        "id": "user-environment-backup",
+        "depends_on": [
+          "session-environment"
+        ],
+        "read_resources": [
+          "host:///environment/user"
+        ],
+        "write_resources": [
+          "capsule:///state/user-environment-backup"
+        ],
+        "parallel_safe": false
+      },
+      {
+        "id": "package-projections",
+        "depends_on": [
+          "session-environment",
+          "user-environment-backup"
+        ],
+        "read_resources": [
+          "capsule:///packages/installed-state"
+        ],
+        "write_resources": [
+          "capsule:///packages/projections",
+          "capsule:///scoop/apps",
+          "capsule:///scoop/persist",
+          "capsule:///packages/shims",
+          "host:///start-menu/capsulenv"
+        ],
+        "parallel_safe": false
+      },
+      {
+        "id": "persist-relocation",
+        "depends_on": [
+          "package-projections"
+        ],
+        "read_resources": [
+          "capsule:///state/rehydration"
+        ],
+        "write_resources": [
+          "capsule:///scoop/persist"
+        ],
+        "parallel_safe": true
+      },
+      {
+        "id": "project-cache-links",
+        "depends_on": [
+          "package-projections"
+        ],
+        "read_resources": [
+          "capsule:///project-cache/registry"
+        ],
+        "write_resources": [
+          "capsule:///project-cache",
+          "host:///project-cache-links"
+        ],
+        "parallel_safe": true
+      },
+      {
+        "id": "tool-relocation",
+        "depends_on": [
+          "project-cache-links"
+        ],
+        "read_resources": [
+          "capsule:///tool-storage/configuration"
+        ],
+        "write_resources": [
+          "capsule:///tool-data",
+          "capsule:///tool-storage"
+        ],
+        "parallel_safe": false
+      },
+      {
+        "id": "user-integration",
+        "depends_on": [
+          "persist-relocation",
+          "tool-relocation"
+        ],
+        "read_resources": [
+          "capsule:///packages/installed-state"
+        ],
+        "write_resources": [
+          "host:///environment/user",
+          "host:///start-menu/capsulenv"
+        ],
+        "parallel_safe": false
+      },
+      {
+        "id": "rehydration-state",
+        "depends_on": [
+          "persist-relocation",
+          "tool-relocation",
+          "user-integration"
+        ],
+        "read_resources": [
+          "capsule:///state/rehydration"
+        ],
+        "write_resources": [
+          "capsule:///state/rehydration"
+        ],
+        "parallel_safe": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "session-environment",
+        "to": "user-environment-backup"
+      },
+      {
+        "from": "session-environment",
+        "to": "package-projections"
+      },
+      {
+        "from": "user-environment-backup",
+        "to": "package-projections"
+      },
+      {
+        "from": "package-projections",
+        "to": "persist-relocation"
+      },
+      {
+        "from": "package-projections",
+        "to": "project-cache-links"
+      },
+      {
+        "from": "project-cache-links",
+        "to": "tool-relocation"
+      },
+      {
+        "from": "persist-relocation",
+        "to": "user-integration"
+      },
+      {
+        "from": "tool-relocation",
+        "to": "user-integration"
+      },
+      {
+        "from": "persist-relocation",
+        "to": "rehydration-state"
+      },
+      {
+        "from": "tool-relocation",
+        "to": "rehydration-state"
+      },
+      {
+        "from": "user-integration",
+        "to": "rehydration-state"
+      }
+    ],
+    "parallel_safe_nodes": [
+      "persist-relocation",
+      "project-cache-links"
+    ],
+    "resource_claim_count": 22
+  },
+  "source_side_effect_sites": {
+    "create_dir": 58,
+    "write_content": 26,
+    "replace": 170,
+    "delete": 81,
+    "link": 13,
+    "subprocess": 33,
+    "registry": 124,
+    "network": 2
+  },
+  "source_side_effects_by_file": [
+    {
+      "path": "src/00-Context.ps1",
+      "lines": 182,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/00-DoctorCore.ps1",
+      "lines": 72,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 6,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/01-DesiredStateCore.ps1",
+      "lines": 481,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 1,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 4,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/02-Diagnostic.ps1",
+      "lines": 91,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/03-ProcessPlan.ps1",
+      "lines": 53,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 2,
+        "delete": 2,
+        "link": 0,
+        "subprocess": 2,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/04-CliUx.ps1",
+      "lines": 295,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 1,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/05-DataFile.ps1",
+      "lines": 56,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/05-Identity.ps1",
+      "lines": 224,
+      "side_effects": {
+        "create_dir": 2,
+        "write_content": 1,
+        "replace": 7,
+        "delete": 2,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/06-Registry.ps1",
+      "lines": 46,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 13,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/10-Config.ps1",
+      "lines": 630,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/30-Environment.ps1",
+      "lines": 926,
+      "side_effects": {
+        "create_dir": 5,
+        "write_content": 2,
+        "replace": 14,
+        "delete": 8,
+        "link": 0,
+        "subprocess": 4,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/32-PowerShell.ps1",
+      "lines": 219,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 2,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/34-Seed.ps1",
+      "lines": 643,
+      "side_effects": {
+        "create_dir": 7,
+        "write_content": 2,
+        "replace": 7,
+        "delete": 2,
+        "link": 0,
+        "subprocess": 3,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/34-Weasel.ps1",
+      "lines": 408,
+      "side_effects": {
+        "create_dir": 4,
+        "write_content": 2,
+        "replace": 13,
+        "delete": 5,
+        "link": 0,
+        "subprocess": 3,
+        "registry": 9,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/35-ToolStorage.ps1",
+      "lines": 683,
+      "side_effects": {
+        "create_dir": 5,
+        "write_content": 1,
+        "replace": 14,
+        "delete": 5,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 3,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/36-ProjectCacheRegistry.ps1",
+      "lines": 426,
+      "side_effects": {
+        "create_dir": 2,
+        "write_content": 1,
+        "replace": 12,
+        "delete": 5,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 22,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/37-ToolRelocation.ps1",
+      "lines": 613,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 1,
+        "replace": 2,
+        "delete": 2,
+        "link": 0,
+        "subprocess": 2,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/38-ToolWorkspaceRegistry.ps1",
+      "lines": 405,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 1,
+        "replace": 9,
+        "delete": 3,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 16,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/39-ToolWorkspaceRelocation.ps1",
+      "lines": 327,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 0,
+        "replace": 4,
+        "delete": 2,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/40-Scoop.ps1",
+      "lines": 372,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 1,
+        "replace": 3,
+        "delete": 3,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 1,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/41-ScoopBootstrap.ps1",
+      "lines": 323,
+      "side_effects": {
+        "create_dir": 5,
+        "write_content": 2,
+        "replace": 9,
+        "delete": 6,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 0,
+        "network": 1
+      }
+    },
+    {
+      "path": "src/42-AppLauncher.ps1",
+      "lines": 901,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 8,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/43-PackageModel.ps1",
+      "lines": 693,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/43-PackageReview.ps1",
+      "lines": 803,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 1,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/44-PackageExecutor.ps1",
+      "lines": 1172,
+      "side_effects": {
+        "create_dir": 14,
+        "write_content": 4,
+        "replace": 34,
+        "delete": 18,
+        "link": 10,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 1
+      }
+    },
+    {
+      "path": "src/45-PackageHostIntegration.ps1",
+      "lines": 106,
+      "side_effects": {
+        "create_dir": 3,
+        "write_content": 0,
+        "replace": 1,
+        "delete": 1,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/45-Relocation.ps1",
+      "lines": 330,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 7,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/46-LegacyScoopProjection.ps1",
+      "lines": 286,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 3,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/46-PersistRelocation.ps1",
+      "lines": 354,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 1,
+        "replace": 2,
+        "delete": 2,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/50-Bitwarden.ps1",
+      "lines": 599,
+      "side_effects": {
+        "create_dir": 3,
+        "write_content": 3,
+        "replace": 5,
+        "delete": 5,
+        "link": 0,
+        "subprocess": 7,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/55-BitwardenSshAgent.ps1",
+      "lines": 806,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 1,
+        "replace": 6,
+        "delete": 5,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/60-Browser.ps1",
+      "lines": 320,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 1,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/62-DefaultBrowser.ps1",
+      "lines": 722,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 1,
+        "replace": 7,
+        "delete": 4,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 46,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/64-Routine.ps1",
+      "lines": 238,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 1,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/70-Doctor.ps1",
+      "lines": 367,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 2,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/72-Lifecycle.ps1",
+      "lines": 496,
+      "side_effects": {
+        "create_dir": 1,
+        "write_content": 1,
+        "replace": 1,
+        "delete": 1,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 2,
+        "network": 0
+      }
+    },
+    {
+      "path": "src/90-Commands.ps1",
+      "lines": 1098,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 1,
+        "network": 0
+      }
+    },
+    {
+      "path": "module-runtime/Initialize-CapsulenvControlHost.ps1",
+      "lines": 29,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 0,
+        "registry": 0,
+        "network": 0
+      }
+    },
+    {
+      "path": "module-runtime/Invoke-Capsulenv.ps1",
+      "lines": 133,
+      "side_effects": {
+        "create_dir": 0,
+        "write_content": 0,
+        "replace": 0,
+        "delete": 0,
+        "link": 0,
+        "subprocess": 1,
+        "registry": 0,
+        "network": 0
+      }
+    }
+  ],
+  "evidence_notes": [
+    "Static source evidence, not a runtime measurement.",
+    "Package review dependency graph and rehydrate desired-state graph are separate; this graph is src/40-Scoop.ps1.",
+    "The package-projections node delegates to a multi-step projection reconciler."
+  ]
+}
+
