@@ -1,0 +1,100 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
+{
+  "schema": 1,
+  "kind": "legacy-compatibility-source-audit",
+  "inventory": {
+    "legacy_projection": {
+      "path": "src/46-LegacyScoopProjection.ps1",
+      "lines": 287,
+      "functions": 9,
+      "mentions": {
+        "legacy": 31,
+        "projection": 15,
+        "relocation": 0,
+        "scoop": 37
+      }
+    },
+    "relocation": {
+      "path": "src/45-Relocation.ps1",
+      "lines": 331,
+      "functions": 9,
+      "mentions": {
+        "legacy": 0,
+        "projection": 1,
+        "relocation": 46,
+        "scoop": 36
+      }
+    },
+    "package_host_integration": {
+      "path": "src/45-PackageHostIntegration.ps1",
+      "lines": 107,
+      "functions": 2,
+      "mentions": {
+        "legacy": 0,
+        "projection": 1,
+        "relocation": 1,
+        "scoop": 3
+      }
+    },
+    "package_executor": {
+      "path": "src/44-PackageExecutor.ps1",
+      "lines": 1173,
+      "functions": 34,
+      "mentions": {
+        "legacy": 0,
+        "projection": 10,
+        "relocation": 0,
+        "scoop": 16
+      }
+    },
+    "scoop_control": {
+      "path": "src/40-Scoop.ps1",
+      "lines": 373,
+      "functions": 12,
+      "mentions": {
+        "legacy": 2,
+        "projection": 21,
+        "relocation": 54,
+        "scoop": 94
+      }
+    }
+  },
+  "matrix": [
+    {
+      "surface": "Capsulenv-owned package projection",
+      "path": "src/44-PackageExecutor.ps1",
+      "observable_contract": "package launch/bin/persist mapping",
+      "deletion_gate": "stable shim + active generation resolves all package bins",
+      "classification": "preserve boundary; simplify implementation"
+    },
+    {
+      "surface": "Legacy Scoop current/persist projection",
+      "path": "src/46-LegacyScoopProjection.ps1",
+      "observable_contract": "upstream Scoop user/global selectors and persist links",
+      "deletion_gate": "no supported upstream Scoop-owned installation depends on it",
+      "classification": "compatibility adapter; opt-in candidate"
+    },
+    {
+      "surface": "Relocation fingerprint/inference",
+      "path": "src/45-Relocation.ps1",
+      "observable_contract": "drive/root/host change detection",
+      "deletion_gate": "generation placement metadata replaces path inference without breaking relocation",
+      "classification": "retain detection; remove duplicate repair paths only"
+    },
+    {
+      "surface": "Shortcut/host integration",
+      "path": "src/45-PackageHostIntegration.ps1",
+      "observable_contract": "User-mode shortcuts and host registration",
+      "deletion_gate": "stable resolver preserves shortcut targets and mode isolation",
+      "classification": "compatibility boundary; runtime test required"
+    },
+    {
+      "surface": "Scoop -g compatibility root",
+      "path": "src/40-Scoop.ps1",
+      "observable_contract": "unmodified upstream Scoop global selector",
+      "deletion_gate": "explicitly unsupported or adapter isolated",
+      "classification": "optional compatibility surface"
+    }
+  ],
+  "evidence": "static source measured; no runtime compatibility claim"
+}
