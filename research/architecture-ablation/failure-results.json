@@ -1,0 +1,124 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
+{
+  "schema": 1,
+  "kind": "immutable-generation-failure-campaign",
+  "rows": [
+    {
+      "case": "acquire-interruption",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "remote-unavailable",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "corrupted-hash-mismatched-blob",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "extract-interruption",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "target-disk-full",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "realization-disk-unavailable",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "host-root-change",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "authority remained valid after moving the realization root",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "concurrent-deploy",
+      "invariant_holds": true,
+      "active_after": "3f2d59d07fafb2a83dbefb4c824728d68d6e6e999e19804acfafdc998c5b47fa",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "failure-before-activation",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": true,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "failure-after-activation",
+      "invariant_holds": true,
+      "active_after": "11a58259f20c5257b3ecf509235027c41158654cfaaceec9026632a55153933f",
+      "old_generation_valid": true,
+      "new_generation_valid": true,
+      "detail": "",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "cache-index-deletion",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "derived cache deletion did not remove active authority",
+      "evidence": "prototype-measured"
+    },
+    {
+      "case": "mutable-realization",
+      "invariant_holds": true,
+      "active_after": "c372083a4d1aeac80c2f9b6bb4c9f20ce01a84beebe9bc36fc1969e093c4f010",
+      "old_generation_valid": true,
+      "new_generation_valid": false,
+      "detail": "",
+      "evidence": "prototype-measured"
+    }
+  ],
+  "summary": {
+    "cases": 12,
+    "unsafe_cases": []
+  },
+  "limitations": [
+    "Storage and remote failures are injected before the corresponding OS operation.",
+    "Concurrent deploy is thread-level and does not test multiple processes.",
+    "The current production architecture is not executed by this prototype."
+  ]
+}
