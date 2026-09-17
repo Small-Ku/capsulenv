@@ -1,0 +1,2593 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
+{
+  "schema": 1,
+  "kind": "local-scheduler-prototype-measured",
+  "work_ms": 2.0,
+  "variants": [
+    {
+      "variant": "current-fine-grained",
+      "nodes": 8,
+      "edges": 11,
+      "repetitions": 20,
+      "wall_p50_ms": 21.192,
+      "wall_p95_ms": 26.883,
+      "samples": [
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 26.883,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.516
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.1
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 3.117
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.323
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.905
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.206
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.095
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.376
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 20.232,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.368
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.09
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.76
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.306
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.488
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.866
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.088
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.318
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 20.367,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.257
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.152
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.865
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.561
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.593
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.859
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.125
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.359
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 20.519,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.383
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.126
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.848
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.241
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.41
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.824
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.102
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.298
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 22.39,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.38
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.09
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.788
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.469
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.459
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 5.51
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.111
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.333
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 27.09,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.357
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.047
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 3.0
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.479
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.925
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 7.831
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 3.955
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.3
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 22.75,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.338
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.126
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 3.131
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.291
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.492
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.161
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.124
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.338
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 22.913,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.321
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.092
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.89
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.484
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.51
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.82
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.175
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.556
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 25.61,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.419
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.086
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 4.154
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.309
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.449
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.506
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.097
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.418
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 23.32,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.353
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.097
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 3.089
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.385
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.563
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.511
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.164
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.379
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 21.075,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.338
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.11
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.841
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.292
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.331
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.134
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.088
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.374
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 21.192,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.261
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.112
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.899
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.357
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.395
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.45
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.1
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.511
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 21.573,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.327
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.091
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.864
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.314
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 3.96
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.888
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.11
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.249
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 20.66,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.354
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.124
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 3.123
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.276
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.364
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.073
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.099
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.259
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 19.795,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.308
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.095
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.898
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.536
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.534
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.71
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.029
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.301
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 21.369,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.294
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.087
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.977
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.408
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.54
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.279
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.132
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.282
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 20.754,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.385
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.098
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 3.04
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.341
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.517
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.688
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.031
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.341
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 21.739,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.421
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.114
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 3.274
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.386
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 3.389
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.975
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.118
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.325
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 20.702,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.287
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.085
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.932
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.275
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.416
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 4.004
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.096
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.312
+            }
+          ]
+        },
+        {
+          "nodes": 8,
+          "edges": 11,
+          "wall_ms": 19.931,
+          "file_creates": 32,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26880,
+          "state_mutations": 8,
+          "max_parallelism": 2,
+          "events": [
+            {
+              "node": "session-environment",
+              "kind": "resolve",
+              "duration_ms": 2.295
+            },
+            {
+              "node": "user-environment-backup",
+              "kind": "noop",
+              "duration_ms": 2.086
+            },
+            {
+              "node": "package-projections",
+              "kind": "projection",
+              "duration_ms": 2.866
+            },
+            {
+              "node": "persist-relocation",
+              "kind": "state",
+              "duration_ms": 2.357
+            },
+            {
+              "node": "project-cache-links",
+              "kind": "state",
+              "duration_ms": 2.377
+            },
+            {
+              "node": "tool-relocation",
+              "kind": "realize",
+              "duration_ms": 3.861
+            },
+            {
+              "node": "user-integration",
+              "kind": "noop",
+              "duration_ms": 2.084
+            },
+            {
+              "node": "rehydration-state",
+              "kind": "activate",
+              "duration_ms": 2.317
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "phase-level",
+      "nodes": 4,
+      "edges": 3,
+      "repetitions": 20,
+      "wall_p50_ms": 12.296,
+      "wall_p95_ms": 15.001,
+      "samples": [
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 11.883,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.361
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.476
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.567
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.225
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.526,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.272
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.64
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 4.119
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.237
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 13.232,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.319
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.569
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 5.096
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.224
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.428,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.36
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.57
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 4.202
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.262
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.351,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.328
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.658
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 4.006
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.335
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 11.983,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.348
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.498
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.745
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.227
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 11.921,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.3
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.583
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.772
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.217
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 17.676,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.378
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 4.209
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 5.271
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.272
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 13.369,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.285
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.532
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 4.814
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.259
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 15.001,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.392
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 3.272
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 5.216
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.432
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 11.681,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.368
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.461
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.667
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.247
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 14.333,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.285
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.523
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 6.167
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.285
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.106,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.319
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.461
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.728
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.254
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.043,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.342
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.535
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.812
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.248
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.159,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.265
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.586
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.753
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.229
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 11.897,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.321
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.522
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.729
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.267
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.219,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.32
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.584
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 3.733
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.275
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 14.537,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.343
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 4.215
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 4.305
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.361
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 13.826,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.322
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.525
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 5.474
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.259
+            }
+          ]
+        },
+        {
+          "nodes": 4,
+          "edges": 3,
+          "wall_ms": 12.296,
+          "file_creates": 26,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 26368,
+          "state_mutations": 2,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "resolve",
+              "kind": "resolve",
+              "duration_ms": 2.347
+            },
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.571
+            },
+            {
+              "node": "realize",
+              "kind": "realize",
+              "duration_ms": 4.052
+            },
+            {
+              "node": "activate",
+              "kind": "activate",
+              "duration_ms": 2.302
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "acquire-realize-only",
+      "nodes": 2,
+      "edges": 1,
+      "repetitions": 20,
+      "wall_p50_ms": 7.421,
+      "wall_p95_ms": 9.707,
+      "samples": [
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 9.707,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.582
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.742
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.421,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.733
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.879
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 8.852,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.887
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 5.039
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.48,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.592
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.731
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.183,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.609
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.738
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.241,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.578
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.703
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.996,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.565
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 4.453
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.15,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.69
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.766
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.379,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.69
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.875
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.173,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.578
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.853
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.305,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.799
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.804
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.313,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.647
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.718
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 13.671,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.473
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 10.337
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.425,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.665
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.817
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.919,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.591
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 4.485
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.006,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.584
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.686
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.287,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.557
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.816
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.732,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.64
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 4.058
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 7.468,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.671
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 3.982
+            }
+          ]
+        },
+        {
+          "nodes": 2,
+          "edges": 1,
+          "wall_ms": 8.568,
+          "file_creates": 24,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 25088,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "acquire",
+              "kind": "acquire",
+              "duration_ms": 2.81
+            },
+            {
+              "node": "realize-and-activate",
+              "kind": "realize",
+              "duration_ms": 4.941
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": "sequential-reference",
+      "nodes": 1,
+      "edges": 0,
+      "repetitions": 20,
+      "wall_p50_ms": 4.909,
+      "wall_p95_ms": 7.484,
+      "samples": [
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 5.386,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.677
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.665,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 3.944
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.963,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.371
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 5.452,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.528
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 5.704,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.81
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.743,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.158
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.548,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 3.961
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.429,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 3.768
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 5.313,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.805
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.314,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 3.766
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.943,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.322
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.518,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 3.964
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 7.484,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 5.672
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.511,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 3.858
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.495,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 3.907
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 6.759,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 6.214
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.597,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.056
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 4.909,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 4.213
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 5.971,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 5.294
+            }
+          ]
+        },
+        {
+          "nodes": 1,
+          "edges": 0,
+          "wall_ms": 7.566,
+          "file_creates": 20,
+          "file_deletes": 0,
+          "file_renames": 0,
+          "bytes_written": 23040,
+          "state_mutations": 0,
+          "max_parallelism": 1,
+          "events": [
+            {
+              "node": "sequential-reference",
+              "kind": "realize",
+              "duration_ms": 6.565
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Runs on local Linux filesystem, not Windows PowerShell or NTFS.",
+    "The fine graph mirrors current node/edge topology but does not claim identical callback cost.",
+    "Wall time includes a controlled synthetic per-node delay; use relative results only."
+  ]
+}
