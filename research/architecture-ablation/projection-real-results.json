@@ -1,0 +1,86 @@
+{
+  "evidence": "linux-real-process",
+  "rows": [
+    {
+      "direct_process_baseline": {
+        "p50_ms": 5.601,
+        "p95_ms": 9.985
+      },
+      "repeats": 5,
+      "resolver_overhead_over_direct_p50_ms": 95.533,
+      "shell_resolver_overhead_over_direct_p50_ms": 20.31,
+      "stable_resolver": {
+        "p50_ms": 101.134,
+        "p95_ms": 132.234
+      },
+      "stable_shell_resolver": {
+        "p50_ms": 25.911,
+        "p95_ms": 30.859
+      },
+      "startup_auto": {
+        "logical_bytes": [
+          332,
+          332,
+          332,
+          332,
+          332
+        ],
+        "p50_ms": 305.099,
+        "p95_ms": 364.845
+      },
+      "startup_validate": {
+        "logical_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "p50_ms": 262.412,
+        "p95_ms": 276.055
+      },
+      "workload": "small"
+    },
+    {
+      "direct_process_baseline": {
+        "p50_ms": 6.996,
+        "p95_ms": 12.087
+      },
+      "repeats": 5,
+      "resolver_overhead_over_direct_p50_ms": 111.037,
+      "shell_resolver_overhead_over_direct_p50_ms": 23.334,
+      "stable_resolver": {
+        "p50_ms": 118.033,
+        "p95_ms": 146.197
+      },
+      "stable_shell_resolver": {
+        "p50_ms": 30.33,
+        "p95_ms": 45.042
+      },
+      "startup_auto": {
+        "logical_bytes": [
+          344,
+          344,
+          344,
+          344,
+          344
+        ],
+        "p50_ms": 273.921,
+        "p95_ms": 291.279
+      },
+      "startup_validate": {
+        "logical_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "p50_ms": 252.662,
+        "p95_ms": 307.963
+      },
+      "workload": "large"
+    }
+  ],
+  "schema": 1
+}
