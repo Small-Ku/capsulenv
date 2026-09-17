@@ -42,6 +42,21 @@ The configured current storage paths include `scoop`, `scoop-global`, `shims`,
 `package-persist`, and `cache\\scoop`; the wider configuration additionally
 defines tool-data, project-cache, workspace, PowerShell, and scratch semantics.
 
+## Requested metric completion boundary
+
+| Requested metric | Current evidence | Status |
+|---|---|---|
+| Shell startup p50/p95 | Windows warm/cold harness ready; local validate-only prototype measured | Windows runtime pending |
+| Cold/warm deploy p50/p95 | Windows harness ready; local DAG/placement prototypes measured | Windows runtime pending |
+| Portable storage bytes | 126,976 all-portable vs 1,792 host-realization/host-blob logical bytes | Physical SSD pending |
+| Total bytes written | Placement prototype records portable + host logical writes | Controller-level pending |
+| File create/delete/rename | Local prototypes record creates; Windows harness infers delete/rename | Windows runtime pending |
+| Subprocess count | Explicit field in Windows schema | ETW pending |
+| DAG node/edge count | 8/11 static current graph; four local variants measured | Complete for prototype scope |
+| Network bytes | 62,464 modeled remote-blob bytes; fake transport tested | Real backend/ETW pending |
+| State mutations | Startup/placement prototypes and Windows heuristic | Production runtime pending |
+| Crash recovery | Immutable prototype 0 unsafe / 12 cases | Real PowerShell kill pending |
+
 ## Current control-flow evidence
 
 The ordinary child-shell path calls `Initialize-CapsulenvIntegrations`, which
@@ -131,10 +146,10 @@ produced:
 
 | Variant | Nodes / edges | Wall p50 / p95 (ms) | Max parallelism observed |
 |---|---:|---:|---:|
-| Current fine-grained | 8 / 11 | 21.192 / 26.883 | 2 |
-| Phase-level | 4 / 3 | 12.296 / 15.001 | 1 |
-| Acquire/Realize-only | 2 / 1 | 7.421 / 9.707 | 1 |
-| Sequential reference | 1 / 0 | 4.909 / 7.484 | 1 |
+| Current fine-grained | 8 / 11 | 19.974 / 23.778 | 2 |
+| Phase-level | 4 / 3 | 12.232 / 15.188 | 1 |
+| Acquire/Realize-only | 2 / 1 | 7.154 / 9.007 | 1 |
+| Sequential reference | 1 / 0 | 4.384 / 6.662 | 1 |
 
 This controlled prototype indicates orchestration overhead in the fine graph;
 it does not prove that the current package workload has no useful parallelism.
@@ -147,6 +162,66 @@ variants. Eager projection created 6 files / 396 bytes; a stable shim plus
 active-generation metadata created 2 files / 118 bytes. This is evidence that
 projection materialization is a plausible deletion target, not compatibility
 evidence for Scoop shims, Start Menu shortcuts, or User-mode registration.
+
+## Placement and write-amplification prototype
+
+`placement_experiment.py` ran the same four-package desired state with four
+placements. The measured values below are logical application writes, not SSD
+controller writes:
+
+| Placement | Portable bytes | Host bytes | Network bytes | Portable reduction |
+|---|---:|---:|---:|---:|
+| All portable | 126,976 | 0 | 0 | 0% |
+| Host realization + portable blobs | 64,256 | 62,720 | 0 | 49.395% |
+| Host realization + host blobs | 1,792 | 125,184 | 0 | 98.589% |
+| Host realization + remote blobs | 1,792 | 62,720 | 62,464 | 98.589% |
+
+This is the clearest evidence for separating `CapsuleHome` from
+`RealizationRoot`: the control plane remains portable while the runnable
+generation and optionally the blob cache move to host-local storage. The
+remote variant trades local blob bytes for modeled network bytes; it does not
+make remote storage runtime authority. Warm cumulative values include active
+metadata rewrites and are not controller-level wear measurements.
+
+## Startup reconciliation ablation
+
+`startup_ablation.py` verified the same four active-generation targets through
+both startup paths over 20 repetitions:
+
+| Startup path | Wall p50 / p95 (ms) | File writes | Logical bytes | State mutations |
+|---|---:|---:|---:|---:|
+| Automatic reconcile every shell | 1.352 / 3.397 | 160 | 4,640 | 160 |
+| Validate-only shell | 0.103 / 0.365 | 0 | 0 | 0 |
+
+Both paths verified all four runnable targets. The prototype therefore gives
+direct evidence that automatic repair is a write-heavy fast-path policy, while
+its latency result remains local Python evidence and excludes PowerShell
+startup. The implementation-ready question is whether repair can move to
+explicit deploy/rehydrate without changing the real Scoop/shortcut contract.
+
+## Derived state reconstruction
+
+`state_reconstruction.py` reconstructed the same package resolution after
+deleting or mutating the derived index, and after deleting a cache. In all four
+cases `observable_resolution_equal = true` and `authority_unchanged = true`.
+This supports deleting mutable indexes only when they are demonstrably derived
+from desired manifests, verified generations, and active metadata. It does not
+yet prove that every current Scoop state file meets that criterion.
+
+## Blob transport and legacy compatibility audit
+
+The local prototype tests now cover local corruption rejection and a fake
+rclone-compatible transport: `Put`, `Has`, `Fetch`, atomic destination
+replacement, hash mismatch, and remote corruption rejection all pass. The
+fake backend is deliberately not Google Drive evidence; it validates the
+thin transport contract and keeps blob identity/activation local.
+
+The source-backed legacy matrix records five boundaries. The 287-line,
+9-function `src/46-LegacyScoopProjection.ps1` is an adapter candidate, not an
+authority candidate. Relocation detection remains a boundary to retain until
+generation placement metadata replaces path inference. Scoop `-g` compatibility
+and User-mode shortcuts remain optional/runtime compatibility surfaces. No
+legacy path is deleted based on static evidence alone.
 
 ## Architecture findings
 
