@@ -1,3 +1,4 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
 #!/usr/bin/env python3
 """Thin immutable blob-store prototype for architecture experiments."""
 from __future__ import annotations
@@ -7,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,7 +88,7 @@ class RcloneBlobStore:
         self.rclone = rclone
 
     def _remote(self, digest: str) -> str:
-        if len(digest) != 64:
+        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest.lower()):
             raise ValueError("invalid digest")
         return f"{self.remote_root}/{digest[:2]}/{digest}"
 
@@ -105,14 +107,26 @@ class RcloneBlobStore:
     def put(self, digest: str, source: str | Path) -> BlobStat:
         if sha256_file(Path(source)) != digest.lower():
             raise ValueError("source hash mismatch")
+        # A remote object that already exists is immutable.  Verify the
+        # existing bytes instead of silently overwriting the content address.
+        if self.has(digest):
+            with tempfile.TemporaryDirectory(prefix="capsulenv-rclone-check-") as tmp:
+                self.fetch(digest, Path(tmp) / "existing")
+                if sha256_file(Path(tmp) / "existing") != digest.lower():
+                    raise ValueError("remote blob identity mismatch")
+            return self.stat(digest)
         self._run("copyto", str(source), self._remote(digest.lower()))
         return self.stat(digest)
 
     def fetch(self, digest: str, destination: str | Path) -> BlobStat:
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        self._run("copyto", self._remote(digest.lower()), str(destination))
-        if sha256_file(destination) != digest.lower():
-            raise ValueError("remote fetch hash mismatch")
+        temporary = destination.with_name(destination.name + f".{os.getpid()}.partial")
+        try:
+            self._run("copyto", self._remote(digest.lower()), str(temporary))
+            if sha256_file(temporary) != digest.lower():
+                raise ValueError("remote fetch hash mismatch")
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
         return self.stat(digest)
-
