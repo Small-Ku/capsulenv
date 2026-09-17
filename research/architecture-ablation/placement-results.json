@@ -1,0 +1,96 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
+{
+  "schema": 1,
+  "kind": "placement-logical-write-prototype-measured",
+  "workload": {
+    "packages": 4,
+    "files_per_package": 5
+  },
+  "rows": [
+    {
+      "variant": "all-portable",
+      "cold": {
+        "portable_bytes": 126976,
+        "host_bytes": 0,
+        "network_bytes": 0,
+        "creates": 33,
+        "overwrites": 0,
+        "state_mutations": 9
+      },
+      "warm_cumulative": {
+        "portable_bytes": 253952,
+        "host_bytes": 0,
+        "network_bytes": 0,
+        "creates": 33,
+        "overwrites": 33,
+        "state_mutations": 18
+      },
+      "cold_portable_reduction_vs_all_portable_pct": 0.0
+    },
+    {
+      "variant": "host-realization-portable-blobs",
+      "cold": {
+        "portable_bytes": 64256,
+        "host_bytes": 62720,
+        "network_bytes": 0,
+        "creates": 33,
+        "overwrites": 0,
+        "state_mutations": 9
+      },
+      "warm_cumulative": {
+        "portable_bytes": 128512,
+        "host_bytes": 125440,
+        "network_bytes": 0,
+        "creates": 33,
+        "overwrites": 33,
+        "state_mutations": 18
+      },
+      "cold_portable_reduction_vs_all_portable_pct": 49.395
+    },
+    {
+      "variant": "host-realization-host-blobs",
+      "cold": {
+        "portable_bytes": 1792,
+        "host_bytes": 125184,
+        "network_bytes": 0,
+        "creates": 33,
+        "overwrites": 0,
+        "state_mutations": 9
+      },
+      "warm_cumulative": {
+        "portable_bytes": 3584,
+        "host_bytes": 250368,
+        "network_bytes": 0,
+        "creates": 33,
+        "overwrites": 33,
+        "state_mutations": 18
+      },
+      "cold_portable_reduction_vs_all_portable_pct": 98.589
+    },
+    {
+      "variant": "host-realization-remote-blobs",
+      "cold": {
+        "portable_bytes": 1792,
+        "host_bytes": 62720,
+        "network_bytes": 62464,
+        "creates": 29,
+        "overwrites": 0,
+        "state_mutations": 9
+      },
+      "warm_cumulative": {
+        "portable_bytes": 3584,
+        "host_bytes": 125440,
+        "network_bytes": 124928,
+        "creates": 29,
+        "overwrites": 29,
+        "state_mutations": 18
+      },
+      "cold_portable_reduction_vs_all_portable_pct": 98.589
+    }
+  ],
+  "limitations": [
+    "Bytes are logical application writes, not portable SSD controller writes.",
+    "Remote bytes are modeled from immutable blob payloads; no network backend was contacted.",
+    "Warm cumulative values include metadata rewrites on the second idempotent deploy."
+  ]
+}
