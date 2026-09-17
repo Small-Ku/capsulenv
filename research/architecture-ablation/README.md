@@ -1,6 +1,6 @@
 # Architecture ablation campaign
 
-Branch: `research/architecture-ablation-20260917`  
+Branch: `research/architecture-ablation-20260917`
 Baseline commit: `2412f2a4f115eae2e1218c240a8d142e5013d458`
 
 This directory is experiment-only. It does not change the production module,
