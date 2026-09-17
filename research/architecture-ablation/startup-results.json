@@ -1,0 +1,37 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
+{
+  "schema": 1,
+  "kind": "startup-reconciliation-ablation-prototype-measured",
+  "rows": [
+    {
+      "variant": "automatic-reconcile-every-shell",
+      "repetitions": 20,
+      "wall_p50_ms": 1.352,
+      "wall_p95_ms": 3.397,
+      "file_writes": 160,
+      "logical_bytes_written": 4640,
+      "state_mutations": 160,
+      "resolution_contract": {
+        "package_count": 4,
+        "all_targets_verified": true
+      }
+    },
+    {
+      "variant": "validate-only-shell",
+      "repetitions": 20,
+      "wall_p50_ms": 0.103,
+      "wall_p95_ms": 0.365,
+      "file_writes": 0,
+      "logical_bytes_written": 0,
+      "state_mutations": 0,
+      "resolution_contract": {
+        "package_count": 4,
+        "all_targets_verified": true
+      }
+    }
+  ],
+  "limitations": [
+    "Uses a synthetic active-generation layout, not the production PowerShell shell.",
+    "Wall time is local Python filesystem time and excludes PowerShell startup."
+  ]
+}
