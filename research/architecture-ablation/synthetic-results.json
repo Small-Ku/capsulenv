@@ -1,0 +1,303 @@
+{
+  "schema": 1,
+  "kind": "synthetic-prototype",
+  "workload": {
+    "packages": 4,
+    "files_per_package": 5
+  },
+  "variants": [
+    {
+      "variant": "A0-current-fine-dag",
+      "graph_nodes": 8,
+      "graph_edges": 11,
+      "logical_bytes_written": 125952,
+      "portable_bytes_written": 125952,
+      "host_bytes_written": 0,
+      "creates": 33,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 2048,
+      "state_mutations": 5
+    },
+    {
+      "variant": "A1-no-startup-reconcile",
+      "graph_nodes": 0,
+      "graph_edges": 0,
+      "logical_bytes_written": 0,
+      "portable_bytes_written": 0,
+      "host_bytes_written": 0,
+      "creates": 0,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 0,
+      "state_mutations": 0
+    },
+    {
+      "variant": "A2-lazy-projection",
+      "graph_nodes": 8,
+      "graph_edges": 11,
+      "logical_bytes_written": 125696,
+      "portable_bytes_written": 125696,
+      "host_bytes_written": 0,
+      "creates": 25,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 2048,
+      "state_mutations": 5
+    },
+    {
+      "variant": "A3-phase-dag",
+      "graph_nodes": 4,
+      "graph_edges": 3,
+      "logical_bytes_written": 125952,
+      "portable_bytes_written": 125952,
+      "host_bytes_written": 0,
+      "creates": 33,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 2048,
+      "state_mutations": 5
+    },
+    {
+      "variant": "A4-acquire-realize-dag",
+      "graph_nodes": 2,
+      "graph_edges": 1,
+      "logical_bytes_written": 124928,
+      "portable_bytes_written": 1792,
+      "host_bytes_written": 123136,
+      "creates": 29,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 0,
+      "state_mutations": 9
+    },
+    {
+      "variant": "A5-sequential-reference",
+      "graph_nodes": 1,
+      "graph_edges": 0,
+      "logical_bytes_written": 124928,
+      "portable_bytes_written": 1792,
+      "host_bytes_written": 123136,
+      "creates": 29,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 0,
+      "state_mutations": 9
+    },
+    {
+      "variant": "A6-host-local-realization",
+      "graph_nodes": 2,
+      "graph_edges": 1,
+      "logical_bytes_written": 124928,
+      "portable_bytes_written": 1792,
+      "host_bytes_written": 123136,
+      "creates": 29,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 0,
+      "state_mutations": 9
+    },
+    {
+      "variant": "A7-no-local-blob-cache",
+      "graph_nodes": 2,
+      "graph_edges": 1,
+      "logical_bytes_written": 124928,
+      "portable_bytes_written": 1792,
+      "host_bytes_written": 123136,
+      "creates": 29,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 122880,
+      "state_mutations": 9
+    },
+    {
+      "variant": "A8-separated-roots",
+      "graph_nodes": 2,
+      "graph_edges": 1,
+      "logical_bytes_written": 124928,
+      "portable_bytes_written": 1792,
+      "host_bytes_written": 123136,
+      "creates": 29,
+      "deletes": 0,
+      "renames": 0,
+      "network_bytes": 0,
+      "state_mutations": 9
+    }
+  ],
+  "failure_campaign": [
+    {
+      "architecture": "current-like",
+      "case": "acquire-interruption",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "remote-unavailable",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "hash-mismatch",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "extract-kill",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "target-disk-full",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "realization-unavailable",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "root-change",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "concurrent-deploy",
+      "invariant_holds": false,
+      "authority_after_crash": "indeterminate",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "before-activation",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "after-activation",
+      "invariant_holds": false,
+      "authority_after_crash": "indeterminate",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "cache-index-delete",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "current-like",
+      "case": "mutable-realization",
+      "invariant_holds": false,
+      "authority_after_crash": "indeterminate",
+      "observable_outcome": "requires-recovery-check"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "acquire-interruption",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "remote-unavailable",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "hash-mismatch",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "extract-kill",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "target-disk-full",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "realization-unavailable",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "root-change",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "concurrent-deploy",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "before-activation",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "after-activation",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "cache-index-delete",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    },
+    {
+      "architecture": "immutable-generation",
+      "case": "mutable-realization",
+      "invariant_holds": true,
+      "authority_after_crash": "old-or-new-valid",
+      "observable_outcome": "old-or-new-valid"
+    }
+  ],
+  "limitations": [
+    "Logical filesystem writes are not NTFS/controller write amplification.",
+    "Current-like behavior is derived from source transitions, not a Windows runtime trace.",
+    "Latency and real subprocess/network counters require the Windows harness."
+  ]
+}
+
