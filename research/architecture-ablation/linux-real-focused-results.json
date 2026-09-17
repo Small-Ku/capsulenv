@@ -1,0 +1,3582 @@
+{
+  "schema": 1,
+  "evidence": "linux-real-process",
+  "small_all_portable": {
+    "sequential": {
+      "cold": {
+        "count": 5,
+        "wall_p50_ms": 315.04,
+        "wall_p95_ms": 337.178,
+        "logical_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "portable_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 0,
+          "dag_waves": 0,
+          "dag_max_concurrency": 1
+        }
+      },
+      "warm": {
+        "count": 5,
+        "wall_p50_ms": 242.888,
+        "wall_p95_ms": 253.502,
+        "logical_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "portable_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 0,
+          "dag_waves": 0,
+          "dag_max_concurrency": 1
+        }
+      },
+      "samples": {
+        "cold": [
+          {
+            "wall_ms": 37.625,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.491
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.348
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 1.716
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.101
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 6.462
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 4.02
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 7.278
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 5.38
+              }
+            ],
+            "wall_ms_parent": 23.748,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 195,
+              "create_events": 54,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 59
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 58.062,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.154
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 6.222
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 6.276
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.632
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 12.596
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 5.346
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 6.01
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 7.473
+              }
+            ],
+            "wall_ms_parent": 316.088,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 188,
+              "create_events": 54,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 57
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 51.717,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.384
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.21
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.337
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 8.661
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 9.231
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 6.233
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 6.234
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 7.357
+              }
+            ],
+            "wall_ms_parent": 311.494,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 194,
+              "create_events": 55,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 59
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 46.897,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.55
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.221
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.141
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.111
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 6.957
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 6.522
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 8.563
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 8.631
+              }
+            ],
+            "wall_ms_parent": 315.04,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 189,
+              "create_events": 54,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 57
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 54.355,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.586
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.014
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.1
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 4.021
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 7.8
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 9.26
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 8.633
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 9.433
+              }
+            ],
+            "wall_ms_parent": 342.451,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 192,
+              "create_events": 54,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 59
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ],
+        "warm": [
+          {
+            "wall_ms": 16.217,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.503
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.642
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.562
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.533
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.06
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.055
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.044
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.117
+              }
+            ],
+            "wall_ms_parent": 249.006,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 15,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 7
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 14.209,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.013
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.7
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 1.996
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.821
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.046
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.051
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.042
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.04
+              }
+            ],
+            "wall_ms_parent": 254.626,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 16.111,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.005
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 1.983
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.291
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.943
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.069
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.052
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.045
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.04
+              }
+            ],
+            "wall_ms_parent": 242.888,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 14.035,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.146
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 1.906
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 1.985
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.878
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.043
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.051
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.043
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.041
+              }
+            ],
+            "wall_ms_parent": 237.196,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 15,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 7
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 15.107,
+            "dag_nodes": 8,
+            "dag_edges": 0,
+            "dag_waves": 0,
+            "dag_max_concurrency": 1,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 1,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.421
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.012
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.674
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.925
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.047
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.054
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.046
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.046
+              }
+            ],
+            "wall_ms_parent": 219.3,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ]
+      }
+    },
+    "bounded": {
+      "cold": {
+        "count": 5,
+        "wall_p50_ms": 272.058,
+        "wall_p95_ms": 291.104,
+        "logical_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "portable_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 4,
+          "dag_waves": 2,
+          "dag_max_concurrency": 2
+        }
+      },
+      "warm": {
+        "count": 5,
+        "wall_p50_ms": 242.71,
+        "wall_p95_ms": 265.283,
+        "logical_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "portable_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 4,
+          "dag_waves": 2,
+          "dag_max_concurrency": 2
+        }
+      },
+      "samples": {
+        "cold": [
+          {
+            "wall_ms": 45.28,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.968
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.243
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.808
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.949
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 6.94
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 9.038
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 9.576
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 6.599
+              }
+            ],
+            "wall_ms_parent": 268.366,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 196,
+              "create_events": 56,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 60
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 41.781,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.92
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 5.342
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.621
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.429
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 8.302
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 8.433
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 10.142
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 6.961
+              }
+            ],
+            "wall_ms_parent": 272.058,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 197,
+              "create_events": 57,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 60
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 56.191,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.736
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 4.343
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.132
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.715
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 12.056
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 15.409
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 16.951
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 9.036
+              }
+            ],
+            "wall_ms_parent": 292.585,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 199,
+              "create_events": 56,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 61
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 41.05,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.275
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 5.166
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.845
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.081
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 7.294
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 8.412
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 9.453
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 6.518
+              }
+            ],
+            "wall_ms_parent": 255.524,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 196,
+              "create_events": 56,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 60
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 43.321,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.103
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.13
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.465
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.439
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 9.571
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 8.453
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 9.117
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 7.153
+              }
+            ],
+            "wall_ms_parent": 285.182,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 188,
+              "create_events": 55,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 56
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ],
+        "warm": [
+          {
+            "wall_ms": 18.569,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 4.877
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 6.116
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.459
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.599
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.1
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.089
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.299
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.116
+              }
+            ],
+            "wall_ms_parent": 242.71,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 15.642,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.446
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.677
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.851
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.277
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.082
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.242
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.16
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.517
+              }
+            ],
+            "wall_ms_parent": 230.306,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 15,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 7
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 15.778,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.367
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.968
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.149
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.956
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.095
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.164
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.073
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.309
+              }
+            ],
+            "wall_ms_parent": 220.309,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 14.952,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.257
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.3
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.967
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.609
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.067
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.089
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.065
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.362
+              }
+            ],
+            "wall_ms_parent": 245.1,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 16.702,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.59
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 4.284
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.348
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.933
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.077
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.178
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.083
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.417
+              }
+            ],
+            "wall_ms_parent": 270.329,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ]
+      }
+    },
+    "ar-dag": {
+      "cold": {
+        "count": 5,
+        "wall_p50_ms": 287.355,
+        "wall_p95_ms": 304.336,
+        "logical_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "portable_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 4,
+          "dag_waves": 2,
+          "dag_max_concurrency": 2
+        }
+      },
+      "warm": {
+        "count": 5,
+        "wall_p50_ms": 234.243,
+        "wall_p95_ms": 261.451,
+        "logical_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "portable_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 4,
+          "dag_waves": 2,
+          "dag_max_concurrency": 2
+        }
+      },
+      "samples": {
+        "cold": [
+          {
+            "wall_ms": 42.2,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.953
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.078
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.801
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.856
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 7.665
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 8.691
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 8.739
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 6.406
+              }
+            ],
+            "wall_ms_parent": 270.306,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 194,
+              "create_events": 57,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 59
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 55.432,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 4.651
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.893
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.535
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.294
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 8.627
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 12.307
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 13.847
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 12.898
+              }
+            ],
+            "wall_ms_parent": 287.355,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 188,
+              "create_events": 54,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 57
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 51.732,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.663
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.508
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.702
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.824
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 9.557
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 14.905
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 16.401
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 7.763
+              }
+            ],
+            "wall_ms_parent": 262.676,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 165,
+              "create_events": 45,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 48
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 44.864,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.811
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 5.103
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.538
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.846
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 8.151
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 9.916
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 10.105
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 7.823
+              }
+            ],
+            "wall_ms_parent": 305.873,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 197,
+              "create_events": 55,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 60
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 50.154,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.354
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.713
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.322
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 4.468
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 9.379
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 11.086
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 15.016
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 9.477
+              }
+            ],
+            "wall_ms_parent": 298.186,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 197,
+              "create_events": 55,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 59
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ],
+        "warm": [
+          {
+            "wall_ms": 21.957,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.43
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.197
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.217
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.135
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.165
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.379
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.525
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.106
+              }
+            ],
+            "wall_ms_parent": 234.243,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 25.086,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 4.645
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 5.049
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.149
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.839
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.209
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.431
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.228
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.148
+              }
+            ],
+            "wall_ms_parent": 266.559,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 25.715,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 6.021
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 6.637
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.469
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 5.188
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.144
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.324
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.226
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.081
+              }
+            ],
+            "wall_ms_parent": 241.021,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 22.528,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 5.148
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 4.468
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.12
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.269
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.089
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.368
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.22
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.08
+              }
+            ],
+            "wall_ms_parent": 231.479,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 15,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 7
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 16.049,
+            "dag_nodes": 8,
+            "dag_edges": 4,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.742
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.209
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.081
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 1.988
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.169
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.34
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.333
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.076
+              }
+            ],
+            "wall_ms_parent": 216.897,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ]
+      }
+    },
+    "dag": {
+      "cold": {
+        "count": 5,
+        "wall_p50_ms": 283.243,
+        "wall_p95_ms": 290.913,
+        "logical_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "portable_bytes_written": {
+          "min": 938016,
+          "max": 938016
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 10,
+          "dag_waves": 2,
+          "dag_max_concurrency": 2
+        }
+      },
+      "warm": {
+        "count": 5,
+        "wall_p50_ms": 258.372,
+        "wall_p95_ms": 291.043,
+        "logical_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "portable_bytes_written": {
+          "min": 112,
+          "max": 112
+        },
+        "host_bytes_written": {
+          "min": 0,
+          "max": 0
+        },
+        "network_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "syscall_write_bytes": {
+          "min": 0,
+          "max": 0
+        },
+        "file_creates_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_deletes_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "file_renames_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "metadata_operations_syscall": {
+          "min": 0,
+          "max": 0
+        },
+        "fsync_syscall_count": {
+          "min": 0,
+          "max": 0
+        },
+        "subprocess_fork_syscalls": {
+          "min": 0,
+          "max": 0
+        },
+        "execve_count": {
+          "min": 0,
+          "max": 0
+        },
+        "process_count_observed": {
+          "min": 0,
+          "max": 0
+        },
+        "dag": {
+          "dag_nodes": 8,
+          "dag_edges": 10,
+          "dag_waves": 1,
+          "dag_max_concurrency": 2
+        }
+      },
+      "samples": {
+        "cold": [
+          {
+            "wall_ms": 51.65,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.651
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.678
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.847
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.67
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 10.972
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 10.141
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 10.132
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 9.69
+              }
+            ],
+            "wall_ms_parent": 260.632,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 194,
+              "create_events": 55,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 59
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 49.334,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.277
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.209
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.112
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.343
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 10.649
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 11.956
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 14.425
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 9.958
+              }
+            ],
+            "wall_ms_parent": 283.243,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 192,
+              "create_events": 55,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 58
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 48.574,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.252
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 4.194
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.57
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.766
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 10.906
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 9.621
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 10.405
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 8.12
+              }
+            ],
+            "wall_ms_parent": 259.61,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 196,
+              "create_events": 56,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 59
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 52.704,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.273
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.473
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 10.751
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.867
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 17.336
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 10.717
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 12.804
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 7.842
+              }
+            ],
+            "wall_ms_parent": 285.984,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 192,
+              "create_events": 54,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 58
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 57.894,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 2,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 938016,
+            "portable_bytes_written": 938016,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 57,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 5,
+            "metadata_operations": 66,
+            "state_mutations": 5,
+            "fsync_count": 9,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.185
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 6.715
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 6.05
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.757
+              },
+              {
+                "phase": "realize",
+                "package": "pkg1",
+                "duration_ms": 10.994
+              },
+              {
+                "phase": "realize",
+                "package": "pkg4",
+                "duration_ms": 11.024
+              },
+              {
+                "phase": "realize",
+                "package": "pkg3",
+                "duration_ms": 11.975
+              },
+              {
+                "phase": "realize",
+                "package": "pkg2",
+                "duration_ms": 9.451
+              }
+            ],
+            "wall_ms_parent": 292.145,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 190,
+              "create_events": 55,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 57
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ],
+        "warm": [
+          {
+            "wall_ms": 25.006,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 1,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 3.98
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.914
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 4.501
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.076
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.615
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.382
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.327
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.752
+              }
+            ],
+            "wall_ms_parent": 280.119,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 15,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 7
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 17.937,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 1,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.864
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.34
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.094
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.116
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 1.984
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.359
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.071
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.094
+              }
+            ],
+            "wall_ms_parent": 258.372,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 35.71,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 1,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.353
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.142
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.622
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.691
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.831
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.476
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.077
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.075
+              }
+            ],
+            "wall_ms_parent": 293.774,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 15,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 7
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 23.407,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 1,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 4.145
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.115
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 3.196
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 3.081
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 2.533
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.163
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.168
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.089
+              }
+            ],
+            "wall_ms_parent": 256.713,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 13,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 5
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          },
+          {
+            "wall_ms": 17.909,
+            "dag_nodes": 8,
+            "dag_edges": 10,
+            "dag_waves": 1,
+            "dag_max_concurrency": 2,
+            "logical_bytes_written": 112,
+            "portable_bytes_written": 112,
+            "host_bytes_written": 0,
+            "network_bytes": 0,
+            "network_requests": 0,
+            "file_creates": 1,
+            "file_overwrites": 0,
+            "file_deletes": 0,
+            "file_renames": 1,
+            "metadata_operations": 6,
+            "state_mutations": 1,
+            "fsync_count": 1,
+            "max_concurrency": 2,
+            "package_events": [
+              {
+                "phase": "acquire",
+                "package": "pkg1",
+                "duration_ms": 2.773
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg1",
+                "duration_ms": 0.103
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg2",
+                "duration_ms": 2.13
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg3",
+                "duration_ms": 3.159
+              },
+              {
+                "phase": "acquire",
+                "package": "pkg4",
+                "duration_ms": 2.166
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg3",
+                "duration_ms": 0.279
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg2",
+                "duration_ms": 0.828
+              },
+              {
+                "phase": "realize-skip",
+                "package": "pkg4",
+                "duration_ms": 0.072
+              }
+            ],
+            "wall_ms_parent": 219.157,
+            "portable_tree_bytes": 938016,
+            "host_tree_bytes": 0,
+            "inotify": {
+              "event_count": 16,
+              "create_events": 1,
+              "delete_events": 0,
+              "rename_events": 2,
+              "write_events": 8
+            },
+            "syscall": {
+              "available": false,
+              "limitation": "ptrace denied: Operation not permitted"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
