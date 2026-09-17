@@ -1,0 +1,57 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
+{
+  "schema": 1,
+  "kind": "projection-ablation-prototype-measured",
+  "rows": [
+    {
+      "variant": "eager",
+      "before": {
+        "files": 0,
+        "bytes": 0,
+        "paths": []
+      },
+      "after": {
+        "files": 6,
+        "bytes": 396,
+        "paths": [
+          "projections/git.json",
+          "projections/jq.json",
+          "projections/ripgrep.json",
+          "shims/git.cmd",
+          "shims/jq.cmd",
+          "shims/ripgrep.cmd"
+        ]
+      },
+      "resolved_targets": {
+        "git": "generations/git/2.46.0",
+        "jq": "generations/jq/1.7.1",
+        "ripgrep": "generations/ripgrep/14.1.0"
+      }
+    },
+    {
+      "variant": "stable-shim-resolver",
+      "before": {
+        "files": 0,
+        "bytes": 0,
+        "paths": []
+      },
+      "after": {
+        "files": 2,
+        "bytes": 118,
+        "paths": [
+          "active.json",
+          "shim.cmd"
+        ]
+      },
+      "resolved_targets": {
+        "git": "generations/git/2.46.0",
+        "jq": "generations/jq/1.7.1",
+        "ripgrep": "generations/ripgrep/14.1.0"
+      }
+    }
+  ],
+  "limitations": [
+    "The compatibility check covers only the synthetic launcher contract.",
+    "It does not exercise Scoop shims, Start Menu shortcuts, or User-mode registration."
+  ]
+}
