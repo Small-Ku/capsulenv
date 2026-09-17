@@ -33,6 +33,14 @@ python3 research/architecture-ablation/dag_experiment.py \
   --output research/architecture-ablation/dag-results.json
 python3 research/architecture-ablation/failure_campaign.py \
   > research/architecture-ablation/failure-results.json
+python3 research/architecture-ablation/placement_experiment.py \
+  > research/architecture-ablation/placement-results.json
+python3 research/architecture-ablation/state_reconstruction.py \
+  > research/architecture-ablation/state-results.json
+python3 research/architecture-ablation/legacy_audit.py \
+  > research/architecture-ablation/legacy-audit.json
+python3 research/architecture-ablation/startup_ablation.py \
+  > research/architecture-ablation/startup-results.json
 python3 research/architecture-ablation/test_prototypes.py
 ```
 
@@ -40,7 +48,11 @@ python3 research/architecture-ablation/test_prototypes.py
 shapes and records actual local scheduler/file-operation timings. It is a
 prototype measurement, not a Windows runtime result. `failure_campaign.py`
 executes twelve injected cases against the immutable-generation prototype and
-checks the old-or-new authority invariant.
+checks the old-or-new authority invariant. The placement and state prototypes
+measure portable-versus-host logical writes and derived-index reconstruction;
+`legacy_audit.py` records the source-backed compatibility boundary without
+claiming runtime compatibility. `startup_ablation.py` compares automatic
+repair on every shell start with validate-only startup.
 
 The current rehydrate graph has eight nodes and explicit dependencies in
 `src/40-Scoop.ps1`. Only `persist-relocation` and `project-cache-links` are
