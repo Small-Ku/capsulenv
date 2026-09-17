@@ -1,0 +1,118 @@
+{
+  "environment": {
+    "platform": "linux",
+    "python": "3.13.5"
+  },
+  "experiments": {
+    "crash_lock_semantics": {
+      "os_lock_reacquired_after_crash": true,
+      "recommendation": "OS lock/lease, not existence-only lockfile",
+      "sentinel_file_left_after_crash": true
+    },
+    "host_depot_retention": {
+      "ephemeral_redeploy_ms": 4.115015000024869,
+      "finding": "retention must be policy; retained optimizes repeat visit, ephemeral minimizes host residue",
+      "first_deploy_ms": 9.993560999987494,
+      "payload_bytes": 8388608,
+      "retained_found": true,
+      "retained_repeat_check_ms": 0.13497800000550342
+    },
+    "ownership_lookup_cost": {
+      "ledger_faster_p50": true,
+      "ledger_validate_ms": {
+        "p50": 0.1459145,
+        "p95": 0.30607109999999993
+      },
+      "proc_scan_ms": {
+        "p50": 1.005359,
+        "p95": 1.3809400499999998
+      }
+    },
+    "portable_state_concurrency": {
+      "correct_with_lock": true,
+      "expected": 2,
+      "lost_update_without_lock": true,
+      "with_os_lock_and_atomic_metadata": 2,
+      "without_lease_or_lock": 1
+    },
+    "process_ownership": {
+      "current_capsule_path_detected": [],
+      "current_false_negative_owned": true,
+      "foreign_pid": 829,
+      "ledger_detected": [828],
+      "ledger_exact": true,
+      "naive_host_false_positive_foreign": true,
+      "naive_host_path_detected": [828, 829],
+      "owned_pid": 828
+    },
+    "provider_resolution": {
+      "constrained_selected": {
+        "name": "firefox",
+        "path_rank": 5,
+        "provider": "host-scoop",
+        "trusted": true,
+        "version": 130
+      },
+      "constraint_avoids_wrong_host_version": true,
+      "newer_incompatible_scenario_selected": {
+        "name": "firefox",
+        "path_rank": 1,
+        "provider": "capsulenv-local",
+        "trusted": true,
+        "version": 130
+      },
+      "path_first_selected": {
+        "name": "firefox",
+        "path_rank": 0,
+        "provider": "path",
+        "trusted": false,
+        "version": 999
+      },
+      "path_first_unsafe": true
+    },
+    "session_service_health": {
+      "bad_service_actual_exit": 7,
+      "detached_routine_reported_success": true,
+      "health_checked_manager_detected_failure": true,
+      "healthy_service_ready_detected": true
+    },
+    "stale_pid_guard": {
+      "guard_rejects_stale": true,
+      "old_pid": 830,
+      "pid_only_would_accept": true,
+      "pid_plus_start_accept": false,
+      "replacement_pid": 831
+    },
+    "state_placement": {
+      "crash_before_sync_leaves_portable_stale": true,
+      "direct_portable_logical_write_bytes": 3276800,
+      "file_bytes": 8388608,
+      "host_mirror_mutation_bytes": 3276800,
+      "host_mirror_sync_portable_bytes": 8388608,
+      "mirror_final_equal_to_direct": true,
+      "two_stale_mirrors_last_writer_loses_change": true,
+      "write_ops": 800,
+      "write_size": 4096
+    },
+    "user_integration_target": {
+      "bridge_after_detach": true,
+      "bridge_before_detach": true,
+      "direct_after_detach": false,
+      "direct_before_detach": true,
+      "direct_persistent_target_dangles": true,
+      "host_bridge_survives_detach": true
+    }
+  },
+  "findings": {
+    "generic_detached_routine_not_service_manager": true,
+    "generic_state_mirror_rejected": true,
+    "host_depot_retention_is_policy_not_global_default": true,
+    "lockfile_existence_is_bad_crash_fallback": true,
+    "path_ownership_dominated": true,
+    "persistent_user_integration_needs_host_local_target": true,
+    "pid_identity_must_include_start_time_or_nonce": true,
+    "portable_mutable_state_needs_exclusive_lease_policy": true,
+    "provider_resolution_needs_trust_and_version_constraints": true,
+    "session_ledger_required": true
+  }
+}
