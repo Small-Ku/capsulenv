@@ -1,0 +1,357 @@
+{
+  "schema": 2,
+  "kind": "linux-real-process-generation-failure-campaign",
+  "rows": [
+    {
+      "case": "normal",
+      "stage": "acquire",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "after_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "normal",
+      "stage": "blob-write",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "after_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "normal",
+      "stage": "extract",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": [
+          "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de.partial"
+        ]
+      },
+      "after_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "normal",
+      "stage": "before-complete",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": [
+          "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de.partial"
+        ]
+      },
+      "after_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "normal",
+      "stage": "after-complete-before-activation",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": [
+          "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de.partial"
+        ]
+      },
+      "after_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": false,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "normal",
+      "stage": "after-publish-before-activation",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": true,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "after_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": true,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "normal",
+      "stage": "during-activation-replacement",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": true,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "after_cleanup": {
+        "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": true,
+        "active_file": {
+          "generation": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+          "previous": null
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "normal",
+      "stage": "after-activation",
+      "ready": true,
+      "returncode": -9,
+      "killed_by_sigkill": true,
+      "before_cleanup": {
+        "authority": "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": true,
+        "active_file": {
+          "generation": "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de",
+          "previous": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3"
+        },
+        "partial_generations": []
+      },
+      "after_cleanup": {
+        "authority": "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de",
+        "authority_is_old_or_new": true,
+        "authority_valid": true,
+        "old_valid": true,
+        "new_valid": true,
+        "active_file": {
+          "generation": "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de",
+          "previous": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3"
+        },
+        "partial_generations": []
+      },
+      "invariant_holds": true,
+      "stderr_tail": ""
+    },
+    {
+      "case": "remote-unavailable",
+      "returncode": 1,
+      "old_valid": true,
+      "authority_valid": true,
+      "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+      "invariant_holds": true,
+      "stderr_tail": "unc(*args)\n             ^^^^^^^^^^^\n  File \"/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+    },
+    {
+      "case": "corrupted-blob",
+      "returncode": 1,
+      "old_valid": true,
+      "authority_valid": true,
+      "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+      "invariant_holds": true,
+      "stderr_tail": "lation/generation_process_campaign.py\", line 301, in <module>\n    main()\n  File \"/workspace/scratch/623443b5ea29/capsulenv-baseline/research/architecture-ablation/generation_process_campaign.py\", line 273, in main\n    raise SystemExit(worker(args))\n                     ^^^^^^^^^^^^\n  File \"/workspace/scratch/623443b5ea29/capsulenv-baseline/research/architecture-ablation/generation_process_campaign.py\", line 137, in worker\n    raise ValueError(\"blob hash mismatch\")\nValueError: blob hash mismatch\n"
+    },
+    {
+      "case": "disk-full",
+      "returncode": 1,
+      "old_valid": true,
+      "authority_valid": true,
+      "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+      "invariant_holds": true,
+      "stderr_tail": " * (1024 * 1024)}, None)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/scratch/623443b5ea29/capsulenv-baseline/research/architecture-ablation/generation_process_campaign.py\", line 88, in publish_and_activate\n    write_all(partial / name, data)\n  File \"/workspace/scratch/623443b5ea29/capsulenv-baseline/research/architecture-ablation/generation_process_campaign.py\", line 39, in write_all\n    stream.write(data)\nOSError: [Errno 27] File too large\n"
+    },
+    {
+      "case": "disk-unavailable",
+      "returncode": 1,
+      "old_valid": true,
+      "authority_valid": true,
+      "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+      "invariant_holds": true,
+      "stderr_tail": "9/capsulenv-baseline/research/architecture-ablation/generation_process_campaign.py\", line 85, in publish_and_activate\n    partial.mkdir(parents=True, exist_ok=True)\n  File \"/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/pathlib.py\", line 1311, in mkdir\n    os.mkdir(self, mode)\nNotADirectoryError: [Errno 20] Not a directory: '/tmp/capsulenv-process-failure-wwbbul_z/not-a-directory/realizations/ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de.partial'\n"
+    },
+    {
+      "case": "concurrent-deploy",
+      "processes": 2,
+      "returncodes": [
+        1,
+        0
+      ],
+      "authority": "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de",
+      "authority_valid": true,
+      "old_valid": true,
+      "new_valid": true,
+      "invariant_holds": true
+    },
+    {
+      "case": "mutation-of-immutable-realization",
+      "active_file": {
+        "generation": "ae1b0c0d6bfa4dee8d4e1ed5621365470b15e62800d82f9a7bc30ba171ce07de",
+        "previous": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3"
+      },
+      "selected_fallback": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+      "old_valid": true,
+      "new_valid": false,
+      "invariant_holds": true
+    },
+    {
+      "case": "host-root-change",
+      "invariant_holds": true,
+      "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+      "old_valid": true
+    },
+    {
+      "case": "cache-index-deletion",
+      "invariant_holds": true,
+      "authority": "6f3b14b645ddc135e62a46c7c3559064af044efb1cda5f8763023c6d8d3bfbd3",
+      "old_valid": true
+    }
+  ],
+  "summary": {
+    "cases": 16,
+    "unsafe_cases": [],
+    "sigkill_cases": 8
+  },
+  "limitations": [
+    "Linux atomic replace and flock evidence; NTFS/junction/open-handle semantics remain deferred.",
+    "Concurrent workers use the same payload in this first process campaign; authority safety, not conflict resolution policy, is measured."
+  ]
+}
