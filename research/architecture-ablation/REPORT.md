@@ -1,3 +1,4 @@
+/root/.profile: line 11: /workspace/scratch/9406dad8be21/.cargo/env: No such file or directory
 # Architecture ablation report — first round
 
 ## Scope and provenance
@@ -31,6 +32,11 @@ The evidence is deliberately separated:
 | Total physical bytes written | not run | Requires storage telemetry |
 | Subprocess count | not run | Requires ETW or explicit collector |
 | Network bytes | not run | Requires ETW/proxy or instrumented transport |
+
+The Windows harness is now executable with separate warm/cold cases and
+portable/host logical deltas, but no Windows run has been performed in this
+environment. Physical SSD writes, ETW subprocess counts, and network bytes
+therefore remain unmeasured rather than zero.
 
 The configured current storage paths include `scoop`, `scoop-global`, `shims`,
 `package-persist`, and `cache\\scoop`; the wider configuration additionally
@@ -98,20 +104,49 @@ and mutation of an otherwise immutable realization.
 | Architecture | Unsafe/indeterminate cases in prototype | Main implication |
 |---|---:|---|
 | Current-like projection | 3 / 12 (`after-activation`, `concurrent-deploy`, `mutable-realization`) | Existing local rollback is not enough to establish one active generation authority. |
-| Immutable generation prototype | 0 / 12 | `Acquire -> Realize -> verify -> publish -> atomic activation -> GC` preserves old or new authority at every modeled crash point. |
+| Immutable generation prototype | 0 / 12 | Local prototype execution preserved old or new valid authority at every modeled case, including corrupted realization fallback and concurrent threads. |
 
-This is partly synthetic and partly source-informed. It is not a production
-failure verdict. The next Windows campaign must kill the process at explicit
-boundaries and validate both the active pointer and the complete realization
-against hashes.
+The 0/12 result is now a **prototype-measured** result from
+`failure_campaign.py`; it is still not a production failure verdict. Storage
+and remote failures were injected before the corresponding OS operation, and
+concurrency was thread-level. The Windows campaign must kill the real process
+at explicit boundaries and validate both the active pointer and the complete
+realization against hashes.
 
-The branch also contains a runnable local prototype: `blob_store.py` implements
+The branch also contains runnable local prototypes: `blob_store.py` implements
 `Has/Fetch/Put/Stat` for a local immutable store plus a transport-only rclone
 adapter, while `generation_prototype.py` implements `realize -> publish ->
 activate` with a `COMPLETE` marker and atomic active metadata replacement.
 `test_prototypes.py` passes the local round-trip and before/after activation
-crash checks. This is feasibility evidence only; it is not wired into
+crash checks, including all publish/activation boundaries, mutation fallback,
+and concurrent deploy. This is feasibility evidence only; it is not wired into
 production.
+
+## DAG prototype measurement
+
+`dag_experiment.py` executes a bounded workload with the current 8/11 graph,
+phase-level 4/3 graph, Acquire/Realize-only 2/1 graph, and sequential 1/0
+reference. Twenty repetitions with a controlled 2 ms per-node work delay
+produced:
+
+| Variant | Nodes / edges | Wall p50 / p95 (ms) | Max parallelism observed |
+|---|---:|---:|---:|
+| Current fine-grained | 8 / 11 | 21.192 / 26.883 | 2 |
+| Phase-level | 4 / 3 | 12.296 / 15.001 | 1 |
+| Acquire/Realize-only | 2 / 1 | 7.421 / 9.707 | 1 |
+| Sequential reference | 1 / 0 | 4.909 / 7.484 | 1 |
+
+This controlled prototype indicates orchestration overhead in the fine graph;
+it does not prove that the current package workload has no useful parallelism.
+The exact callback costs and PowerShell worker behavior still require Windows.
+
+## Package-projection prototype measurement
+
+The synthetic launcher contract resolves the same three package targets in both
+variants. Eager projection created 6 files / 396 bytes; a stable shim plus
+active-generation metadata created 2 files / 118 bytes. This is evidence that
+projection materialization is a plausible deletion target, not compatibility
+evidence for Scoop shims, Start Menu shortcuts, or User-mode registration.
 
 ## Architecture findings
 
@@ -177,3 +212,10 @@ production.
    dominated paths. No architecture recommendation is production-ready from
    this first round alone.
 
+## Campaign status
+
+This branch now contains a stronger research harness and prototype evidence,
+but the campaign remains **incomplete**. The blocking evidence is the Windows
+runtime run: real shell/deploy p50/p95, physical portable-SSD amplification,
+ETW subprocess/network counters, real PowerShell crash injection, and the
+compatibility matrix for package projections and legacy adapters.
