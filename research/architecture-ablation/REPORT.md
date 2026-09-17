@@ -105,6 +105,14 @@ failure verdict. The next Windows campaign must kill the process at explicit
 boundaries and validate both the active pointer and the complete realization
 against hashes.
 
+The branch also contains a runnable local prototype: `blob_store.py` implements
+`Has/Fetch/Put/Stat` for a local immutable store plus a transport-only rclone
+adapter, while `generation_prototype.py` implements `realize -> publish ->
+activate` with a `COMPLETE` marker and atomic active metadata replacement.
+`test_prototypes.py` passes the local round-trip and before/after activation
+crash checks. This is feasibility evidence only; it is not wired into
+production.
+
 ## Architecture findings
 
 ### Strong candidates for ablation / deletion evidence
