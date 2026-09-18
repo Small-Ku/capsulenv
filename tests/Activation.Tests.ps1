@@ -1,0 +1,137 @@
+Describe 'Capsulenv activation fast path and criticality' {
+    BeforeAll {
+        $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
+        Import-Module $script:Build.ModulePath -Force
+        $script:Module = @(Get-Module Capsulenv)[-1]
+    }
+
+    AfterAll {
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'resolves a generation once and degrades optional resources diagnostically' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-activation-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        $oldBootEpoch = $env:CAPSULENV_HOST_BOOT_EPOCH
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $env:CAPSULENV_HOST_BOOT_EPOCH = 'activation-test'
+            $source = Join-Path $temporaryRoot 'source/demo.exe'
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+            'demo' | Set-Content -LiteralPath $source -Encoding UTF8
+
+            $plan = & $script:Module {
+                param($CapsuleRoot, $Source)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $realization = Acquire-CapsulenvProgramRealization -Name demo -Version 1.0.0 -SourcePath $Source
+                $generation = Publish-CapsulenvGeneration -Realizations @($realization)
+                [void](Set-CapsulenvActiveGenerationAuthority -GenerationId $generation.GenerationId)
+                $demo = New-CapsulenvProgramRequirement -Name demo -ExactVersion 1.0.0
+                $browser = New-CapsulenvProgramRequirement -Name firefox
+                $resources = @(
+                    (New-CapsulenvActivationResource -Name demo -Criticality required -Kind program -Requirement $demo),
+                    (New-CapsulenvActivationResource -Name firefox -Criticality optional -Kind program -Requirement $browser)
+                )
+                $bindings = @(
+                    (New-CapsulenvActivationBinding -Name CAPSULENV_TEST -Value enabled -Kind environment),
+                    (New-CapsulenvActivationBinding -Name demo-root -Value $realization.RealizationRoot -Kind path)
+                )
+                Resolve-CapsulenvActivation -Resources $resources -Bindings $bindings
+            } $temporaryRoot $source
+
+            $plan.Succeeded | Should -BeTrue
+            $plan.ResolvedPrograms.Count | Should -Be 1
+            $plan.ResolvedPrograms[0].Name | Should -Be 'demo'
+            $plan.Environment.CAPSULENV_TEST | Should -Be 'enabled'
+            $plan.Path | Should -Match 'demo'
+            $plan.Diagnostics -join ' ' | Should -Match 'firefox'
+            { Invoke-CapsulenvActivation -Plan $plan } | Should -Not -Throw
+        } finally {
+            if ($null -eq $oldStateRoot) {
+                Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot
+            }
+            if ($null -eq $oldBootEpoch) {
+                Remove-Item Env:CAPSULENV_HOST_BOOT_EPOCH -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_BOOT_EPOCH = $oldBootEpoch
+            }
+        }
+    }
+
+    It 'fails closed for required interactive pwsh instead of using the control host' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-required-pwsh-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        $oldBootEpoch = $env:CAPSULENV_HOST_BOOT_EPOCH
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $env:CAPSULENV_HOST_BOOT_EPOCH = 'missing-pwsh-test'
+            $plan = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $pwsh = New-CapsulenvProgramRequirement -Name pwsh
+                $resource = New-CapsulenvActivationResource -Name pwsh -Criticality required -Kind program -Requirement $pwsh
+                Resolve-CapsulenvActivation -Resources @($resource)
+            } $temporaryRoot
+
+            $plan.Succeeded | Should -BeFalse
+            $plan.RequiredFailures -join ' ' | Should -Match 'pwsh'
+            { Invoke-CapsulenvActivation -Plan $plan } | Should -Throw
+        } finally {
+            if ($null -eq $oldStateRoot) {
+                Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot
+            }
+            if ($null -eq $oldBootEpoch) {
+                Remove-Item Env:CAPSULENV_HOST_BOOT_EPOCH -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_BOOT_EPOCH = $oldBootEpoch
+            }
+        }
+    }
+
+    It 'does not silently drop required binding or session-service resources' {
+        $plan = & $script:Module {
+            $binding = New-CapsulenvActivationResource -Name git -Criticality required -Kind binding -Value $null
+            $service = New-CapsulenvActivationResource -Name sing-box -Criticality required -Kind session-service -Value $null
+            Resolve-CapsulenvActivation -Resources @($binding, $service)
+        }
+
+        $plan.Succeeded | Should -BeFalse
+        ($plan.RequiredFailures -join ' ') | Should -Match 'Binding resource.*git'
+        ($plan.RequiredFailures -join ' ') | Should -Match 'SessionService resource.*sing-box'
+    }
+
+    It 'fails closed when resource, requirement, and selection identities disagree' {
+        Mock Get-CapsulenvActiveGeneration {
+            [pscustomobject]@{
+                Generation = [pscustomobject]@{
+                    GenerationId = 'identity-test'
+                    Selections = @([pscustomobject]@{
+                        Kind = 'host-program'
+                        Name = 'firefox'
+                        Provider = 'host-scoop'
+                        Version = '1.0.0'
+                        Provenance = 'scoop:user/firefox'
+                        Executable = '/does/not/exist'
+                        Trusted = $true
+                        OwnsLifecycle = $false
+                    })
+                }
+            }
+        } -ModuleName Capsulenv
+
+        $plan = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name pwsh
+            $resource = New-CapsulenvActivationResource -Name firefox -Criticality required -Kind program -Requirement $requirement
+            Resolve-CapsulenvActivation -Resources @($resource)
+        }
+
+        $plan.Succeeded | Should -BeFalse
+        ($plan.RequiredFailures -join ' ') | Should -Match 'identities disagree'
+    }
+}

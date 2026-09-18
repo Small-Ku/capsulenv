@@ -365,3 +365,23 @@ Capsulenv-owned immutable package, while `host-program` records a trusted
 host-Scoop executable, provenance, and non-owned lifecycle without copying it
 into the depot. Reachability follows `PinnedGenerationIds` stored in each
 generation, and host-program selections do not become GC roots.
+
+# Activation fast path and resource criticality
+
+Healthy activation reads the active generation once, resolves each selected
+Program once, constructs process bindings, and then establishes the session.
+Resources and bindings carry explicit required or optional criticality. A
+required missing or incompatible resource fails closed; an optional resource is
+skipped with a diagnostic.
+
+Activation does not rebuild projections, reconcile legacy Scoop trees, rewrite
+current or persist, repair UserIntegration, or invoke broad rehydrate. The
+control-plane PowerShell is never substituted for a missing required
+interactive pwsh. Deploy, activate, repair, and migrate remain separate
+operations.
+
+Every advertised activation resource is evaluated through the same criticality
+contract, including `program`, `binding`, and `session-service`; a required
+non-program resource cannot disappear because it is outside the program loop.
+Program activation also requires case-insensitive agreement between resource,
+requirement, and generation-selection names before constructing a candidate.
