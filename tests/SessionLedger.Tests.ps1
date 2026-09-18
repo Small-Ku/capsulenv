@@ -157,6 +157,30 @@ Describe 'Capsulenv session ledger and state leases' {
         }
     }
 
+    It 'records low-level OS leases and reports only the live exclusive authority' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-live-lease-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        $oldBootEpoch = $env:CAPSULENV_HOST_BOOT_EPOCH
+        $lease = $null
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $env:CAPSULENV_HOST_BOOT_EPOCH = 'live-lease-test'
+            $statePath = Join-Path $temporaryRoot 'portable-profile/state.json'
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $statePath) -Force)
+            '{}' | Set-Content -LiteralPath $statePath -Encoding UTF8
+            & $script:Module { param($CapsuleRoot) Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null } $temporaryRoot
+
+            $lease = Acquire-CapsulenvStateLease -StatePath $statePath -Policy exclusive
+            @(Get-CapsulenvLiveExclusiveStateLeases).Count | Should -Be 1
+            [void](Release-CapsulenvStateLease -Lease $lease)
+            @(Get-CapsulenvLiveExclusiveStateLeases).Count | Should -Be 0
+        } finally {
+            if ($null -ne $lease -and -not $lease.Released) { [void](Release-CapsulenvStateLease -Lease $lease) }
+            if ($null -eq $oldStateRoot) { Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot }
+            if ($null -eq $oldBootEpoch) { Remove-Item Env:CAPSULENV_HOST_BOOT_EPOCH -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_BOOT_EPOCH = $oldBootEpoch }
+        }
+    }
+
     It 'releases an OS lease when session bookkeeping fails' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-lease-failure-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT

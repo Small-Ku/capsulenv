@@ -175,10 +175,14 @@ function Complete-CapsulenvPortableBrowserBinding {
         [switch]$WaitForExit
     )
 
-    $hasProcess = $null -ne $Binding.PSObject.Properties['Process'] -and $null -ne $Binding.Process
+    $process = if ($null -ne $Binding.PSObject.Properties['Process']) { $Binding.Process } else { $null }
+    $hasProcess = $null -ne $process
     $hasLease = $null -ne $Binding.PSObject.Properties['Lease'] -and $null -ne $Binding.Lease
-    if ($WaitForExit -and $hasProcess) {
-        Wait-Process -Id ([int]$Binding.Process.Id) -ErrorAction SilentlyContinue
+    if ($WaitForExit) {
+        if (-not $hasProcess) {
+            throw 'Browser wait requires a lifecycle binding containing the browser Process; refusing to release the profile lease early.'
+        }
+        Wait-Process -Id ([int]$process.Id) -ErrorAction SilentlyContinue
     }
     if ($hasLease) {
         [void](Release-CapsulenvStateLease -Lease $Binding.Lease)
@@ -314,6 +318,7 @@ function Start-CapsulenvPortableBrowser {
         $process = Start-Process -FilePath $binding.Program.Executable -WorkingDirectory (Split-Path -Parent $binding.Program.Executable) -ArgumentList $launchArguments -PassThru
         $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $process.Id
         $record = Register-CapsulenvOwnedProcessRecord -SessionId $effectiveSessionId -ProcessId $process.Id -Role browser -ProcessStartIdentity $startIdentity -Provenance ([string]$binding.Program.Provenance) -HeldLeases @($binding.Lease.LeaseId)
+        $binding | Add-Member -NotePropertyName Process -NotePropertyValue $process
         $watcher = Register-CapsulenvBrowserLeaseWatcher -Process $process -Lease $binding.Lease -SessionId $effectiveSessionId
         return [pscustomobject][ordered]@{
             Succeeded = $true
@@ -335,6 +340,9 @@ function Wait-CapsulenvPortableBrowser {
     $binding = $Browser
     if ($Browser.PSObject.Properties.Match('Binding').Count -gt 0) {
         $binding = $Browser.Binding
+    }
+    if ($binding.PSObject.Properties.Match('Process').Count -eq 0 -and $Browser.PSObject.Properties.Match('Process').Count -gt 0) {
+        $binding | Add-Member -NotePropertyName Process -NotePropertyValue $Browser.Process
     }
     [void](Complete-CapsulenvPortableBrowserBinding -Binding $binding -WaitForExit)
     return $Browser}

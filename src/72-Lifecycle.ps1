@@ -144,6 +144,14 @@ function Invoke-CapsulenvEject {
         throw "Eject blocked because capsule-owned processes are still running: $summary. Close them or re-run eject --force."
     }
 
+    $liveLeases = @(Get-CapsulenvLiveExclusiveStateLeases)
+    if ($liveLeases.Count -gt 0) {
+        $summary = @($liveLeases | ForEach-Object {
+            "{0} ({1})" -f $_.StatePath, $_.LeaseId
+        }) -join ', '
+        throw "Eject blocked because live exclusive portable-state leases remain: $summary. Close the owning session/process and retry."
+    }
+
     $statePath = Write-CapsulenvEjectState -DirtyRepositories $dirtyRepositories -StoppedProcesses $stopped
 
     $scratch = Get-CapsulenvScratchPath

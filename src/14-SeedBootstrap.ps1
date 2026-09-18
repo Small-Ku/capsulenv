@@ -202,6 +202,23 @@ function Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement {
     )
 
     try {
+        if ([string]$Candidate.Kind -ne 'seed-acquisition' -or
+            [string]$Candidate.ExpectedHash -notmatch '^[A-Fa-f0-9]{64}$') {
+            throw 'Seed acquisition candidates must carry an immutable manifest identity.'
+        }
+        $manifestEntry = @(
+            Get-CapsulenvPortableSeedEntries |
+                Where-Object {
+                    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Candidate.Name) -and
+                    [string]$_.Version -eq [string]$Candidate.Version -and
+                    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.SourceReference, [string]$Candidate.SourceReference) -and
+                    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.ExpectedHash, [string]$Candidate.ExpectedHash) -and
+                    [string]$_.ExecutableRelativePath -eq [string]$Candidate.ExecutableRelativePath
+                }
+        ) | Select-Object -First 1
+        if ($null -eq $manifestEntry -or -not (Test-CapsulenvPortableSeedEntry -Entry $manifestEntry)) {
+            throw 'Seed acquisition candidate is not a currently verified immutable portable-seed manifest entry.'
+        }
         $source = Resolve-CapsulenvStatePathReference -Reference ([string]$Candidate.SourceReference) -CapsuleRoot (Get-CapsulenvContext).Root
         if (Test-Path -LiteralPath $source -PathType Container) {
             if ([string]::IsNullOrWhiteSpace([string]$Candidate.ExecutableRelativePath)) {

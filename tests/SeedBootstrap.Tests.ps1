@@ -177,6 +177,42 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.RootedThrows | Should -BeTrue
     }
 
+    It 'rejects a caller-supplied seed candidate that is not the verified manifest entry' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-candidate-boundary-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $source = Join-Path $capsuleRoot 'seed/pwsh.exe'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        'seed-pwsh' | Set-Content -LiteralPath $source -Encoding UTF8
+        $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        $result = & $script:Module {
+            param($CapsuleRoot, $Source, $Hash)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $entry = New-CapsulenvPortableSeedEntry -Name pwsh -Version 7.5.0 -SourcePath $Source -ExpectedHash $Hash
+            Set-CapsulenvPortableSeedManifest -Entries @($entry) | Out-Null
+            $candidate = [pscustomobject]@{
+                Kind = 'seed-acquisition'
+                Name = 'pwsh'
+                Version = '7.5.0'
+                Provider = 'seed'
+                SourceReference = $entry.SourceReference
+                ExpectedHash = ('0' * 64)
+                ExecutableRelativePath = $entry.ExecutableRelativePath
+                Capabilities = @()
+                Provenance = 'forged-caller-input'
+            }
+            $requirement = New-CapsulenvProgramRequirement -Name pwsh
+            $check = Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement $requirement -Candidate $candidate
+            $throws = $false
+            try {
+                Invoke-CapsulenvBootstrapAcquisition -Requirement $requirement -SeedCandidates @($candidate) -RequireBootstrapNetwork
+            } catch { $throws = $true }
+            [pscustomobject]@{ Compatible = $check.Compatible; BootstrapBlocked = $throws }
+        } $capsuleRoot $source $hash
+
+        $result.Compatible | Should -BeFalse
+        $result.BootstrapBlocked | Should -BeTrue
+    }
+
     It 'blocks provider acquisition when bootstrap networking is required and unavailable' {
         $requirement = New-CapsulenvProgramRequirement -Name sing-box
         {

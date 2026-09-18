@@ -386,6 +386,79 @@ function Add-CapsulenvSessionHeldLease {
     }
 }
 
+function Remove-CapsulenvSessionHeldLease {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SessionId,
+        [Parameter(Mandatory = $true)][string]$LeaseId
+    )
+
+    Invoke-CapsulenvSessionLedgerMutation {
+        param($ledger)
+        $session = @($ledger.Sessions | Where-Object { [string]$_.SessionId -eq $SessionId }) | Select-Object -First 1
+        if ($null -eq $session) {
+            return
+        }
+        $session.HeldLeases = @($session.HeldLeases | Where-Object { [string]$_.LeaseId -ne $LeaseId })
+        foreach ($record in @($session.ProcessRecords)) {
+            $record.HeldLeases = @($record.HeldLeases | Where-Object { [string]$_ -ne $LeaseId })
+        }
+        $session.UpdatedAtUtc = [DateTime]::UtcNow.ToString('o')
+    }
+}
+
+function Test-CapsulenvStateLeaseHandleLive {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$LeaseRecord)
+
+    if ([string]$LeaseRecord.Policy -ne 'exclusive' -or
+        [string]::IsNullOrWhiteSpace([string]$LeaseRecord.LockPath) -or
+        -not (Test-Path -LiteralPath ([string]$LeaseRecord.LockPath) -PathType Leaf)) {
+        return $false
+    }
+    $probe = $null
+    try {
+        $probe = [System.IO.File]::Open(
+            [string]$LeaseRecord.LockPath,
+            [System.IO.FileMode]::OpenOrCreate,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
+        $probe.Lock(0, 1)
+        $probe.Unlock(0, 1)
+        return $false
+    } catch {
+        return $true
+    } finally {
+        if ($null -ne $probe) {
+            $probe.Dispose()
+        }
+    }
+}
+
+function Get-CapsulenvLiveExclusiveStateLeases {
+    [CmdletBinding()]
+    param()
+
+    $live = New-Object System.Collections.Generic.List[object]
+    foreach ($session in @((Get-CapsulenvSessionLedger).Sessions)) {
+        foreach ($lease in @($session.HeldLeases | Where-Object { [string]$_.Policy -eq 'exclusive' })) {
+            if (Test-CapsulenvStateLeaseHandleLive -LeaseRecord $lease) {
+                $live.Add([pscustomobject][ordered]@{
+                    SessionId = [string]$session.SessionId
+                    SessionPID = [int]$session.PID
+                    LeaseId = [string]$lease.LeaseId
+                    StatePath = [string]$lease.StatePath
+                    LockPath = [string]$lease.LockPath
+                    Policy = [string]$lease.Policy
+                    AcquiredAtUtc = [string]$lease.AcquiredAtUtc
+                })
+            }
+        }
+    }
+    return @($live.ToArray())
+}
+
 function Acquire-CapsulenvStateLease {
     [CmdletBinding()]
     param(
@@ -396,6 +469,11 @@ function Acquire-CapsulenvStateLease {
         [string]$SessionId
     )
 
+    if ($Policy -ne 'unmanaged' -and [string]::IsNullOrWhiteSpace($SessionId)) {
+        # Every OS-backed lease must have a ledger owner. This keeps eject's
+        # diagnostic view complete even when callers use the low-level API.
+        $SessionId = (Initialize-CapsulenvSession -Role state-lease -Provenance 'capsulenv-state-lease').SessionId
+    }
     $leaseId = [Guid]::NewGuid().ToString('N')
     $lockPath = Get-CapsulenvStateLeasePath -StatePath $StatePath
     $handle = $null
@@ -423,6 +501,7 @@ function Acquire-CapsulenvStateLease {
         Acquired = ($Policy -eq 'unmanaged' -or $null -ne $handle)
         Released = $false
         AcquiredAtUtc = [DateTime]::UtcNow.ToString('o')
+        SessionId = $SessionId
     }
     if (-not [string]::IsNullOrWhiteSpace($SessionId)) {
         try {
@@ -458,7 +537,16 @@ function Release-CapsulenvStateLease {
         }
     }
     $Lease.Released = $true
+    if (-not [string]::IsNullOrWhiteSpace([string]$Lease.SessionId)) {
+        try {
+            Remove-CapsulenvSessionHeldLease -SessionId ([string]$Lease.SessionId) -LeaseId ([string]$Lease.LeaseId)
+        } catch {
+            # The OS handle has already been released. Ledger cleanup is
+            # diagnostic bookkeeping and must not turn a successful release
+            # into a failure.
+        }
+    }
     return $Lease
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Initialize-CapsulenvSession, Get-CapsulenvSessionLedger, Register-CapsulenvProcessRecord, Get-CapsulenvOwnedProcessRecords, Test-CapsulenvProcessRecordLive, Stop-CapsulenvOwnedProcessRecord, Get-CapsulenvProcessStartIdentity, Acquire-CapsulenvStateLease, Release-CapsulenvStateLease
+##MOD_EXEC## Export-ModuleMember -Function Initialize-CapsulenvSession, Get-CapsulenvSessionLedger, Register-CapsulenvProcessRecord, Get-CapsulenvOwnedProcessRecords, Test-CapsulenvProcessRecordLive, Stop-CapsulenvOwnedProcessRecord, Get-CapsulenvProcessStartIdentity, Acquire-CapsulenvStateLease, Release-CapsulenvStateLease, Get-CapsulenvLiveExclusiveStateLeases
