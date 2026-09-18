@@ -331,22 +331,66 @@ function Get-CapsulenvOwnedProcessRecords {
     return @($records.ToArray())
 }
 
+function Get-CapsulenvLedgerOwnedProcessRecord {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Ledger,
+        [Parameter(Mandatory = $true)]$RequestedRecord
+    )
+
+    $sessionId = [string]$RequestedRecord.SessionId
+    $processNonce = [string]$RequestedRecord.ProcessNonce
+    $pid = [int]$RequestedRecord.PID
+    $startIdentity = [string]$RequestedRecord.ProcessStartIdentity
+    if (
+        [string]::IsNullOrWhiteSpace($sessionId) -or
+        [string]::IsNullOrWhiteSpace($processNonce) -or
+        $pid -le 0 -or
+        [string]::IsNullOrWhiteSpace($startIdentity)
+    ) {
+        return $null
+    }
+
+    foreach ($session in @($Ledger.Sessions)) {
+        if ([string]$session.SessionId -ne $sessionId) {
+            continue
+        }
+        foreach ($record in @($session.ProcessRecords)) {
+            if (
+                [string]$record.Ownership -eq 'owned' -and
+                [string]$record.SessionId -eq $sessionId -and
+                [string]$record.ProcessNonce -eq $processNonce -and
+                [int]$record.PID -eq $pid -and
+                [string]$record.ProcessStartIdentity -eq $startIdentity
+            ) {
+                return $record
+            }
+        }
+    }
+    return $null
+}
+
 function Stop-CapsulenvOwnedProcessRecord {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$ProcessRecord)
 
-    if (-not (Test-CapsulenvProcessRecordLive -ProcessRecord $ProcessRecord)) {
-        return [pscustomobject][ordered]@{
-            Stopped = $false
-            PID = $ProcessRecord.PID
-            Reason = 'process is not an exact live owned record'
+    return Invoke-CapsulenvSessionLedgerMutation {
+        param($ledger)
+        $canonical = Get-CapsulenvLedgerOwnedProcessRecord -Ledger $ledger -RequestedRecord $ProcessRecord
+        if ($null -eq $canonical -or -not (Test-CapsulenvProcessRecordLive -ProcessRecord $canonical)) {
+            return [pscustomobject][ordered]@{
+                Stopped = $false
+                PID = $ProcessRecord.PID
+                Reason = 'process is not an exact live owned ledger record'
+            }
         }
-    }
-    Stop-Process -Id ([int]$ProcessRecord.PID) -Force -ErrorAction Stop
-    return [pscustomobject][ordered]@{
-        Stopped = $true
-        PID = $ProcessRecord.PID
-        Reason = 'exact owned process stopped'
+
+        Stop-Process -Id ([int]$canonical.PID) -Force -ErrorAction Stop
+        return [pscustomobject][ordered]@{
+            Stopped = $true
+            PID = $canonical.PID
+            Reason = 'exact owned ledger process stopped'
+        }
     }
 }
 
@@ -386,6 +430,85 @@ function Add-CapsulenvSessionHeldLease {
     }
 }
 
+function Remove-CapsulenvSessionHeldLease {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SessionId,
+        [Parameter(Mandatory = $true)][string]$LeaseId
+    )
+
+    Invoke-CapsulenvSessionLedgerMutation {
+        param($ledger)
+        $session = @($ledger.Sessions | Where-Object { [string]$_.SessionId -eq $SessionId }) | Select-Object -First 1
+        if ($null -eq $session) {
+            return $false
+        }
+        $before = @($session.HeldLeases)
+        $session.HeldLeases = @($before | Where-Object { [string]$_.LeaseId -ne $LeaseId })
+        if ($session.HeldLeases.Count -ne $before.Count) {
+            $session.UpdatedAtUtc = [DateTime]::UtcNow.ToString('o')
+            return $true
+        }
+        return $false
+    }
+}
+
+function Test-CapsulenvStateLeaseLockHeld {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$LockPath)
+
+    $probe = $null
+    try {
+        $probe = [System.IO.File]::Open(
+            $LockPath,
+            [System.IO.FileMode]::OpenOrCreate,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::ReadWrite
+        )
+        try {
+            $probe.Lock(0, 1)
+            $probe.Unlock(0, 1)
+            return $false
+        } catch {
+            return $true
+        }
+    } catch {
+        return $true
+    } finally {
+        if ($null -ne $probe) {
+            $probe.Dispose()
+        }
+    }
+}
+
+function Get-CapsulenvActiveExclusiveStateLeases {
+    [CmdletBinding()]
+    param()
+
+    $ledger = Get-CapsulenvSessionLedger
+    $active = New-Object System.Collections.Generic.List[object]
+    foreach ($session in @($ledger.Sessions)) {
+        foreach ($lease in @($session.HeldLeases)) {
+            if (
+                [string]$lease.Policy -eq 'exclusive' -and
+                -not [bool]$lease.Released -and
+                -not [string]::IsNullOrWhiteSpace([string]$lease.LockPath) -and
+                (Test-CapsulenvStateLeaseLockHeld -LockPath ([string]$lease.LockPath))
+            ) {
+                $active.Add([pscustomobject][ordered]@{
+                    SessionId = [string]$session.SessionId
+                    LeaseId = [string]$lease.LeaseId
+                    StatePath = [string]$lease.StatePath
+                    Policy = [string]$lease.Policy
+                    LockPath = [string]$lease.LockPath
+                    AcquiredAtUtc = [string]$lease.AcquiredAtUtc
+                })
+            }
+        }
+    }
+    return @($active.ToArray())
+}
+
 function Acquire-CapsulenvStateLease {
     [CmdletBinding()]
     param(
@@ -395,6 +518,10 @@ function Acquire-CapsulenvStateLease {
         [string]$Policy,
         [string]$SessionId
     )
+
+    if ($Policy -eq 'exclusive' -and [string]::IsNullOrWhiteSpace($SessionId)) {
+        throw 'Exclusive state leases require a session id so eject can verify live ownership.'
+    }
 
     $leaseId = [Guid]::NewGuid().ToString('N')
     $lockPath = Get-CapsulenvStateLeasePath -StatePath $StatePath
@@ -420,6 +547,7 @@ function Acquire-CapsulenvStateLease {
         Policy = $Policy
         LockPath = $lockPath
         Handle = $handle
+        SessionId = $SessionId
         Acquired = ($Policy -eq 'unmanaged' -or $null -ne $handle)
         Released = $false
         AcquiredAtUtc = [DateTime]::UtcNow.ToString('o')
@@ -431,6 +559,8 @@ function Acquire-CapsulenvStateLease {
                 StatePath = $lease.StatePath
                 Policy = $lease.Policy
                 LockPath = $lease.LockPath
+                SessionId = $SessionId
+                Released = $false
                 AcquiredAtUtc = $lease.AcquiredAtUtc
             })
         } catch {
@@ -448,17 +578,32 @@ function Release-CapsulenvStateLease {
     if ($Lease.Released) {
         return $Lease
     }
-    if ($null -ne $Lease.Handle) {
+
+    $handle = $Lease.Handle
+    $Lease.Handle = $null
+    if ($null -ne $handle) {
         try {
             if ($Lease.Policy -eq 'exclusive') {
-                $Lease.Handle.Unlock(0, 1)
+                $handle.Unlock(0, 1)
             }
         } finally {
-            $Lease.Handle.Dispose()
+            $handle.Dispose()
         }
     }
+
+    if (
+        [string]$Lease.Policy -eq 'exclusive' -and
+        -not [string]::IsNullOrWhiteSpace([string]$Lease.SessionId)
+    ) {
+        try {
+            [void](Remove-CapsulenvSessionHeldLease -SessionId ([string]$Lease.SessionId) -LeaseId ([string]$Lease.LeaseId))
+        } catch {
+            throw "OS state lease '$($Lease.LeaseId)' was released, but its session ledger record could not be removed. $($_.Exception.Message)"
+        }
+    }
+
     $Lease.Released = $true
     return $Lease
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Initialize-CapsulenvSession, Get-CapsulenvSessionLedger, Register-CapsulenvProcessRecord, Get-CapsulenvOwnedProcessRecords, Test-CapsulenvProcessRecordLive, Stop-CapsulenvOwnedProcessRecord, Get-CapsulenvProcessStartIdentity, Acquire-CapsulenvStateLease, Release-CapsulenvStateLease
+##MOD_EXEC## Export-ModuleMember -Function Initialize-CapsulenvSession, Get-CapsulenvSessionLedger, Register-CapsulenvProcessRecord, Get-CapsulenvOwnedProcessRecords, Test-CapsulenvProcessRecordLive, Stop-CapsulenvOwnedProcessRecord, Get-CapsulenvProcessStartIdentity, Acquire-CapsulenvStateLease, Release-CapsulenvStateLease, Get-CapsulenvActiveExclusiveStateLeases

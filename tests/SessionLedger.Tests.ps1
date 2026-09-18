@@ -271,4 +271,91 @@ Describe 'Capsulenv session ledger and state leases' {
             }
         }
     }
+    It 'requires a ledger nonce and exact identity before stopping an owned process' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-stop-authority-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        $oldBootEpoch = $env:CAPSULENV_HOST_BOOT_EPOCH
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $env:CAPSULENV_HOST_BOOT_EPOCH = 'stop-authority-test'
+            $session = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                Initialize-CapsulenvSession -Role test -Provenance test
+            } $temporaryRoot
+            $canonical = @($session.ProcessRecords)[0]
+            $forged = [pscustomobject]@{
+                SessionId = $canonical.SessionId
+                ProcessNonce = 'forged-process-nonce'
+                PID = $canonical.PID
+                Ownership = 'owned'
+                ProcessStartIdentity = $canonical.ProcessStartIdentity
+            }
+
+            Mock Stop-Process {} -ModuleName Capsulenv
+            $rejected = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $forged
+            $rejected.Stopped | Should -BeFalse
+            Should -Invoke Stop-Process -ModuleName Capsulenv -Times 0
+
+            $accepted = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $canonical
+            $accepted.Stopped | Should -BeTrue
+            Should -Invoke Stop-Process -ModuleName Capsulenv -Times 1
+        } finally {
+            if ($null -eq $oldStateRoot) {
+                Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot
+            }
+            if ($null -eq $oldBootEpoch) {
+                Remove-Item Env:CAPSULENV_HOST_BOOT_EPOCH -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_BOOT_EPOCH = $oldBootEpoch
+            }
+        }
+    }
+
+    It 'records exclusive leases in the session ledger and removes them on release' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-lease-ledger-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        $oldBootEpoch = $env:CAPSULENV_HOST_BOOT_EPOCH
+        $lease = $null
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $env:CAPSULENV_HOST_BOOT_EPOCH = 'lease-ledger-test'
+            $statePath = Join-Path $temporaryRoot 'portable-profile/state.json'
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $statePath) -Force)
+            '{}' | Set-Content -LiteralPath $statePath -Encoding UTF8
+            $session = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                Initialize-CapsulenvSession -Role test -Provenance test
+            } $temporaryRoot
+
+            { Acquire-CapsulenvStateLease -StatePath $statePath -Policy exclusive } | Should -Throw '*require a session id*'
+            $lease = Acquire-CapsulenvStateLease -StatePath $statePath -Policy exclusive -SessionId $session.SessionId
+            $ledger = Get-CapsulenvSessionLedger
+            @($ledger.Sessions[0].HeldLeases).Count | Should -Be 1
+            @((Get-CapsulenvActiveExclusiveStateLeases)).Count | Should -Be 1
+
+            [void](Release-CapsulenvStateLease -Lease $lease)
+            $ledgerAfter = Get-CapsulenvSessionLedger
+            @($ledgerAfter.Sessions[0].HeldLeases).Count | Should -Be 0
+            @((Get-CapsulenvActiveExclusiveStateLeases)).Count | Should -Be 0
+        } finally {
+            if ($null -ne $lease -and -not $lease.Released) {
+                [void](Release-CapsulenvStateLease -Lease $lease)
+            }
+            if ($null -eq $oldStateRoot) {
+                Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot
+            }
+            if ($null -eq $oldBootEpoch) {
+                Remove-Item Env:CAPSULENV_HOST_BOOT_EPOCH -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_BOOT_EPOCH = $oldBootEpoch
+            }
+        }
+    }
+
 }
