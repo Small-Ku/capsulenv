@@ -72,4 +72,35 @@ Describe 'Capsulenv program requirement and provider resolution' {
         $result.Compatible | Should -BeTrue
         $result.Reasons.Count | Should -Be 0
     }
+
+    It 'does not collapse prerelease or invalid versions into an exact match' {
+        $executable = Join-Path $TestDrive 'version.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+        $result = & $script:Module {
+            param($Executable)
+            $requirement = New-CapsulenvProgramRequirement -Name demo -ExactVersion 1.2.3
+            $prerelease = New-CapsulenvProgramCandidate -Name demo -Executable $Executable -Provider host-scoop -Version '1.2.3-beta'
+            $invalid = New-CapsulenvProgramCandidate -Name demo -Executable $Executable -Provider seed -Version 'not-a-version'
+            [pscustomobject]@{
+                Prerelease = Test-CapsulenvProgramCandidate -Requirement $requirement -Candidate $prerelease
+                Invalid = Test-CapsulenvProgramCandidate -Requirement $requirement -Candidate $invalid
+            }
+        } $executable
+
+        $result.Prerelease.Compatible | Should -BeFalse
+        $result.Prerelease.Reasons | Should -Contain 'version-not-exact'
+        $result.Invalid.Compatible | Should -BeFalse
+        $result.Invalid.Reasons | Should -Contain 'version-invalid'
+    }
+
+    It 'does not expose legacy portable capsule apps as host-local candidates' {
+        Mock Get-CapsulenvInstalledApp { $null } -ModuleName Capsulenv
+        $result = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name demo
+            Get-CapsulenvProgramCandidates -Requirement $requirement
+        }
+
+        @($result).Count | Should -Be 0
+        Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 2 -Exactly
+    }
 }

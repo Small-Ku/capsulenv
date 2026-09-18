@@ -277,6 +277,19 @@ The host placement foundation only resolves and materializes layout. Program
 resolution, immutable generations, activation, and integration ownership remain
 separate boundaries implemented by the downstream architecture issues.
 
+# Program resolution boundary
+
+Program requirements are portable desired-state records; resolved executable,
+provider, scope, version, provenance, and lifecycle ownership are host-local
+derived results. Legacy `capsule/<app>` package roots remain portable storage
+and are not relabeled as `capsulenv-local` until #12 publishes a validated host
+realization/generation source.
+
+Exact versions compare the normalized package-version identity, including
+prerelease/build suffixes. Range checks use the numeric base only when the
+version grammar is valid; version-policy candidates with invalid versions are
+rejected diagnostically rather than coerced to `0.0.0.0`.
+
 # Program requirements and provider resolution
 
 Program requirements are explicit records containing the requested name,
