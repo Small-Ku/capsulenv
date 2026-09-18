@@ -220,16 +220,25 @@ function Register-CapsulenvSessionServiceExitWatcher {
 
     $Process.EnableRaisingEvents = $true
     $key = [string]$Binding.SessionId
-    $subscription = Register-ObjectEvent -InputObject $Process -EventName Exited -MessageData $Binding -Action {
+    $eventData = [pscustomobject][ordered]@{
+        SessionId = [string]$Binding.SessionId
+        ProxyEnvironmentSnapshot = $Binding.ProxyEnvironmentSnapshot
+    }
+    $subscription = Register-ObjectEvent -InputObject $Process -EventName Exited -MessageData $eventData -Action {
         $payload = $event.MessageData
         try {
             if ($null -ne $payload.ProxyEnvironmentSnapshot) {
-                [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $payload.ProxyEnvironmentSnapshot)
+                foreach ($property in @($payload.ProxyEnvironmentSnapshot.PSObject.Properties)) {
+                    [Environment]::SetEnvironmentVariable($property.Name, $property.Value, 'Process')
+                }
             }
-            $script:CapsulenvSessionServiceBindings.Remove([string]$payload.SessionId)
+            if ($null -ne $script:CapsulenvSessionServiceBindings) {
+                [void]$script:CapsulenvSessionServiceBindings.Remove([string]$payload.SessionId)
+            }
         } finally {
-            Unregister-Event -SubscriptionId $event.SubscriptionId -ErrorAction SilentlyContinue
-            Remove-Job -Id $event.EventIdentifier -Force -ErrorAction SilentlyContinue
+            if ($null -ne $event.SubscriptionId) {
+                Unregister-Event -SubscriptionId $event.SubscriptionId -ErrorAction SilentlyContinue
+            }
         }
     }
     return [pscustomobject][ordered]@{ Key = $key; SubscriptionId = $subscription.Id }

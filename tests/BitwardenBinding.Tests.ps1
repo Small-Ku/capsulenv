@@ -69,12 +69,12 @@ Describe 'Capsulenv host Bitwarden attach-only integration' {
         try {
             {
                 & $script:Module {
-                    param($CapsuleRoot, $Executable)
+                    param($CapsuleRoot, $Executable, $ProcessId)
                     Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                     $requirement = New-CapsulenvProgramRequirement -Name bitwarden
                     $candidate = New-CapsulenvProgramCandidate -Name bitwarden -Executable $Executable -Provider host-scoop -Version 2026.1.0
-                    Invoke-CapsulenvBitwardenSessionIntegration -App bitwarden -Requirement $requirement -Candidates @($candidate) -SshAuthSock 'agent://unreachable' -AgentBinding ([pscustomobject]@{ Endpoint = 'agent://unreachable'; ProgramProvenance = 'host-scoop'; ProcessId = $PID }) -Criticality required
-                } $temporaryRoot $sleep.Source
+                    Invoke-CapsulenvBitwardenSessionIntegration -App bitwarden -Requirement $requirement -Candidates @($candidate) -SshAuthSock 'agent://unreachable' -AgentBinding ([pscustomobject]@{ Endpoint = 'agent://unreachable'; ProgramProvenance = 'host-scoop'; ProcessId = $ProcessId }) -Criticality required
+                } $temporaryRoot $sleep.Source $process.Id
             } | Should -Throw '*unreachable*'
         } finally {
             if ($null -ne (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) { Stop-Process -Id $process.Id -Force }

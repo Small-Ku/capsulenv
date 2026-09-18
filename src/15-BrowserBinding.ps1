@@ -175,10 +175,12 @@ function Complete-CapsulenvPortableBrowserBinding {
         [switch]$WaitForExit
     )
 
-    if ($WaitForExit -and $null -ne $Binding.Process) {
+    $hasProcess = $null -ne $Binding.PSObject.Properties['Process'] -and $null -ne $Binding.Process
+    $hasLease = $null -ne $Binding.PSObject.Properties['Lease'] -and $null -ne $Binding.Lease
+    if ($WaitForExit -and $hasProcess) {
         Wait-Process -Id ([int]$Binding.Process.Id) -ErrorAction SilentlyContinue
     }
-    if ($null -ne $Binding.Lease) {
+    if ($hasLease) {
         [void](Release-CapsulenvStateLease -Lease $Binding.Lease)
     }
     return $Binding
