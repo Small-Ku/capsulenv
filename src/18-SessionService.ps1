@@ -196,19 +196,6 @@ function Start-CapsulenvSessionService {
         $binding | Add-Member -NotePropertyName ExitWatcher -NotePropertyValue $watcher
         $script:CapsulenvSessionServiceBindings[[string]$effectiveSessionId] = $binding
         return $binding
-            Succeeded = $true
-            Attached = $false
-            Service = $Definition
-            Program = $resolved.Program
-            Process = $process
-            ProcessRecord = $record
-            Readiness = $readiness
-            Arguments = @($argumentList)
-            ConfigPath = $configPath
-            StateLease = $lease
-            SessionId = $effectiveSessionId
-            Diagnostics = @("SessionService '$($Definition.Name)' is ready and owned exactly.")
-        }
     } catch {
         if ($null -ne $record) {
             try { [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record) } catch {}
