@@ -88,6 +88,7 @@ function Assert-CapsulenvNoForeignBitwardenProcess {
             }
         }
     ) -join '; '
+    # Capsulenv will not reuse, stop, or patch it when the process is foreign.
     Write-CapsulenvMessage -Level Detail -Message "A foreign Bitwarden process is running; attach-only integration may reuse its SSH agent, but Capsulenv will not stop or patch it: $details"
     return $foreign
 }
