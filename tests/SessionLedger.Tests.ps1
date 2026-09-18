@@ -49,6 +49,16 @@ Describe 'Capsulenv session ledger and state leases' {
         }
     }
 
+    It 'does not let public session initialization promote an arbitrary PID to owned' {
+        {
+            Initialize-CapsulenvSession -ProcessId ($PID + 100000) -Ownership owned
+        } | Should -Throw
+
+        {
+            Initialize-CapsulenvSession -ProcessId ($PID + 100000)
+        } | Should -Throw
+    }
+
     It 'does not let the public registration API promote an arbitrary live PID to owned' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-owned-boundary-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT

@@ -162,6 +162,41 @@ function New-CapsulenvProcessRecord {
     }
 }
 
+function Initialize-CapsulenvOwnedSession {
+    [CmdletBinding()]
+    param(
+        [string]$Role = 'control-plane',
+        [int]$ProcessId = $PID,
+        [string]$Provenance = 'capsulenv'
+    )
+
+    if ($ProcessId -ne $PID) {
+        throw 'Owned session bootstrap is restricted to the current control-plane process.'
+    }
+    $sessionId = [Guid]::NewGuid().ToString('N')
+    $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $ProcessId
+    return Invoke-CapsulenvSessionLedgerMutation {
+        param($ledger)
+        $processRecord = New-CapsulenvProcessRecord -SessionId $sessionId -ProcessId $ProcessId -Role $Role -Ownership owned -Provenance $Provenance -ProcessStartIdentity $startIdentity
+        $session = [pscustomobject][ordered]@{
+            SessionId = $sessionId
+            HostKey = Get-CapsulenvHostKey
+            PID = $ProcessId
+            ProcessStartIdentity = $processRecord.ProcessStartIdentity
+            ProcessNonce = $processRecord.ProcessNonce
+            Role = $Role
+            Ownership = owned
+            Provenance = $Provenance
+            ProcessRecords = @($processRecord)
+            HeldLeases = @()
+            CreatedAtUtc = [DateTime]::UtcNow.ToString('o')
+            UpdatedAtUtc = [DateTime]::UtcNow.ToString('o')
+        }
+        $ledger.Sessions = @($ledger.Sessions) + @($session)
+        return $session
+    }
+}
+
 function Initialize-CapsulenvSession {
     [CmdletBinding()]
     param(
@@ -171,6 +206,18 @@ function Initialize-CapsulenvSession {
         [string]$Ownership = 'owned',
         [string]$Provenance = 'capsulenv'
     )
+
+    $ownershipWasExplicit = $PSBoundParameters.ContainsKey('Ownership')
+    $processWasExplicit = $PSBoundParameters.ContainsKey('ProcessId')
+    if (-not $ownershipWasExplicit) {
+        if ($processWasExplicit -and $ProcessId -ne $PID) {
+            throw 'A public session cannot create an owned record for an arbitrary PID.'
+        }
+        return Initialize-CapsulenvOwnedSession -Role $Role -ProcessId $PID -Provenance $Provenance
+    }
+    if ($Ownership -eq 'owned') {
+        throw 'Owned process records may only be created by the internal launch boundary.'
+    }
 
     $sessionId = [Guid]::NewGuid().ToString('N')
     $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $ProcessId
