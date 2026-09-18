@@ -132,6 +132,69 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
 
         { Wait-CapsulenvPortableBrowser -Browser $browser | Out-Null } | Should -Not -Throw
     }
+    It 'waits for the launched browser process before releasing its lease' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-wait-contract-' + [Guid]::NewGuid().ToString('N'))
+        $executable = Join-Path $temporaryRoot 'host/browser.sh'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
+        [System.IO.File]::WriteAllLines($executable, @('#!/bin/sh', 'sleep 1'))
+        & chmod +x $executable
+        $browser = & $script:Module {
+            param($CapsuleRoot, $Executable)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $requirement = New-CapsulenvProgramRequirement -Name firefox
+            $candidate = New-CapsulenvProgramCandidate -Name firefox -Executable $Executable -Provider host-scoop -Version 1.0.0
+            Start-CapsulenvPortableBrowser -App firefox -Requirement $requirement -Candidates @($candidate)
+        } $temporaryRoot $executable
+        $started = [DateTime]::UtcNow
+        Wait-CapsulenvPortableBrowser -Browser $browser | Out-Null
+        $elapsed = ([DateTime]::UtcNow - $started).TotalMilliseconds
+        $elapsed | Should -BeGreaterThan 500
+        $browser.Process.HasExited | Should -BeTrue
+    }
+
+    It 'rejects an existing nonempty profile without compatibility provenance' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-unknown-profile-' + [Guid]::NewGuid().ToString('N'))
+        $profile = & $script:Module {
+            param($CapsuleRoot)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $path = Get-CapsulenvPortableBrowserProfilePath -App firefox -Create
+            'legacy profile' | Set-Content -LiteralPath (Join-Path $path 'prefs.js') -Encoding UTF8
+            $path
+        } $temporaryRoot
+        $result = & $script:Module {
+            param($ProfilePath)
+            $program = [pscustomobject]@{ Version = '150.0.0' }
+            Test-CapsulenvBrowserProfileCompatibility -App firefox -ProfilePath $ProfilePath -Program $program
+        } $profile
+        $result.Compatible | Should -BeFalse
+        $result.Established | Should -BeFalse
+        $result.Diagnostic | Should -Match 'refusing to auto-bless'
+    }
+
+    It 'terminates a browser when post-spawn ownership registration fails' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-rollback-' + [Guid]::NewGuid().ToString('N'))
+        $executable = Join-Path $temporaryRoot 'host/browser.sh'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
+        [System.IO.File]::WriteAllLines($executable, @('#!/bin/sh', 'sleep 5'))
+        & chmod +x $executable
+        Mock Register-CapsulenvOwnedProcessRecord { throw 'synthetic registration failure' } -ModuleName Capsulenv
+        $throws = $false
+        try {
+            & $script:Module {
+                param($CapsuleRoot, $Executable)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $requirement = New-CapsulenvProgramRequirement -Name firefox
+                $candidate = New-CapsulenvProgramCandidate -Name firefox -Executable $Executable -Provider host-scoop -Version 1.0.0
+                Start-CapsulenvPortableBrowser -App firefox -Requirement $requirement -Candidates @($candidate) | Out-Null
+            } $temporaryRoot $executable
+        } catch {
+            $throws = $true
+        }
+        $throws | Should -BeTrue
+        $children = @(Get-Process | Where-Object { $_.Path -eq $executable })
+        $children | Should -BeNullOrEmpty
+    }
+
     It 'releases the exclusive profile lease when the exact browser process exits' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-exit-' + [Guid]::NewGuid().ToString('N'))
         $executable = Join-Path $temporaryRoot 'host/browser.sh'

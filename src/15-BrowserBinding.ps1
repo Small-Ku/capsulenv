@@ -66,18 +66,28 @@ function Test-CapsulenvBrowserProfileCompatibility {
     param(
         [Parameter(Mandatory = $true)][string]$App,
         [Parameter(Mandatory = $true)][string]$ProfilePath,
-        [Parameter(Mandatory = $true)]$Program
+        [Parameter(Mandatory = $true)]$Program,
+        [switch]$ProfileWasCreated
     )
 
     $expected = Get-CapsulenvBrowserCompatibilityEvidence -App $App -Program $Program
     $path = Get-CapsulenvBrowserCompatibilityPath -ProfilePath $ProfilePath
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        if (-not $ProfileWasCreated) {
+            return [pscustomobject][ordered]@{
+                Compatible = $false
+                Established = $false
+                Evidence = $expected
+                Path = $path
+                Diagnostic = 'portable profile has no compatibility provenance; refusing to auto-bless an existing profile'
+            }
+        }
         return [pscustomobject][ordered]@{
             Compatible = $true
             Established = $false
             Evidence = $expected
             Path = $path
-            Diagnostic = 'no Gecko compatibility evidence exists; establish it for this profile'
+            Diagnostic = 'new portable profile has no Gecko compatibility evidence; establish it before launch'
         }
     }
     try {
@@ -255,10 +265,14 @@ function Resolve-CapsulenvBrowserBinding {
             Lease = $null
         }
     }
-    $profile = Get-CapsulenvPortableBrowserProfilePath -App $App -Create
+    $profile = Get-CapsulenvPortableBrowserProfilePath -App $App
+    $profileWasCreated = -not (Test-Path -LiteralPath $profile -PathType Container)
+    if ($profileWasCreated) {
+        [void](New-Item -ItemType Directory -Path $profile -Force)
+    }
     $lease = Acquire-CapsulenvStateLease -StatePath $profile -Policy exclusive -SessionId $SessionId
     try {
-        $compatibility = Test-CapsulenvBrowserProfileCompatibility -App $App -ProfilePath $profile -Program $resolution.Selected
+        $compatibility = Test-CapsulenvBrowserProfileCompatibility -App $App -ProfilePath $profile -Program $resolution.Selected -ProfileWasCreated:$profileWasCreated
         if (-not $compatibility.Compatible) {
             throw "Browser '$App' cannot use the portable profile: $($compatibility.Diagnostic)"
         }
@@ -312,6 +326,7 @@ function Start-CapsulenvPortableBrowser {
     $launchArguments = @('-profile', $binding.ProfilePath) + @($Arguments | ForEach-Object { ConvertTo-CapsulenvProcessArgument -Argument $_ })
     try {
         $process = Start-Process -FilePath $binding.Program.Executable -WorkingDirectory (Split-Path -Parent $binding.Program.Executable) -ArgumentList $launchArguments -PassThru
+        $binding | Add-Member -NotePropertyName Process -NotePropertyValue $process -Force
         $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $process.Id
         $record = Register-CapsulenvOwnedProcessRecord -SessionId $effectiveSessionId -ProcessId $process.Id -Role browser -ProcessStartIdentity $startIdentity -Provenance ([string]$binding.Program.Provenance) -HeldLeases @($binding.Lease.LeaseId)
         $watcher = Register-CapsulenvBrowserLeaseWatcher -Process $process -Lease $binding.Lease -SessionId $effectiveSessionId
@@ -323,7 +338,14 @@ function Start-CapsulenvPortableBrowser {
             LeaseWatcher = $watcher
         }
     } catch {
-        [void](Release-CapsulenvStateLease -Lease $binding.Lease)
+        try {
+            if ($null -ne $process -and $null -ne $process.Id -and
+                (Get-CapsulenvProcessStartIdentity -ProcessId ([int]$process.Id) -ErrorAction SilentlyContinue) -eq $startIdentity) {
+                Stop-Process -Id ([int]$process.Id) -Force -ErrorAction SilentlyContinue
+            }
+        } finally {
+            [void](Release-CapsulenvStateLease -Lease $binding.Lease)
+        }
         throw
     }
 }
