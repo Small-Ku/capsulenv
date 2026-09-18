@@ -1,3 +1,29 @@
+if (-not (Get-Variable -Name CapsulenvSessionServiceBindings -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:CapsulenvSessionServiceBindings = @{}
+}
+
+function Get-CapsulenvSessionServiceProxyEnvironmentSnapshot {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][hashtable]$ProxyEnvironment)
+
+    $snapshot = [ordered]@{}
+    foreach ($property in @($ProxyEnvironment.GetEnumerator())) {
+        $name = [string]$property.Key
+        $snapshot[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    return [pscustomobject]$snapshot
+}
+
+function Restore-CapsulenvSessionServiceProxyEnvironment {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Snapshot)
+
+    foreach ($property in @($Snapshot.PSObject.Properties)) {
+        [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process')
+    }
+    return $Snapshot
+}
+
 function New-CapsulenvSessionServiceDefinition {
     [CmdletBinding()]
     param(
@@ -128,6 +154,8 @@ function Start-CapsulenvSessionService {
     if ($null -ne $configPath) {
         $lease = Acquire-CapsulenvStateLease -StatePath $configPath -Policy exclusive -SessionId $effectiveSessionId
     }
+    $proxySnapshot = $null
+    $proxyApplied = $false
     $process = $null
     $processStartIdentity = $null
     $record = $null
@@ -144,10 +172,30 @@ function Start-CapsulenvSessionService {
             if ([string]$Definition.Criticality -eq 'required') { throw $message }
             return [pscustomobject][ordered]@{ Succeeded = $false; Attached = $false; Service = $Definition; Program = $resolved.Program; ProcessRecord = $record; StateLease = $null; Diagnostics = @($message) }
         }
+        $proxySnapshot = Get-CapsulenvSessionServiceProxyEnvironmentSnapshot -ProxyEnvironment $Definition.ProxyEnvironment
         foreach ($property in @($Definition.ProxyEnvironment.GetEnumerator())) {
             [Environment]::SetEnvironmentVariable([string]$property.Key, [string]$property.Value, 'Process')
         }
-        return [pscustomobject][ordered]@{
+        $proxyApplied = $true
+        $binding = [pscustomobject][ordered]@{
+            Succeeded = $true
+            Attached = $false
+            Service = $Definition
+            Program = $resolved.Program
+            Process = $process
+            ProcessRecord = $record
+            Readiness = $readiness
+            Arguments = @($argumentList)
+            ConfigPath = $configPath
+            StateLease = $lease
+            SessionId = $effectiveSessionId
+            ProxyEnvironmentSnapshot = $proxySnapshot
+            Diagnostics = @("SessionService '$($Definition.Name)' is ready and owned exactly.")
+        }
+        $watcher = Register-CapsulenvSessionServiceExitWatcher -Process $process -Binding $binding
+        $binding | Add-Member -NotePropertyName ExitWatcher -NotePropertyValue $watcher
+        $script:CapsulenvSessionServiceBindings[[string]$effectiveSessionId] = $binding
+        return $binding
             Succeeded = $true
             Attached = $false
             Service = $Definition
@@ -170,11 +218,35 @@ function Start-CapsulenvSessionService {
                 if ([string]$currentIdentity -eq [string]$processStartIdentity) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
             } catch {}
         }
+        if ($proxyApplied -and $null -ne $proxySnapshot) { [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $proxySnapshot) }
         if ($null -ne $lease -and -not $lease.Released) { [void](Release-CapsulenvStateLease -Lease $lease) }
         throw
     }
 }
 
+function Register-CapsulenvSessionServiceExitWatcher {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)]$Binding
+    )
+
+    $Process.EnableRaisingEvents = $true
+    $key = [string]$Binding.SessionId
+    $subscription = Register-ObjectEvent -InputObject $Process -EventName Exited -MessageData $Binding -Action {
+        $payload = $event.MessageData
+        try {
+            if ($null -ne $payload.ProxyEnvironmentSnapshot) {
+                [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $payload.ProxyEnvironmentSnapshot)
+            }
+            $script:CapsulenvSessionServiceBindings.Remove([string]$payload.SessionId)
+        } finally {
+            Unregister-Event -SubscriptionId $event.SubscriptionId -ErrorAction SilentlyContinue
+            Remove-Job -Id $event.EventIdentifier -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return [pscustomobject][ordered]@{ Key = $key; SubscriptionId = $subscription.Id }
+}
 function New-CapsulenvAttachedSessionServiceBinding {
     [CmdletBinding()]
     param(
@@ -232,11 +304,31 @@ function Stop-CapsulenvSessionService {
             Reason = 'only an exact owned SessionService process may be stopped'
         }
     }
-    $result = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $Binding.ProcessRecord
-    if ($null -ne $Binding.PSObject.Properties['StateLease'] -and $null -ne $Binding.StateLease) {
-        [void](Release-CapsulenvStateLease -Lease $Binding.StateLease)
+    try {
+        $result = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $Binding.ProcessRecord
+        return $result
+    } finally {
+        if ($null -ne $Binding.PSObject.Properties['ProxyEnvironmentSnapshot'] -and $null -ne $Binding.ProxyEnvironmentSnapshot) {
+            [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $Binding.ProxyEnvironmentSnapshot)
+        }
+        if ($null -ne $Binding.PSObject.Properties['SessionId']) {
+            $script:CapsulenvSessionServiceBindings.Remove([string]$Binding.SessionId)
+        }
+        if ($null -ne $Binding.PSObject.Properties['StateLease'] -and $null -ne $Binding.StateLease -and -not $Binding.StateLease.Released) {
+            [void](Release-CapsulenvStateLease -Lease $Binding.StateLease)
+        }
     }
-    return $result
+}
+
+function Stop-CapsulenvActiveSessionServices {
+    [CmdletBinding()]
+    param()
+
+    $results = New-Object System.Collections.Generic.List[object]
+    foreach ($binding in @($script:CapsulenvSessionServiceBindings.Values)) {
+        try { $results.Add((Stop-CapsulenvSessionService -Binding $binding)) } catch { $results.Add([pscustomobject]@{ Stopped = $false; Error = $_.Exception.Message }) }
+    }
+    return @($results.ToArray())
 }
 
 function New-CapsulenvSingBoxServiceDefinition {
