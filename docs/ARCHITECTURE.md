@@ -276,3 +276,15 @@ cleanup, and a stale host-local record never overrides portable desired state.
 The host placement foundation only resolves and materializes layout. Program
 resolution, immutable generations, activation, and integration ownership remain
 separate boundaries implemented by the downstream architecture issues.
+
+Host identity uses layered evidence. When available, the Windows GDID value at
+`HKCU\\SOFTWARE\\Microsoft\\IdentityCRL\\ExtendedProperties\\LID` is a
+strong host-installation signal; the machine/user tuple remains a fallback and
+co-factor. Capsulenv stores only the derived host digest in placement keys, and
+never copies raw GDID into portable state. GDID presence does not infer home or
+enable persistent retention; explicit enrollment remains authoritative.
+
+Host JSON publication is fail-closed when replacement is unsupported, retaining
+the previous valid record. An invalid or unmarked ephemeral placement is stale
+material and is moved aside before rematerialization; an invalid persistent
+placement reports a diagnostic instead of being silently adopted.

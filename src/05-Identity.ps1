@@ -111,15 +111,7 @@ function Get-CapsulenvHostIntegrationKey {
     [CmdletBinding()]
     param()
 
-    $identityText = ('{0}|{1}\{2}' -f [Environment]::MachineName, [Environment]::UserDomainName, [Environment]::UserName).ToLowerInvariant()
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($identityText)
-        $hash = $sha256.ComputeHash($bytes)
-    } finally {
-        $sha256.Dispose()
-    }
-    return (($hash | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 24)
+    return Get-CapsulenvHostIdentityDigest
 }
 
 function Get-CapsulenvUserIntegrationStateRoot {
