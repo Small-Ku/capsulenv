@@ -894,11 +894,38 @@ function Invoke-CapsulenvChildShell {
         Sync-CapsulenvConfiguredDefaultBrowser
     }
 
-    $shellPath = Get-CapsulenvInteractivePowerShellExecutable
-    $launchPlan = Get-CapsulenvPowerShellChildLaunchPlan `
-        -ShellPath $shellPath `
-        -IntegrationMode $IntegrationMode `
-        -Command $Command
+    $binding = Resolve-CapsulenvPowerShellBinding -Criticality required
+    if (-not $binding.Succeeded) {
+        throw 'Required interactive pwsh binding could not be established.'
+    }
+    $launchArguments = [System.Collections.Generic.List[string]]::new()
+    foreach ($argument in @($binding.LaunchArguments)) {
+        if (-not ([string]::IsNullOrWhiteSpace($Command)) -and [string]$argument -eq '-NoExit') {
+            continue
+        }
+        $launchArguments.Add([string]$argument)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Command)) {
+        $commandIndex = $launchArguments.IndexOf('-Command')
+        if ($commandIndex -lt 0 -or $commandIndex -ge ($launchArguments.Count - 1)) {
+            throw 'PowerShell binding did not provide a command launch boundary.'
+        }
+        $launchArguments[$commandIndex + 1] = [string]$binding.BootstrapCommand + '; ' + $Command
+    }
+    $planParameters = @{
+        Executable = [string]$binding.Program.Executable
+        Arguments = $launchArguments.ToArray()
+        WorkingDirectory = (Split-Path -Parent ([string]$binding.Program.Executable))
+        Environment = ([System.Collections.IDictionary]$binding.Environment)
+        Metadata = [ordered]@{
+            IntegrationMode = $IntegrationMode
+            ProfilePath = $binding.ProfilePath
+            HistoryPath = $binding.HistoryPath
+            PSModulePath = $binding.PSModulePath
+            BootstrapPath = $binding.BootstrapPath
+        }
+    }
+    $launchPlan = New-CapsulenvProcessPlan @planParameters
     if ([string]::IsNullOrWhiteSpace($Command)) {
         Write-CapsulenvMessage -Level Success -Message "capsulenv active at $env:CAPSULENV_ROOT"
     }
