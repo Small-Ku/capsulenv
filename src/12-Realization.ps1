@@ -318,6 +318,7 @@ function Publish-CapsulenvGeneration {
     )
 
     $selections = New-Object System.Collections.Generic.List[object]
+    $selectionNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($realization in @($Realizations)) {
         $kind = if ($null -ne $realization.PSObject.Properties['Kind']) {
             [string]$realization.Kind
@@ -334,6 +335,13 @@ function Publish-CapsulenvGeneration {
                 throw "Cannot publish a generation with an incomplete realization: $root"
             }
             $manifest = Read-CapsulenvRealizationManifest -RealizationRoot $root
+            $selectionName = [string]$manifest.Name
+            if (
+                [string]::IsNullOrWhiteSpace($selectionName) -or
+                -not $selectionNames.Add($selectionName)
+            ) {
+                throw "Cannot publish a generation with duplicate or empty Program selection name: $selectionName"
+            }
             $selections.Add([pscustomobject][ordered]@{
                 Kind = 'realization'
                 Name = [string]$manifest.Name
@@ -350,9 +358,16 @@ function Publish-CapsulenvGeneration {
             } else {
                 $realization
             }
+            $selectionName = [string]$program.Name
+            if (
+                [string]::IsNullOrWhiteSpace($selectionName) -or
+                -not $selectionNames.Add($selectionName)
+            ) {
+                throw "Cannot publish a generation with duplicate or empty Program selection name: $selectionName"
+            }
             $selection = [pscustomobject][ordered]@{
                 Kind = 'host-program'
-                Name = [string]$program.Name
+                Name = $selectionName
                 Version = [string]$program.Version
                 Provider = [string]$program.Provider
                 Scope = [string]$program.Scope

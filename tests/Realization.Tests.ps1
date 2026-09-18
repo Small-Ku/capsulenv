@@ -318,4 +318,21 @@ Describe 'Capsulenv host-local realization and generation authority' {
             }
         }
     }
+    It 'rejects duplicate Program selections at the publication boundary' {
+        $executable = Join-Path $TestDrive 'duplicate-program.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+
+        & $script:Module {
+            param($Executable)
+            $first = New-CapsulenvProgramCandidate -Name pwsh -Executable $Executable -Provider host-scoop -Scope user -Version 7.6.5 -Provenance 'scoop:user/pwsh'
+            $second = New-CapsulenvProgramCandidate -Name pwsh -Executable $Executable -Provider host-scoop -Scope global -Version 7.6.5 -Provenance 'scoop:global/pwsh'
+            {
+                Publish-CapsulenvGeneration -Realizations @(
+                    [pscustomobject]@{ Kind = 'host-program'; Program = $first },
+                    [pscustomobject]@{ Kind = 'host-program'; Program = $second }
+                )
+            } | Should -Throw '*duplicate*Program selection name*'
+        } $executable
+    }
+
 }
