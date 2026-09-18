@@ -214,14 +214,6 @@ function Invoke-CapsulenvBitwardenSessionIntegration {
         $binding.Succeeded = $false
         return $binding
     }
-    $agent = Test-CapsulenvBitwardenSshAgentEndpoint -Endpoint $sock
-    if (-not $agent.Reachable) {
-        $message = "Bitwarden SSH-agent endpoint is unreachable: $($agent.Diagnostics)"
-        if ($Criticality -eq 'required') { throw $message }
-        $binding.Diagnostics = @($binding.Diagnostics) + @($message + ' Optional integration skipped.')
-        $binding.Succeeded = $false
-        return $binding
-    }
     $bindingContractValid = $false
     if ($null -ne $AgentBinding) {
         $bindingContractValid =
@@ -234,6 +226,14 @@ function Invoke-CapsulenvBitwardenSessionIntegration {
     }
     if (-not $bindingContractValid) {
         $message = 'Bitwarden SSH-agent integration requires an explicit endpoint binding to the attached process and resolved Program provenance.'
+        if ($Criticality -eq 'required') { throw $message }
+        $binding.Diagnostics = @($binding.Diagnostics) + @($message + ' Optional integration skipped.')
+        $binding.Succeeded = $false
+        return $binding
+    }
+    $agent = Test-CapsulenvBitwardenSshAgentEndpoint -Endpoint $sock
+    if (-not $agent.Reachable) {
+        $message = "Bitwarden SSH-agent endpoint is unreachable: $($agent.Diagnostics)"
         if ($Criticality -eq 'required') { throw $message }
         $binding.Diagnostics = @($binding.Diagnostics) + @($message + ' Optional integration skipped.')
         $binding.Succeeded = $false
