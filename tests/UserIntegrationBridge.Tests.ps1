@@ -34,6 +34,21 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
         $errorRecord.Exception.Message | Should -Match 'explicit host enrollment'
     }
 
+    It 'fails closed when persistent default-browser registration has no valid bridge' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-user-default-browser-no-bridge-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $message = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                try { Resolve-CapsulenvRequiredDefaultBrowserBridge -App firefox | Out-Null } catch { $_.Exception.Message }
+            } (Join-Path $temporaryRoot 'capsule')
+            $message | Should -Match 'valid host-local UserIntegration bridge'
+        } finally {
+            if ($null -eq $oldStateRoot) { Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot }
+        }
+    }
     It 'creates a host-local bridge without embedding removable executable or profile paths' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-user-persistent-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
