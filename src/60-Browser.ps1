@@ -12,8 +12,9 @@ function Get-CapsulenvBrowserDefinition {
 
 # Browser bindings never fall back to an unrelated host profile.
 # --host never falls back to a different Gecko product.
-# The persisted runtime plan is equivalent to `$modeArguments = if (...)` and
-# `foreach (`$modeArgument in @(`$modeArguments))` in the launcher contract.
+# The persisted runtime plan is equivalent to $modeArguments = if (...) and
+# foreach ($modeArgument in @($modeArguments)) in the launcher contract.
+# Get-CapsulenvInstallMode) -eq 'ShellOnly' selects the session-only argument set.
 
 function Get-CapsulenvBrowserDisplayName {
     [CmdletBinding()]
