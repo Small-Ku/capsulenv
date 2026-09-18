@@ -254,22 +254,26 @@ function Resolve-CapsulenvBrowserBinding {
         }
     }
     $profile = Get-CapsulenvPortableBrowserProfilePath -App $App -Create
-    $compatibility = Test-CapsulenvBrowserProfileCompatibility -App $App -ProfilePath $profile -Program $resolution.Selected
-    if (-not $compatibility.Compatible) {
-        throw "Browser '$App' cannot use the portable profile: $($compatibility.Diagnostic)"
-    }
-    if (-not $compatibility.Established) {
-        Set-CapsulenvBrowserProfileCompatibility -ProfilePath $profile -Evidence $compatibility.Evidence
-    }
     $lease = Acquire-CapsulenvStateLease -StatePath $profile -Policy exclusive -SessionId $SessionId
-    return [pscustomobject][ordered]@{
-        Succeeded = $true
-        Diagnostics = @('browser uses an explicit portable profile and exclusive state lease')
-        Program = $resolution.Selected
-        ProfilePath = $profile
-        Lease = $lease
+    try {
+        $compatibility = Test-CapsulenvBrowserProfileCompatibility -App $App -ProfilePath $profile -Program $resolution.Selected
+        if (-not $compatibility.Compatible) {
+            throw "Browser '$App' cannot use the portable profile: $($compatibility.Diagnostic)"
+        }
+        if (-not $compatibility.Established) {
+            Set-CapsulenvBrowserProfileCompatibility -ProfilePath $profile -Evidence $compatibility.Evidence
+        }
+        return [pscustomobject][ordered]@{
+            Succeeded = $true
+            Diagnostics = @('browser uses an explicit portable profile and exclusive state lease')
+            Program = $resolution.Selected
+            ProfilePath = $profile
+            Lease = $lease
+        }
+    } catch {
+        [void](Release-CapsulenvStateLease -Lease $lease)
+        throw
     }
-}
 
 function Start-CapsulenvPortableBrowser {
     [CmdletBinding()]
@@ -325,8 +329,11 @@ function Wait-CapsulenvPortableBrowser {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Browser)
 
-    [void](Complete-CapsulenvPortableBrowserBinding -Binding $Browser -WaitForExit)
-    return $Browser
-}
+    $binding = $Browser
+    if ($Browser.PSObject.Properties.Match('Binding').Count -gt 0) {
+        $binding = $Browser.Binding
+    }
+    [void](Complete-CapsulenvPortableBrowserBinding -Binding $binding -WaitForExit)
+    return $Browser}
 
 ##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvPortableBrowserProfilePath, Get-CapsulenvBrowserProgramRequirement, Get-CapsulenvBrowserCompatibilityEvidence, Test-CapsulenvBrowserProfileCompatibility, Resolve-CapsulenvBrowserBinding, Start-CapsulenvPortableBrowser, Wait-CapsulenvPortableBrowser, Stop-CapsulenvPortableBrowser, Close-CapsulenvPortableBrowser
