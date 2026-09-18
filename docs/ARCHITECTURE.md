@@ -288,3 +288,25 @@ Host JSON publication is fail-closed when replacement is unsupported, retaining
 the previous valid record. An invalid or unmarked ephemeral placement is stale
 material and is moved aside before rematerialization; an invalid persistent
 placement reports a diagnostic instead of being silently adopted.
+# Session ledger and portable-state leases
+
+Process ownership is recorded in a host-local session ledger. Each record
+contains the session ID, PID, process-start identity, a nonce, role, provider
+provenance, ownership classification, and held leases. Only an exact live
+record marked owned is actionable; attached and foreign processes are never
+stopped by Capsulenv. A reused PID with a different start identity is stale
+residue.
+
+The exported registration boundary can create only attached or foreign
+records. Owned records are created only by the internal launch-boundary path
+with an already captured process-start identity, so an arbitrary live PID
+cannot be promoted by a general registration call. Ledger mutations use an
+OS-held ledger lock before read-modify-write publication, and a failed lease
+bookkeeping step releases its already acquired OS handle before rethrowing.
+
+Portable mutable state declares one of three policies: exclusive, shared-read,
+or unmanaged. Exclusive and shared-read acquisitions hold an OS file handle
+for the lifetime of the lease, so a crash releases the lock when the process
+dies. The ledger is diagnostic metadata; lock-file existence is never used as
+authority. Gecko profiles and other single-writer state should use exclusive
+leases, while unmanaged state is intentionally outside Capsulenv ownership.
