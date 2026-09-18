@@ -10,6 +10,9 @@ function Get-CapsulenvBrowserDefinition {
     }
 }
 
+# Browser bindings never fall back to an unrelated host profile. The --host
+# compatibility switch never falls back to a different Gecko product.
+
 function Get-CapsulenvBrowserDisplayName {
     [CmdletBinding()]
     param(
@@ -235,67 +238,10 @@ function Start-CapsulenvBrowser {
         [switch]$UseHostExecutable
     )
 
-    [void](Set-CapsulenvSessionEnvironment)
-    $definition = Get-CapsulenvBrowserDefinition -App $App
-    $displayName = Get-CapsulenvBrowserDisplayName -App $App -Definition $definition
-    if ($definition.ContainsKey('Enabled') -and -not [bool]$definition.Enabled) {
-        throw "$displayName integration is disabled."
-    }
-
-    $executable = if ($UseHostExecutable) {
-        Get-CapsulenvHostBrowserExecutable -App $App
-    } else {
-        Get-CapsulenvBrowserExecutable -App $App
-    }
-    if (-not $executable) {
-        if ($UseHostExecutable) {
-            throw "$displayName host executable was not found. --host never falls back to a different Gecko product or the capsule Scoop executable."
-        }
-        throw "$displayName executable was not found in the installed Scoop app '$App'."
-    }
-
-    $effectiveArguments = @($Arguments)
-    $modeArguments = if (
-        ($UseHostExecutable -or (Get-CapsulenvInstallMode) -eq 'ShellOnly') -and
-        $definition.ContainsKey('ShellOnlyArguments')
-    ) {
-        @($definition.ShellOnlyArguments)
-    } else {
-        @()
-    }
-    if (-not (Test-CapsulenvBrowserProfileArgument -Arguments $effectiveArguments)) {
-        $profilePath = Get-CapsulenvBrowserProfilePath -App $App
-        if (-not $profilePath) {
-            throw "$displayName Scoop-persisted profile was not found. Capsulenv browser commands never fall back to an unrelated host profile."
-        }
-        $profileArgument = if (
-            $definition.ContainsKey('ProfileArgument') -and
-            -not [string]::IsNullOrWhiteSpace([string]$definition.ProfileArgument)
-        ) {
-            [string]$definition.ProfileArgument
-        } else {
-            '-profile'
-        }
-        $effectiveArguments = @($profileArgument, $profilePath) + $effectiveArguments
-    }
-    foreach ($modeArgument in @($modeArguments)) {
-        if ($effectiveArguments -notcontains [string]$modeArgument) {
-            $effectiveArguments = @([string]$modeArgument) + $effectiveArguments
-        }
-    }
-
     if ($UseHostExecutable) {
-        Write-CapsulenvMessage -Level Detail -Message "$displayName host executable will open the capsule-owned profile explicitly; Gecko profile compatibility remains the browser's responsibility."
+        Write-CapsulenvMessage -Level Detail -Message '--host is a migration compatibility option; browser Program resolution still selects the trusted host/local realization and the portable profile binding.'
     }
-    $launchArguments = @($effectiveArguments | ForEach-Object { ConvertTo-CapsulenvProcessArgument -Argument $_ })
-    $startParameters = @{
-        FilePath = $executable
-        WorkingDirectory = (Split-Path -Parent $executable)
-    }
-    if ($launchArguments.Count -gt 0) {
-        $startParameters['ArgumentList'] = $launchArguments
-    }
-    [void](Start-Process @startParameters)
+    return Start-CapsulenvPortableBrowser -App $App -Arguments $Arguments
 }
 
 function Invoke-CapsulenvBrowserCommand {
