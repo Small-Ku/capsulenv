@@ -172,7 +172,7 @@ Describe 'Capsulenv portable workflow contracts' {
         $lifecycleSource | Should -Not -Match 'Restore-CapsulenvUserEnvironment\s*(-|\()'
     }
 
-    It 'synchronizes configured persistent browser integration on ordinary User shell activation only once' {
+    It 'does not synchronize removable default-browser integration during shell activation' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
@@ -193,14 +193,14 @@ Describe 'Capsulenv portable workflow contracts' {
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
 
         & $script:Module { Invoke-CapsulenvChildShell -SkipUserIntegrationSync } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
 
         Mock Get-CapsulenvInstallMode { 'ShellOnly' } -ModuleName Capsulenv
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
     }
 
     It 'blocks eject while capsule-owned processes remain' {

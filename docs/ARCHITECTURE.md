@@ -254,3 +254,259 @@ Package ownership與 tool cache/project storage是不同 surface。`tool-data/`�
 - control bootstrap/runtime command boundary保持 WinPS 5.1-compatible
 
 這些 gate需要 synthetic rejecting/accepting fixtures；不能為了 refactor方便降級成沒有 ownership意義的 string smoke test。
+
+# Host identity and depot retention
+
+Capsulenv keeps capsule identity and desired state portable, while resolving a
+host-local depot from an independent host record. A host record is keyed by a
+stable machine/user integration key and never by the portable root or drive
+letter.
+
+Unknown hosts resolve to retention = ephemeral by default. The ephemeral
+placement is namespaced by host key, capsule identity, and the current boot
+epoch, so a valid realization can be reused during one host lifetime without
+making reboot/reimage persistence part of correctness. No shutdown cleanup hook
+is required.
+
+Persistent placement requires an explicit host enrollment/tag such as home. An
+enrolled host may provide a stable local depot root, including a custom local
+volume. Portable state is not copied into this depot merely to simplify
+cleanup, and a stale host-local record never overrides portable desired state.
+
+The host placement foundation only resolves and materializes layout. Program
+resolution, immutable generations, activation, and integration ownership remain
+separate boundaries implemented by the downstream architecture issues.
+
+Host identity uses layered evidence. When available, the Windows GDID value at
+`HKCU\\SOFTWARE\\Microsoft\\IdentityCRL\\ExtendedProperties\\LID` is a
+strong host-installation signal; the machine/user tuple remains a fallback and
+co-factor. Capsulenv stores only the derived host digest in placement keys, and
+never copies raw GDID into portable state. GDID presence does not infer home or
+enable persistent retention; explicit enrollment remains authoritative.
+
+Host JSON publication is fail-closed when replacement is unsupported, retaining
+the previous valid record. An invalid or unmarked ephemeral placement is stale
+material and is moved aside before rematerialization; an invalid persistent
+placement reports a diagnostic instead of being silently adopted.
+# Session ledger and portable-state leases
+
+Process ownership is recorded in a host-local session ledger. Each record
+contains the session ID, PID, process-start identity, a nonce, role, provider
+provenance, ownership classification, and held leases. Only an exact live
+record marked owned is actionable; attached and foreign processes are never
+stopped by Capsulenv. A reused PID with a different start identity is stale
+residue.
+
+The exported registration boundary can create only attached or foreign
+records. Owned records are created only by the internal launch-boundary path
+with an already captured process-start identity, so an arbitrary live PID
+cannot be promoted by a general registration call. Ledger mutations use an
+OS-held ledger lock before read-modify-write publication, and a failed lease
+bookkeeping step releases its already acquired OS handle before rethrowing.
+
+Portable mutable state declares one of three policies: exclusive, shared-read,
+or unmanaged. Exclusive and shared-read acquisitions hold an OS file handle
+for the lifetime of the lease, so a crash releases the lock when the process
+dies. The ledger is diagnostic metadata; lock-file existence is never used as
+authority. Gecko profiles and other single-writer state should use exclusive
+leases, while unmanaged state is intentionally outside Capsulenv ownership.
+
+# Program resolution boundary
+
+Program requirements are portable desired-state records; resolved executable,
+provider, scope, version, provenance, and lifecycle ownership are host-local
+derived results. Legacy `capsule/<app>` package roots remain portable storage
+and are not relabeled as `capsulenv-local` until #12 publishes a validated host
+realization/generation source.
+
+Exact versions compare the normalized package-version identity, including
+prerelease/build suffixes. Range checks use the numeric base only when the
+version grammar is valid; version-policy candidates with invalid versions are
+rejected diagnostically rather than coerced to `0.0.0.0`.
+
+# Program requirements and provider resolution
+
+Program requirements are explicit records containing the requested name,
+version policy, capabilities, executable selection metadata, and allowed
+providers. Resolution is read-only and deterministic: compatible trusted host
+Scoop is preferred, followed by a compatible Capsulenv-local realization, seed,
+and finally an explicitly supplied provider deployment. Arbitrary PATH entries
+are not package satisfaction.
+
+The selected record carries the concrete executable, root, provider, scope,
+version, provenance, trust, and lifecycle ownership. Reusing a trusted host
+Scoop app does not upgrade, rewrite, or take ownership of the host
+installation. The resolve command exposes this decision without performing
+repair or deployment.
+
+# Host-local realization and generation authority
+
+Realization follows Acquire, staging, verify, publish. Acquisition scratch is
+host-local and disposable; the published package realization contains a
+complete immutable manifest and payload, and an incomplete or hash-mismatched
+staging tree cannot be selected.
+
+Generations are small manifests of concrete realization roots and provenance.
+They do not copy the environment tree. The active-generation authority is
+switched only after every selected realization validates. Authority publication
+uses replacement semantics that preserve the previous valid pointer on failure.
+Garbage collection computes reachability from active and explicitly pinned
+generations, rather than introducing a second installed-state index or a
+mandatory persistent BlobStore/CAS.
+
+The realization manifest records the source kind and a verified payload hash.
+Validation recomputes that hash from the published payload, so a mutated file
+cannot remain eligible merely because `Complete` and `Immutable` still claim
+validity. Acquisition verifies the staged bytes after copy and rejects a
+source that changed between the initial read and staging.
+
+Generation selections have an explicit kind: `realization` points to a
+Capsulenv-owned immutable package, while `host-program` records a trusted
+host-Scoop executable, provenance, and non-owned lifecycle without copying it
+into the depot. Reachability follows `PinnedGenerationIds` stored in each
+generation, and host-program selections do not become GC roots.
+
+# Activation fast path and resource criticality
+
+Healthy activation reads the active generation once, resolves each selected
+Program once, constructs process bindings, and then establishes the session.
+Resources and bindings carry explicit required or optional criticality. A
+required missing or incompatible resource fails closed; an optional resource is
+skipped with a diagnostic.
+
+Activation does not rebuild projections, reconcile legacy Scoop trees, rewrite
+current or persist, repair UserIntegration, or invoke broad rehydrate. The
+control-plane PowerShell is never substituted for a missing required
+interactive pwsh. Deploy, activate, repair, and migrate remain separate
+operations.
+
+Every advertised activation resource is evaluated through the same criticality
+contract, including `program`, `binding`, and `session-service`; a required
+non-program resource cannot disappear because it is outside the program loop.
+Program activation also requires case-insensitive agreement between resource,
+requirement, and generation-selection names before constructing a candidate.
+
+# Browser Program and portable profile binding
+
+Browser binaries resolve through the ordinary trusted Program order, including
+compatible host Scoop reuse. Portable profile identity is derived from the
+canonical browser product name, not a provider-qualified selector, so moving
+between `firefox`, `scoop/firefox`, and a Capsulenv-local realization does not
+silently select a different profile. The Gecko profile is a separate portable
+State root and is guarded by an exclusive OS-held lease.
+
+Each profile records minimal Gecko compatibility evidence (product identity and
+Gecko major). A browser binding establishes that evidence when the profile is
+new and fails diagnostically before leasing or launching when an existing
+profile is unreadable or incompatible. It never mutates around a compatibility
+mismatch or falls back to an unrelated host profile.
+
+The browser process owns the lease lifecycle through an exact process-start
+record and an exit watcher. Normal process exit releases the lease; the
+browser-specific stop/close operations release it after exact owned-process
+handling. Persistent default-browser registration remains the later
+UserIntegration boundary, and historical `--host` handling is migration
+compatibility only.
+
+# PowerShell runtime and profile binding
+
+Interactive `pwsh` is a required Program when requested; the control-plane
+PowerShell is never a silent substitute. The binding keeps the profile and
+history under portable capsule State, while portable/private modules and
+large native modules can use separate portable and host-local module roots.
+Explicitly trusted host module paths may be added, but inherited `PSModulePath`
+entries are not trusted wholesale.
+
+Because PowerShell does not reinterpret arbitrary environment variables as
+`$PROFILE`, the binding publishes a capsule-local child bootstrap script. The
+launch contract uses `-NoProfile` and explicitly dot-sources the portable
+profile, then configures `Set-PSReadLineOption -HistorySavePath` to the
+portable history path. A real child `pwsh` must consume this contract before
+the shell is considered activated.
+
+Host-local module storage is created only after
+`Initialize-CapsulenvHostPlacement` publishes and validates the host placement
+marker. A read-only path query never materializes an unmarked placement
+subtree.
+
+# Bitwarden host attachment and SSH-agent integration
+
+Bitwarden account and desktop state remain host-local. A compatible Bitwarden
+Program is only availability evidence; attach succeeds only after Capsulenv
+finds a live process whose inspected executable matches that resolved Program.
+The resulting session-ledger record is `attached`/foreign with process-start
+identity and is never stoppable or patchable by Capsulenv.
+
+SSH-agent setup is a required/optional SessionIntegration, not a non-empty
+environment string. The endpoint is probed with the real `ssh-add -L` transport
+before required activation succeeds; an `agent://` placeholder or unreachable
+socket/pipe fails closed. Git/OpenSSH configuration remains a process-scoped
+overlay.
+
+Attach captures the prior `SSH_AUTH_SOCK` and Git overlay environment. Detach
+restores those values deterministically, while leaving the attached Bitwarden
+process running. Capsulenv does not take ownership of a trusted host app.
+
+# UserIntegration bridge and persistent handlers
+
+Persistent UserIntegration is an explicitly enrolled-host feature. Unknown or
+ephemeral hosts do not install a bridge. A persistent host records candidate
+capsule roots in host-local state; a handler accepts a root only after reading
+and validating that root's `.capsulenv/identity.json` against the requested
+CapsuleId. The registry is discovery metadata, not portable authority, and a
+missing or invalid capsule fails diagnostically instead of guessing a drive
+letter, browser profile, or unrelated root.
+
+The generated handler captures an absolute host PowerShell runner and invokes
+the capsule's launcher only after identity validation. It does not depend on
+an inherited `CAPSULENV_ROOT` or an unqualified `capsulenv` command. A
+`BrowserBinding` contributes only the canonical browser state identity;
+removable executable and profile paths are never embedded in persistent
+integration metadata.
+
+On Windows, default-browser and URL/file registrations target the host-local
+bridge, not a removable capsule executable or profile. Installation and
+removal use the existing reversible registration state; when the capsule is
+absent the bridge reports the condition without repairing or guessing the
+registration target.
+
+# SessionService and sing-box lifecycle
+
+`SessionService` is a first-class lifecycle boundary, not a detached Routine.
+Required services must declare an explicit readiness probe; a spawned PID is
+not readiness. Health is evaluated only after readiness, and any exception
+after spawn cleans up the exact process identified by its captured start
+identity. Owned service records are stopped only through the exact ownership
+ledger path.
+
+For sing-box, the portable config is a real binding: the config must exist,
+is acquired under an exclusive state lease, and is passed to the resolved
+host-local Program with `-c`. The lease is released on failed start and exact
+owned stop. The running service never treats a missing or stale config as an
+implicit default.
+
+Attached reuse requires service identity in addition to PID/start identity and
+health: the process executable, service role, and Program provenance must
+match. An attached/foreign sing-box process remains non-stoppable. Proxy
+environment is a narrow acquisition/session input, not a generic orchestration
+DAG.
+
+# Migration and legacy isolation
+
+Migration is an explicit command with bounded supported scopes, currently
+portable browser profile and PowerShell profile/history state. It copies
+selected legacy state into the new State model and never becomes startup
+repair.
+
+Healthy activation no longer invokes broad rehydrate, automatic projection
+repair, or OnRehydrate routines. Process lifecycle decisions use the session
+ledger's exact PID plus process-start identity. The legacy rehydrate command
+remains only as a temporary explicit compatibility adapter; its retained
+scenarios and deletion path are audited here rather than treated as a second
+authority.
+
+`install-user` no longer writes a persistent default-browser command that
+contains a removable capsule executable or profile. It leaves the host default
+browser unchanged and reports the host-local UserIntegration bridge as the
+explicit integration surface; the old registry state helpers remain only for
+bounded restore/migration compatibility.

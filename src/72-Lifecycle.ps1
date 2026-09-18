@@ -2,40 +2,19 @@ function Get-CapsulenvOwnedProcesses {
     [CmdletBinding()]
     param()
 
-    $context = Get-CapsulenvContext
-    $root = [System.IO.Path]::GetFullPath($context.Root).TrimEnd([char[]]'\/')
-    $prefix = $root + [System.IO.Path]::DirectorySeparatorChar
     $results = New-Object System.Collections.Generic.List[object]
-
-    foreach ($process in @(Get-Process -ErrorAction SilentlyContinue)) {
-        if ($process.Id -eq $PID) {
-            continue
-        }
+    foreach ($record in @(Get-CapsulenvOwnedProcessRecords)) {
+        $process = Get-Process -Id ([int]$record.PID) -ErrorAction SilentlyContinue
+        if ($null -eq $process) { continue }
         $path = $null
-        try {
-            $path = [string]$process.Path
-        } catch {
-            continue
-        }
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            continue
-        }
-        try {
-            $fullPath = [System.IO.Path]::GetFullPath($path)
-        } catch {
-            continue
-        }
-        if (
-            [System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath.TrimEnd([char[]]'\/'), $root) -or
-            $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
-        ) {
-            $results.Add([pscustomobject]@{
-                Id = $process.Id
-                Name = $process.ProcessName
-                Path = $fullPath
-                Process = $process
-            })
-        }
+        try { $path = [string]$process.Path } catch {}
+        $results.Add([pscustomobject]@{
+            Id = $process.Id
+            Name = $process.ProcessName
+            Path = $path
+            Process = $process
+            ProcessRecord = $record
+        })
     }
     return $results.ToArray()
 }
@@ -44,38 +23,22 @@ function Stop-CapsulenvOwnedProcesses {
     [CmdletBinding()]
     param([switch]$Force)
 
-    $records = @(Get-CapsulenvOwnedProcesses)
+    $records = @(Get-CapsulenvOwnedProcessRecords)
+    $results = New-Object System.Collections.Generic.List[object]
     foreach ($record in $records) {
-        try {
-            [void]$record.Process.CloseMainWindow()
-        } catch {
-            # Console/background processes may not expose a main window.
-        }
+        $result = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record
+        $results.Add([pscustomobject]@{
+            Id = $record.PID
+            Name = $record.Role
+            Path = $record.Provenance
+            Stopped = $result.Stopped
+            Reason = $result.Reason
+        })
     }
-
-    if ($records.Count -gt 0) {
-        Start-Sleep -Milliseconds 500
+    if ($Force) {
+        return $results.ToArray()
     }
-    $remaining = New-Object System.Collections.Generic.List[object]
-    foreach ($record in $records) {
-        if ($null -ne (Get-Process -Id $record.Id -ErrorAction SilentlyContinue)) {
-            $remaining.Add($record)
-        }
-    }
-
-    if ($remaining.Count -gt 0 -and $Force) {
-        foreach ($record in $remaining) {
-            Stop-Process -Id $record.Id -Force -ErrorAction SilentlyContinue
-        }
-        return @($records | Select-Object Id, Name, Path)
-    }
-    if ($remaining.Count -gt 0) {
-        $summary = @($remaining | ForEach-Object { '{0}({1})' -f $_.Name, $_.Id }) -join ', '
-        Write-CapsulenvMessage -Level Warning -Message "Capsule-owned processes are still running: $summary. Re-run eject --force to terminate them."
-    }
-    return @($records | Where-Object {
-        $null -eq (Get-Process -Id $_.Id -ErrorAction SilentlyContinue)
-    } | Select-Object Id, Name, Path)
+    return $results.ToArray()
 }
 
 function Get-CapsulenvWorkspaceRepositoryPaths {
@@ -165,6 +128,7 @@ function Invoke-CapsulenvEject {
 
     [void](Set-CapsulenvSessionEnvironment)
     [void](Invoke-CapsulenvRoutines -Trigger OnEject)
+    $serviceStops = @(Stop-CapsulenvActiveSessionServices)
     $dirtyRepositories = @(Get-CapsulenvDirtyRepositories)
     foreach ($repository in $dirtyRepositories) {
         Write-CapsulenvMessage -Level Warning -Message ("Dirty workspace repository: {0} ({1} change line(s))" -f $repository.Path, $repository.Changes)

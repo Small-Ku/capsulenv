@@ -130,6 +130,16 @@ eject
       removing the capsule from a host that will continue to be used.
 '@ | Write-Host
         }
+        'migration' {
+@'
+migration
+  capsulenv migrate [--browser <app>] [--powershell-profile <path>] [--powershell-history <path>] [--force]
+      Migrate only explicitly selected legacy browser or PowerShell state into
+      the portable State layout. This command never runs during activation;
+      absent sources are reported and unsupported legacy projection/tool data
+      is not copied automatically.
+'@ | Write-Host
+        }
         'seed' {
 @'
 seed commands
@@ -966,6 +976,7 @@ function Invoke-Capsulenv {
                 -SkipToolRepairs:($remaining -contains '--skip-tool-repairs') `
                 -StrictToolRepairs:($remaining -contains '--strict-tool-repairs')
         }
+        'migrate' { Invoke-CapsulenvMigrationCommand -Arguments $remaining }
         'rehydrate' {
             $allowed = @('--skip-hooks', '--skip-persist-repairs', '--skip-tool-repairs', '--strict-tool-repairs')
             $unknown = @($remaining | Where-Object { $_ -notin $allowed })
@@ -1040,6 +1051,7 @@ function Invoke-Capsulenv {
             if ($remaining.Count -gt 0) { throw 'Usage: drift' }
             Get-CapsulenvVersionDrift | Format-Table -AutoSize
         }
+        'resolve' { Invoke-CapsulenvResolveCommand -Arguments $remaining }
         'status' {
             if ($remaining.Count -gt 0) { throw 'Usage: status' }
             Get-CapsulenvStatus | Format-List

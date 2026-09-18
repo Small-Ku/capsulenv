@@ -321,23 +321,9 @@ function Initialize-CapsulenvIntegrations {
         [string]$IntegrationMode = (Get-CapsulenvInstallMode)
     )
 
-    [void](Initialize-CapsulenvScoopBootstrap)
-    Repair-CapsulenvPackageProjections
-    $configuration = Get-CapsulenvConfiguration
-    $didRehydrate = $false
-    if (
-        $configuration.Scoop.RehydrateOnRelocation -and
-        (Test-CapsulenvScoopRehydrationRequired)
-    ) {
-        Write-CapsulenvMessage -Level Info -Message 'Capsule root or host changed; rehydrating installed package projections...'
-        Invoke-CapsulenvScoopRehydrate -IntegrationMode $IntegrationMode
-        $didRehydrate = $true
-    }
-    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
-    if ($IntegrationMode -eq 'User' -and -not $didRehydrate) {
-        Sync-CapsulenvPackageStartMenuShortcuts
-    }
-    Initialize-CapsulenvBitwarden
+    [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
+    [void](Initialize-CapsulenvSession -Role activation -Provenance ('capsulenv:{0}' -f $IntegrationMode))
+    Write-CapsulenvMessage -Level Detail -Message 'Activation fast path established host placement and session identity; repair and legacy projection reconciliation require explicit commands.'
 }
 
 function Initialize-Capsulenv {
@@ -351,17 +337,17 @@ function Initialize-Capsulenv {
 
     [void](Get-CapsulenvConfiguration -Refresh)
     [void](Set-CapsulenvSessionEnvironment)
-    [void](Initialize-CapsulenvScoopBootstrap)
-    Invoke-CapsulenvScoopRehydrate `
-        -SkipHooks:$SkipHooks `
-        -SkipPersistRepairs:$SkipPersistRepairs `
-        -SkipToolRepairs:$SkipToolRepairs `
-        -StrictToolRepairs:$StrictToolRepairs
-    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
-    Initialize-CapsulenvBitwarden
+    [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
+    $session = Initialize-CapsulenvSession -Role activation -Provenance 'capsulenv:init'
 
     $context = Get-CapsulenvContext
-    Write-CapsulenvMessage -Level Success -Message "capsulenv initialized at $($context.Root)"
+    Write-CapsulenvMessage -Level Success -Message "capsulenv activation initialized at $($context.Root); use explicit deploy, repair, or migrate commands for mutations."
+    return [pscustomobject][ordered]@{
+        Context = $context
+        SessionId = $session.SessionId
+        RepairPerformed = $false
+        LegacyRehydratePerformed = $false
+    }
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Initialize-Capsulenv, Invoke-CapsulenvDoctor

@@ -810,7 +810,7 @@ function Install-CapsulenvUserEnvironment {
     if ($rehydrationRequired) {
         Invoke-CapsulenvScoopRehydrate -IntegrationMode User
     }
-    Sync-CapsulenvConfiguredDefaultBrowser
+    Write-CapsulenvMessage -Level Detail -Message 'Persistent default-browser registration is not installed from a removable capsule path. Use the host-local UserIntegration bridge or the host default browser.'
     Write-CapsulenvMessage -Level Success -Message $(if ($alreadyUser) { "User environment synchronized. Backup: $backupPath" } else { "User environment enabled. Backup: $backupPath" })
 }
 
@@ -886,14 +886,6 @@ function Invoke-CapsulenvChildShell {
 
     [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
     Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode
-    if (-not $SkipUserIntegrationSync -and $IntegrationMode -eq 'User') {
-        # A normal `capsulenv.cmd` activation must observe persistent User
-        # integration config changes too. Previously DefaultBrowser was parsed
-        # and validated here but only synchronized by install-user/user-shell,
-        # which made changing it on an already-integrated host look like a no-op.
-        Sync-CapsulenvConfiguredDefaultBrowser
-    }
-
     $shellPath = Get-CapsulenvInteractivePowerShellExecutable
     $launchPlan = Get-CapsulenvPowerShellChildLaunchPlan `
         -ShellPath $shellPath `
