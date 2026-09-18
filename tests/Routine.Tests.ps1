@@ -78,7 +78,7 @@ Describe 'Capsulenv lifecycle routine contracts' {
         Should -Invoke Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
     }
 
-    It 'runs the rehydrate lifecycle trigger after projection reconciliation' {
+    It 'does not replay lifecycle routines during projection reconciliation' {
         Mock Get-CapsulenvScoopRehydratePlan {
             [pscustomobject]@{ Context=@{}; Plan=[pscustomobject]@{} }
         } -ModuleName Capsulenv
@@ -90,6 +90,6 @@ Describe 'Capsulenv lifecycle routine contracts' {
 
         & $script:Module { Invoke-CapsulenvScoopRehydrate } | Out-Null
 
-        Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnRehydrate' }
+        Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 0 -Exactly
     }
 }
