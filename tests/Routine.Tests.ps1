@@ -95,7 +95,7 @@ Describe 'Capsulenv lifecycle routine contracts' {
         $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_PROFILE'] | Should -Be '/capsule/profile.ps1'
         $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_HISTORY'] | Should -Be '/capsule/history.txt'
         $script:CapturedChildPlan.Environment['PSModulePath'] | Should -Be '/capsule/modules:/host/modules'
-        @($script:CapturedChildPlan.Arguments) | Should -Contain 'Write-Output ok'
+        $script:CapturedChildPlan.Arguments[-1] | Should -Match 'Write-Output ok'
     }
 
     It 'runs the rehydrate lifecycle trigger after projection reconciliation' {
