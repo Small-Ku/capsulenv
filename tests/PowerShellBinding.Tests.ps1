@@ -33,6 +33,25 @@ Describe 'Capsulenv host-local PowerShell binding' {
         $binding.PSModulePath | Should -Match '/trusted/modules'
     }
 
+    It 'resolves an active capsulenv-local pwsh realization through the normal candidate path' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-pwsh-local-resolution-' + [Guid]::NewGuid().ToString('N'))
+        $pwsh = Join-Path $PSHOME 'pwsh'
+        if (-not (Test-Path -LiteralPath $pwsh -PathType Leaf)) { $pwsh = Join-Path $PSHOME 'pwsh.exe' }
+        $result = & $script:Module {
+            param($CapsuleRoot, $Executable)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $manifest = Acquire-CapsulenvProgramRealization -Name pwsh -Version 7.6.4 -SourcePath $Executable -Provider capsulenv-local -Provenance 'capsulenv-local/pwsh'
+            $generation = Publish-CapsulenvGeneration -Realizations @($manifest)
+            Set-CapsulenvActiveGenerationAuthority -GenerationId $generation.GenerationId | Out-Null
+            $requirement = (Get-CapsulenvInteractivePowerShellRequirement -MinimumVersion 7.0.0).Requirement
+            $candidate = @(Get-CapsulenvProgramCandidates -Requirement $requirement | Where-Object Provider -eq 'capsulenv-local')
+            [pscustomobject]@{ Count = $candidate.Count; Provider = $candidate[0].Provider; Executable = $candidate[0].Executable }
+        } $temporaryRoot $pwsh
+
+        $result.Count | Should -Be 1
+        $result.Provider | Should -Be 'capsulenv-local'
+        Test-Path -LiteralPath $result.Executable -PathType Leaf | Should -BeTrue
+    }
     It 'fails closed for required pwsh and does not return a control-plane substitute' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-pwsh-missing-' + [Guid]::NewGuid().ToString('N'))
         $bindingError = $null
