@@ -1,3 +1,65 @@
+$script:CapsulenvUnavailableBootEpoch = $null
+
+function Get-CapsulenvHostIdentityEvidence {
+    [CmdletBinding()]
+    param()
+
+    $machineUser = ('{0}|{1}\{2}' -f [Environment]::MachineName, [Environment]::UserDomainName, [Environment]::UserName).ToLowerInvariant()
+    $gdid = $null
+    if (Test-CapsulenvWindows) {
+        try {
+            $properties = Get-ItemProperty `
+                -LiteralPath 'Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\IdentityCRL\ExtendedProperties' `
+                -Name LID `
+                -ErrorAction Stop
+            try {
+                $gdid = [UInt64]::Parse(
+                    [string]$properties.LID,
+                    [Globalization.NumberStyles]::Integer,
+                    [Globalization.CultureInfo]::InvariantCulture
+                ).ToString([Globalization.CultureInfo]::InvariantCulture)
+            } catch {
+                $gdid = $null
+            }
+        } catch {
+            $gdid = $null
+        }
+    }
+
+    return [pscustomobject][ordered]@{
+        MachineUser = [pscustomobject][ordered]@{
+            Available = $true
+            Strength = 'fallback'
+            Value = $machineUser
+        }
+        WindowsGdid = [pscustomobject][ordered]@{
+            Available = (-not [string]::IsNullOrWhiteSpace([string]$gdid))
+            Strength = 'strong'
+            Value = $gdid
+            Source = 'HKCU\\SOFTWARE\\Microsoft\\IdentityCRL\\ExtendedProperties\\LID'
+        }
+    }
+}
+
+function Get-CapsulenvHostIdentityDigest {
+    [CmdletBinding()]
+    param()
+
+    # The machine/user tuple is the continuity key. GDID is optional strong
+    # evidence and must never change the host-record namespace when a registry
+    # read is temporarily unavailable.
+    $evidence = Get-CapsulenvHostIdentityEvidence
+    $canonical = "capsulenv-host-identity-v1`n" + [string]$evidence.MachineUser.Value
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($canonical)
+        $hash = $sha256.ComputeHash($bytes)
+    } finally {
+        $sha256.Dispose()
+    }
+    return (($hash | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 24)
+}
+
 function Get-CapsulenvHostKey {
     [CmdletBinding()]
     param()
@@ -65,6 +127,10 @@ function Get-CapsulenvHostBootEpoch {
         return $epoch
     }
 
+    if ($null -ne $script:CapsulenvUnavailableBootEpoch) {
+        return $script:CapsulenvUnavailableBootEpoch
+    }
+
     if (-not (Test-CapsulenvWindows)) {
         $bootIdPath = '/proc/sys/kernel/random/boot_id'
         if (Test-Path -LiteralPath $bootIdPath -PathType Leaf) {
@@ -78,9 +144,14 @@ function Get-CapsulenvHostBootEpoch {
     } else {
         try {
             $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
-            $lastBoot = [System.Management.ManagementDateTimeConverter]::ToDateTime(
-                [string]$os.LastBootUpTime
-            )
+            $rawLastBoot = $os.LastBootUpTime
+            if ($rawLastBoot -is [DateTime]) {
+                $lastBoot = [DateTime]$rawLastBoot
+            } elseif ($rawLastBoot -is [DateTimeOffset]) {
+                $lastBoot = ([DateTimeOffset]$rawLastBoot).UtcDateTime
+            } else {
+                $lastBoot = [System.Management.ManagementDateTimeConverter]::ToDateTime([string]$rawLastBoot)
+            }
             return $lastBoot.ToUniversalTime().ToString(
                 'yyyyMMddTHHmmssfffffffZ',
                 [Globalization.CultureInfo]::InvariantCulture
@@ -91,7 +162,8 @@ function Get-CapsulenvHostBootEpoch {
     # Reusing an unknown ephemeral depot across a reboot is unsafe. A unique
     # fallback therefore trades reuse for correctness only on hosts where the
     # platform boot identity is unavailable.
-    return 'unavailable-{0}' -f [Guid]::NewGuid().ToString('N')
+    $script:CapsulenvUnavailableBootEpoch = 'unavailable-{0}' -f [Guid]::NewGuid().ToString('N')
+    return $script:CapsulenvUnavailableBootEpoch
 }
 
 function Write-CapsulenvHostJsonAtomically {
@@ -112,11 +184,14 @@ function Write-CapsulenvHostJsonAtomically {
             $encoding
         )
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $backupPath = '{0}.backup-{1}' -f $Path, [Guid]::NewGuid().ToString('N')
             try {
-                [System.IO.File]::Replace($temporary, $Path, $null, $true)
+                [System.IO.File]::Replace($temporary, $Path, $backupPath, $true)
+                if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $backupPath -Force
+                }
             } catch {
-                Remove-Item -LiteralPath $Path -Force
-                Move-Item -LiteralPath $temporary -Destination $Path
+                throw "Could not atomically publish host state '$Path'; the previous valid file was retained. $($_.Exception.Message)"
             }
         } else {
             Move-Item -LiteralPath $temporary -Destination $Path
@@ -126,6 +201,32 @@ function Write-CapsulenvHostJsonAtomically {
             Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
         }
     }
+}
+
+function Assert-CapsulenvHostPlacementRoot {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$PlacementRoot)
+
+    if (-not [System.IO.Path]::IsPathRooted($PlacementRoot)) {
+        throw 'Host placement root must be an absolute host-local path.'
+    }
+    $candidate = [System.IO.Path]::GetFullPath($PlacementRoot).TrimEnd([char[]]'\\/')
+    $capsuleRoot = [System.IO.Path]::GetFullPath((Get-CapsulenvContext).Root).TrimEnd([char[]]'\\/')
+    $comparison = if (Test-CapsulenvWindows) {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+    $prefix = $capsuleRoot + [System.IO.Path]::DirectorySeparatorChar
+    $equal = if (Test-CapsulenvWindows) {
+        [System.StringComparer]::OrdinalIgnoreCase.Equals($candidate, $capsuleRoot)
+    } else {
+        [System.StringComparer]::Ordinal.Equals($candidate, $capsuleRoot)
+    }
+    if ($equal -or $candidate.StartsWith($prefix, $comparison)) {
+        throw "Host placement root must not equal or descend from the portable capsule root: $candidate"
+    }
+    return $candidate
 }
 
 function Get-CapsulenvDefaultHostRecord {
@@ -193,10 +294,7 @@ function Set-CapsulenvHostEnrollment {
 
     $resolvedPlacementRoot = $null
     if (-not [string]::IsNullOrWhiteSpace($PlacementRoot)) {
-        if (-not [System.IO.Path]::IsPathRooted($PlacementRoot)) {
-            throw 'Host placement root must be an absolute host-local path.'
-        }
-        $resolvedPlacementRoot = [System.IO.Path]::GetFullPath($PlacementRoot)
+        $resolvedPlacementRoot = Assert-CapsulenvHostPlacementRoot -PlacementRoot $PlacementRoot
     }
 
     $record = [pscustomobject][ordered]@{
@@ -230,7 +328,7 @@ function Get-CapsulenvHostPlacement {
     $localRoot = Get-CapsulenvHostLocalStateRoot
     if ([string]$record.Retention -eq 'persistent') {
         $depotRoot = if (-not [string]::IsNullOrWhiteSpace([string]$record.PlacementRoot)) {
-            [string]$record.PlacementRoot
+            Assert-CapsulenvHostPlacementRoot -PlacementRoot ([string]$record.PlacementRoot)
         } else {
             Join-Path $localRoot 'depots'
         }
@@ -297,7 +395,12 @@ function Initialize-CapsulenvHostPlacement {
 
     $placement = Get-CapsulenvHostPlacement -CapsuleId $CapsuleId
     if ($placement.Materialized -and -not $placement.Valid) {
-        throw "Host placement exists but its identity marker is not valid: $($placement.Root)"
+        if ($placement.Retention -eq 'persistent') {
+            throw "Persistent host placement exists but its identity marker is not valid: $($placement.Root)"
+        }
+        $staleRoot = '{0}.stale-{1}' -f $placement.Root, [Guid]::NewGuid().ToString('N')
+        Move-Item -LiteralPath $placement.Root -Destination $staleRoot
+        $placement = Get-CapsulenvHostPlacement -CapsuleId $CapsuleId
     }
 
     foreach ($path in @(
@@ -324,4 +427,4 @@ function Initialize-CapsulenvHostPlacement {
     return Get-CapsulenvHostPlacement -CapsuleId $placement.CapsuleId
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvHostKey, Get-CapsulenvHostLocalStateRoot, Get-CapsulenvHostRecord, Set-CapsulenvHostEnrollment, Get-CapsulenvHostPlacement, Test-CapsulenvHostPlacement, Initialize-CapsulenvHostPlacement
+##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvHostIdentityEvidence, Get-CapsulenvHostIdentityDigest, Get-CapsulenvHostKey, Get-CapsulenvHostLocalStateRoot, Get-CapsulenvHostRecord, Set-CapsulenvHostEnrollment, Get-CapsulenvHostPlacement, Test-CapsulenvHostPlacement, Initialize-CapsulenvHostPlacement
