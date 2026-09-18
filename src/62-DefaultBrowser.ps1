@@ -324,17 +324,28 @@ function Install-CapsulenvDefaultBrowserRegistration {
     $definition = Get-CapsulenvBrowserDefinition -App $App
     $displayName = Get-CapsulenvBrowserDisplayName -App $App -Definition $definition
     $registration = Get-CapsulenvDefaultBrowserRegistration -App $App
-    $executable = Get-CapsulenvBrowserDefaultExecutable -App $App
-    if ([string]::IsNullOrWhiteSpace([string]$executable) -or -not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-        throw "Cannot register $displayName as a User default-browser candidate because its capsule executable is missing."
-    }
-    $profile = Get-CapsulenvBrowserProfilePath -App $App
-    if ([string]::IsNullOrWhiteSpace([string]$profile) -or -not (Test-Path -LiteralPath $profile -PathType Container)) {
-        throw "Cannot register $displayName as a User default-browser candidate because its Scoop-persisted profile is missing."
-    }
-    $profileArgument = [string]$definition.ProfileArgument
-    if ([string]::IsNullOrWhiteSpace($profileArgument)) {
-        throw "Cannot register $displayName as a User default-browser candidate because its profile argument is not configured."
+    $bridge = Get-CapsulenvUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity)
+    $useBridge = $null -ne $bridge
+    if ($useBridge) {
+        $handler = Get-CapsulenvUserIntegrationBridgeCommand -Bridge $bridge
+        $executable = [string]$handler.Executable
+        $profile = ''
+        $profileArgument = ''
+        $urlCommand = [string]$handler.Command
+        $fileCommand = [string]$handler.Command
+    } else {
+        $executable = Get-CapsulenvBrowserDefaultExecutable -App $App
+        if ([string]::IsNullOrWhiteSpace([string]$executable) -or -not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            throw "Cannot register $displayName as a User default-browser candidate because its capsule executable is missing."
+        }
+        $profile = Get-CapsulenvBrowserProfilePath -App $App
+        if ([string]::IsNullOrWhiteSpace([string]$profile) -or -not (Test-Path -LiteralPath $profile -PathType Container)) {
+            throw "Cannot register $displayName as a User default-browser candidate because its Scoop-persisted profile is missing."
+        }
+        $profileArgument = [string]$definition.ProfileArgument
+        if ([string]::IsNullOrWhiteSpace($profileArgument)) {
+            throw "Cannot register $displayName as a User default-browser candidate because its profile argument is not configured."
+        }
     }
 
     $state = Get-CapsulenvDefaultBrowserState
@@ -374,8 +385,10 @@ function Install-CapsulenvDefaultBrowserRegistration {
         $registration = Get-CapsulenvDefaultBrowserRegistrationFromState -State $state -DisplayName $displayName
     }
 
-    $urlCommand = ConvertTo-CapsulenvDefaultBrowserCommand -Executable $executable -Profile $profile -ProfileArgument $profileArgument -Kind Url
-    $fileCommand = ConvertTo-CapsulenvDefaultBrowserCommand -Executable $executable -Profile $profile -ProfileArgument $profileArgument -Kind File
+    if (-not $useBridge) {
+        $urlCommand = ConvertTo-CapsulenvDefaultBrowserCommand -Executable $executable -Profile $profile -ProfileArgument $profileArgument -Kind Url
+        $fileCommand = ConvertTo-CapsulenvDefaultBrowserCommand -Executable $executable -Profile $profile -ProfileArgument $profileArgument -Kind File
+    }
     $icon = '{0},0' -f $executable
 
     Set-CapsulenvCurrentUserRegistryStringValue -SubKey 'Software\RegisteredApplications' -Name $registration.RegisteredName -Value $registration.CapabilitiesPath

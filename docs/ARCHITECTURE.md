@@ -407,3 +407,65 @@ browser-specific stop/close operations release it after exact owned-process
 handling. Persistent default-browser registration remains the later
 UserIntegration boundary, and historical `--host` handling is migration
 compatibility only.
+
+# PowerShell runtime and profile binding
+
+Interactive `pwsh` is a required Program when requested; the control-plane
+PowerShell is never a silent substitute. The binding keeps the profile and
+history under portable capsule State, while portable/private modules and
+large native modules can use separate portable and host-local module roots.
+Explicitly trusted host module paths may be added, but inherited `PSModulePath`
+entries are not trusted wholesale.
+
+Because PowerShell does not reinterpret arbitrary environment variables as
+`$PROFILE`, the binding publishes a capsule-local child bootstrap script. The
+launch contract uses `-NoProfile` and explicitly dot-sources the portable
+profile, then configures `Set-PSReadLineOption -HistorySavePath` to the
+portable history path. A real child `pwsh` must consume this contract before
+the shell is considered activated.
+
+Host-local module storage is created only after
+`Initialize-CapsulenvHostPlacement` publishes and validates the host placement
+marker. A read-only path query never materializes an unmarked placement
+subtree.
+
+# Bitwarden host attachment and SSH-agent integration
+
+Bitwarden account and desktop state remain host-local. A compatible Bitwarden
+Program is only availability evidence; attach succeeds only after Capsulenv
+finds a live process whose inspected executable matches that resolved Program.
+The resulting session-ledger record is `attached`/foreign with process-start
+identity and is never stoppable or patchable by Capsulenv.
+
+SSH-agent setup is a required/optional SessionIntegration, not a non-empty
+environment string. The endpoint is probed with the real `ssh-add -L` transport
+before required activation succeeds; an `agent://` placeholder or unreachable
+socket/pipe fails closed. Git/OpenSSH configuration remains a process-scoped
+overlay.
+
+Attach captures the prior `SSH_AUTH_SOCK` and Git overlay environment. Detach
+restores those values deterministically, while leaving the attached Bitwarden
+process running. Capsulenv does not take ownership of a trusted host app.
+
+# UserIntegration bridge and persistent handlers
+
+Persistent UserIntegration is an explicitly enrolled-host feature. Unknown or
+ephemeral hosts do not install a bridge. A persistent host records candidate
+capsule roots in host-local state; a handler accepts a root only after reading
+and validating that root's `.capsulenv/identity.json` against the requested
+CapsuleId. The registry is discovery metadata, not portable authority, and a
+missing or invalid capsule fails diagnostically instead of guessing a drive
+letter, browser profile, or unrelated root.
+
+The generated handler captures an absolute host PowerShell runner and invokes
+the capsule's launcher only after identity validation. It does not depend on
+an inherited `CAPSULENV_ROOT` or an unqualified `capsulenv` command. A
+`BrowserBinding` contributes only the canonical browser state identity;
+removable executable and profile paths are never embedded in persistent
+integration metadata.
+
+On Windows, default-browser and URL/file registrations target the host-local
+bridge, not a removable capsule executable or profile. Installation and
+removal use the existing reversible registration state; when the capsule is
+absent the bridge reports the condition without repairing or guessing the
+registration target.
