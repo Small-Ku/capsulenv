@@ -232,7 +232,14 @@ function Get-CapsulenvProgramCandidates {
         [pscustomobject]@{ Selector = 'scoop:global/{0}' -f $Requirement.Name; Provider = 'host-scoop'; Scope = 'global' }
     )
     foreach ($selector in $selectors) {
-        $installed = Get-CapsulenvInstalledApp -Selector $selector.Selector -AllowMissing
+        try {
+            $installed = Get-CapsulenvInstalledApp -Selector $selector.Selector -AllowMissing
+        } catch {
+            # A partially materialized Scoop app is not a usable candidate.
+            # Discovery must fail closed for that selector and continue with
+            # other providers or the active capsule-local generation.
+            continue
+        }
         if ($null -eq $installed) { continue }
         try {
             $executable = Resolve-CapsulenvScoopAppExecutable -App $installed.Selector -RelativePath $Requirement.RelativePath -BinName $Requirement.BinName -ShortcutName $Requirement.ShortcutName
