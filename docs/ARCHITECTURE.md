@@ -310,3 +310,58 @@ for the lifetime of the lease, so a crash releases the lock when the process
 dies. The ledger is diagnostic metadata; lock-file existence is never used as
 authority. Gecko profiles and other single-writer state should use exclusive
 leases, while unmanaged state is intentionally outside Capsulenv ownership.
+
+# Program resolution boundary
+
+Program requirements are portable desired-state records; resolved executable,
+provider, scope, version, provenance, and lifecycle ownership are host-local
+derived results. Legacy `capsule/<app>` package roots remain portable storage
+and are not relabeled as `capsulenv-local` until #12 publishes a validated host
+realization/generation source.
+
+Exact versions compare the normalized package-version identity, including
+prerelease/build suffixes. Range checks use the numeric base only when the
+version grammar is valid; version-policy candidates with invalid versions are
+rejected diagnostically rather than coerced to `0.0.0.0`.
+
+# Program requirements and provider resolution
+
+Program requirements are explicit records containing the requested name,
+version policy, capabilities, executable selection metadata, and allowed
+providers. Resolution is read-only and deterministic: compatible trusted host
+Scoop is preferred, followed by a compatible Capsulenv-local realization, seed,
+and finally an explicitly supplied provider deployment. Arbitrary PATH entries
+are not package satisfaction.
+
+The selected record carries the concrete executable, root, provider, scope,
+version, provenance, trust, and lifecycle ownership. Reusing a trusted host
+Scoop app does not upgrade, rewrite, or take ownership of the host
+installation. The resolve command exposes this decision without performing
+repair or deployment.
+
+# Host-local realization and generation authority
+
+Realization follows Acquire, staging, verify, publish. Acquisition scratch is
+host-local and disposable; the published package realization contains a
+complete immutable manifest and payload, and an incomplete or hash-mismatched
+staging tree cannot be selected.
+
+Generations are small manifests of concrete realization roots and provenance.
+They do not copy the environment tree. The active-generation authority is
+switched only after every selected realization validates. Authority publication
+uses replacement semantics that preserve the previous valid pointer on failure.
+Garbage collection computes reachability from active and explicitly pinned
+generations, rather than introducing a second installed-state index or a
+mandatory persistent BlobStore/CAS.
+
+The realization manifest records the source kind and a verified payload hash.
+Validation recomputes that hash from the published payload, so a mutated file
+cannot remain eligible merely because `Complete` and `Immutable` still claim
+validity. Acquisition verifies the staged bytes after copy and rejects a
+source that changed between the initial read and staging.
+
+Generation selections have an explicit kind: `realization` points to a
+Capsulenv-owned immutable package, while `host-program` records a trusted
+host-Scoop executable, provenance, and non-owned lifecycle without copying it
+into the depot. Reachability follows `PinnedGenerationIds` stored in each
+generation, and host-program selections do not become GC roots.
