@@ -184,6 +184,7 @@ function Invoke-CapsulenvBitwardenSessionIntegration {
         $Requirement,
         [object[]]$Candidates,
         [string]$SshAuthSock,
+        [object]$AgentBinding,
         [switch]$ConfigureGit,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'optional',
@@ -213,6 +214,23 @@ function Invoke-CapsulenvBitwardenSessionIntegration {
         $binding.Succeeded = $false
         return $binding
     }
+    $bindingContractValid = $false
+    if ($null -ne $AgentBinding) {
+        $bindingContractValid =
+            $null -ne $AgentBinding.PSObject.Properties['Endpoint'] -and
+            $null -ne $AgentBinding.PSObject.Properties['ProgramProvenance'] -and
+            $null -ne $AgentBinding.PSObject.Properties['ProcessId'] -and
+            [System.StringComparer]::Ordinal.Equals([string]$AgentBinding.Endpoint, [string]$sock) -and
+            [System.StringComparer]::Ordinal.Equals([string]$AgentBinding.ProgramProvenance, [string]$binding.Program.Provenance) -and
+            ([int]$AgentBinding.ProcessId -eq [int]$binding.ProcessRecord.PID)
+    }
+    if (-not $bindingContractValid) {
+        $message = 'Bitwarden SSH-agent integration requires an explicit endpoint binding to the attached process and resolved Program provenance.'
+        if ($Criticality -eq 'required') { throw $message }
+        $binding.Diagnostics = @($binding.Diagnostics) + @($message + ' Optional integration skipped.')
+        $binding.Succeeded = $false
+        return $binding
+    }
     $agent = Test-CapsulenvBitwardenSshAgentEndpoint -Endpoint $sock
     if (-not $agent.Reachable) {
         $message = "Bitwarden SSH-agent endpoint is unreachable: $($agent.Diagnostics)"
@@ -236,6 +254,13 @@ function Invoke-CapsulenvBitwardenSessionIntegration {
     $binding | Add-Member -NotePropertyName GitConfigured -NotePropertyValue ([bool]$ConfigureGit)
     $binding | Add-Member -NotePropertyName EnvironmentSnapshot -NotePropertyValue $snapshot
     $binding | Add-Member -NotePropertyName AgentProbe -NotePropertyValue $agent
+    $binding | Add-Member -NotePropertyName AgentBinding -NotePropertyValue ([pscustomobject][ordered]@{
+        Mode = 'explicit-config'
+        Endpoint = [string]$AgentBinding.Endpoint
+        ProgramProvenance = [string]$AgentBinding.ProgramProvenance
+        ProcessId = [int]$AgentBinding.ProcessId
+        OwnershipVerified = $false
+    })
     return $binding
 }
 
