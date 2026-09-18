@@ -12,7 +12,10 @@ function New-CapsulenvPortableSeedEntry {
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Version,
         [Parameter(Mandatory = $true)][string]$SourcePath,
-        [Parameter(Mandatory = $true)][ValidatePattern('^[A-Fa-f0-9]{64}    )
+        [Parameter(Mandatory = $true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedHash,
+        [string]$ExecutableRelativePath,
+        [string[]]$Capabilities = @(),
+        [string]$Provenance
 
     $sourceFull = [System.IO.Path]::GetFullPath($SourcePath)
     $sourceReference = ConvertTo-CapsulenvStatePathReference -Path $sourceFull
