@@ -164,6 +164,43 @@ Describe 'Capsulenv host identity and placement foundation' {
         $fallback.MachineUser.Available | Should -BeTrue
     }
 
+    It 'keeps the primary host key stable when optional GDID evidence flaps' {
+        Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+        Mock Get-ItemProperty {
+            [pscustomobject]@{ LID = [UInt64]123456789 }
+        } -ModuleName Capsulenv
+
+        $withGdid = & $script:Module {
+            [pscustomobject]@{
+                Key = Get-CapsulenvHostKey
+                Digest = Get-CapsulenvHostIdentityDigest
+            }
+        }
+
+        Mock Get-ItemProperty { throw 'GDID temporarily unavailable' } -ModuleName Capsulenv
+        $withoutGdid = & $script:Module {
+            [pscustomobject]@{
+                Key = Get-CapsulenvHostKey
+                Digest = Get-CapsulenvHostIdentityDigest
+            }
+        }
+
+        Mock Get-ItemProperty {
+            [pscustomobject]@{ LID = [UInt64]123456789 }
+        } -ModuleName Capsulenv
+        $again = & $script:Module {
+            [pscustomobject]@{
+                Key = Get-CapsulenvHostKey
+                Digest = Get-CapsulenvHostIdentityDigest
+            }
+        }
+
+        $withoutGdid.Key | Should -Be $withGdid.Key
+        $again.Key | Should -Be $withGdid.Key
+        $withoutGdid.Digest | Should -Be $withGdid.Digest
+        $again.Digest | Should -Be $withGdid.Digest
+    }
+
     It 'keeps host identity independent from portable root relocation' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-identity-' + [Guid]::NewGuid().ToString('N'))
         try {
