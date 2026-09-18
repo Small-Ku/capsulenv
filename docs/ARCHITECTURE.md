@@ -384,7 +384,9 @@ Every advertised activation resource is evaluated through the same criticality
 contract, including `program`, `binding`, and `session-service`; a required
 non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
-requirement, and generation-selection names before constructing a candidate.# Portable seed and bootstrap networking
+requirement, and generation-selection names before constructing a candidate.
+
+# Portable seed and bootstrap networking
 
 An optional portable seed is an immutable acquisition input containing name,
 version, a capsule-relative source locator, executable selection, and expected
