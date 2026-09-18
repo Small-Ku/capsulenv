@@ -16,6 +16,7 @@ function New-CapsulenvPortableSeedEntry {
         [string]$ExecutableRelativePath,
         [string[]]$Capabilities = @(),
         [string]$Provenance
+    )
 
     $sourceFull = [System.IO.Path]::GetFullPath($SourcePath)
     $sourceReference = ConvertTo-CapsulenvStatePathReference -Path $sourceFull
