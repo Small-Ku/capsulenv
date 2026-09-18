@@ -384,4 +384,26 @@ Every advertised activation resource is evaluated through the same criticality
 contract, including `program`, `binding`, and `session-service`; a required
 non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
-requirement, and generation-selection names before constructing a candidate.
+requirement, and generation-selection names before constructing a candidate.# Portable seed and bootstrap networking
+
+An optional portable seed is an immutable acquisition input containing name,
+version, a capsule-relative source locator, executable selection, and expected
+hash metadata. It never stores an absolute host path: the locator is resolved
+against the current capsule root, so moving the capsule does not make the
+entry point at the old location. Seed metadata is not installed-state
+authority. A missing, malformed, out-of-root, or hash-mismatched seed is
+rejected and the normal provider path remains available.
+
+Seed discovery returns a `SeedAcquisitionCandidate`, not a resolved Program.
+The seed is therefore an input to acquisition only; the selected executable
+must be copied or deployed into a verified host-local realization before it
+can become an active Program/generation. Executable-relative paths are
+normalized and must remain descendants of the verified seed root. A removable
+seed cannot become active merely because its file is present.
+
+The bootstrap tier is intentionally narrow and ordered: compatible trusted
+host Program, verified seed, then normal provider acquisition. If normal
+provider acquisition requires a proxy, bootstrap networking must be
+established before that final step. This is a fixed acquisition sequence, not
+a generic orchestration graph, and startup does not require Google Drive,
+rclone, or a mounted remote filesystem.
