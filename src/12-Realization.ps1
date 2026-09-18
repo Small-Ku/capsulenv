@@ -49,7 +49,7 @@ function Resolve-CapsulenvRealizationPayloadPath {
     if ([string]::IsNullOrWhiteSpace($ExecutableRelativePath)) {
         throw 'ExecutableRelativePath must be a non-rooted relative path.'
     }
-    $normalized = $ExecutableRelativePath.Replace('', [System.IO.Path]::DirectorySeparatorChar)
+    $normalized = $ExecutableRelativePath.Replace('\', [System.IO.Path]::DirectorySeparatorChar)
     if ([System.IO.Path]::IsPathRooted($normalized) -or $normalized -match '^[A-Za-z]:[\\/]') {
         throw 'ExecutableRelativePath must be a non-rooted relative path.'
     }
@@ -188,7 +188,7 @@ function Acquire-CapsulenvProgramRealization {
     if ($sourceIsFile -and [string]::IsNullOrWhiteSpace($ExecutableRelativePath)) {
         $ExecutableRelativePath = [System.IO.Path]::GetFileName($sourceFull)
     }
-    $ExecutableRelativePath = $ExecutableRelativePath.Replace('', '/').Trim('/')
+    $ExecutableRelativePath = $ExecutableRelativePath.Replace('\', '/').Trim('/')
     if ([string]::IsNullOrWhiteSpace($ExecutableRelativePath) -or
         [System.IO.Path]::IsPathRooted($ExecutableRelativePath) -or
         $ExecutableRelativePath -match '^[A-Za-z]:[\\/]') {
