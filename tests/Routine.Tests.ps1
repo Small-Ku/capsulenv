@@ -92,9 +92,9 @@ Describe 'Capsulenv lifecycle routine contracts' {
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnExit' }
         Should -Invoke Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
             $Plan.Executable -eq 'pwsh.exe' -and
-            $Plan.Environment.CAPSULENV_POWERSHELL_PROFILE -eq '/capsule/profile.ps1' -and
-            $Plan.Environment.CAPSULENV_POWERSHELL_HISTORY -eq '/capsule/history.txt' -and
-            $Plan.Environment.PSModulePath -eq '/capsule/modules:/host/modules' -and
+            $Plan.Environment['CAPSULENV_POWERSHELL_PROFILE'] -eq '/capsule/profile.ps1' -and
+            $Plan.Environment['CAPSULENV_POWERSHELL_HISTORY'] -eq '/capsule/history.txt' -and
+            $Plan.Environment['PSModulePath'] -eq '/capsule/modules:/host/modules' -and
             @($Plan.Arguments) -contains 'Write-Output ok'
         }
     }
