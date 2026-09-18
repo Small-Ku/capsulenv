@@ -183,4 +183,35 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
             Invoke-CapsulenvBootstrapAcquisition -Requirement $requirement -RequireBootstrapNetwork
         } | Should -Throw
     }
+    It 'rechecks caller-supplied seed bytes against ExpectedHash before selection' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-caller-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $source = Join-Path $capsuleRoot 'seed/pwsh.exe'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        'seed-pwsh' | Set-Content -LiteralPath $source -Encoding UTF8
+        try {
+            $result = & $script:Module {
+                param($CapsuleRoot, $Source)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $candidate = [pscustomobject]@{
+                    Kind = 'seed-acquisition'
+                    Name = 'pwsh'
+                    Version = '7.6.5'
+                    SourceReference = ConvertTo-CapsulenvStatePathReference -Path $Source
+                    ExpectedHash = ('0' * 64)
+                    ExecutableRelativePath = $null
+                    Capabilities = @()
+                    Provenance = 'caller'
+                }
+                Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement (New-CapsulenvProgramRequirement -Name pwsh -AllowedProviders @('seed')) -Candidate $candidate
+            } $capsuleRoot $source
+            $result.Compatible | Should -BeFalse
+            $result.Reasons | Should -Contain 'seed-source-invalid'
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
 }

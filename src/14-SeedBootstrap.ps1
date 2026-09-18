@@ -214,6 +214,15 @@ function Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement {
             throw 'Seed acquisition source does not exist.'
         }
 
+        $expectedHash = [string]$Candidate.ExpectedHash
+        if ($expectedHash -notmatch '^[A-Fa-f0-9]{64}$') {
+            throw 'Seed acquisition candidates must carry a valid ExpectedHash.'
+        }
+        $actualHash = Get-CapsulenvSeedSourceHash -SourcePath $source
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($actualHash, $expectedHash)) {
+            throw 'Seed acquisition source hash does not match its ExpectedHash.'
+        }
+
         $programCandidate = New-CapsulenvProgramCandidate -Name ([string]$Candidate.Name) -Executable $executable -Root $source -Provider 'seed' -Scope 'portable' -Version ([string]$Candidate.Version) -Capabilities @($Candidate.Capabilities) -Trusted:$true -Provenance ([string]$Candidate.Provenance)
         return Test-CapsulenvProgramCandidate -Requirement $Requirement -Candidate $programCandidate
     } catch {
