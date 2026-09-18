@@ -133,7 +133,10 @@ function Start-CapsulenvBitwarden {
         return
     }
 
-    Assert-CapsulenvNoForeignBitwardenProcess
+    $foreign = @(Assert-CapsulenvNoForeignBitwardenProcess)
+    if ($foreign.Count -gt 0) {
+        throw 'A non-capsule Bitwarden process is running; close it before starting the capsule copy.'
+    }
     $existing = @(Get-CapsulenvBitwardenProcesses)
     if ($existing.Count -gt 0) {
         Write-CapsulenvMessage -Level Detail -Message 'Capsule-owned Bitwarden desktop is already running.'

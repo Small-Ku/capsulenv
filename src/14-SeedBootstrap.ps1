@@ -498,7 +498,7 @@ function Get-CapsulenvSeedAcquisitionCandidates {
         } catch {
             continue
         }
-        $candidates.Add([pscustomobject][ordered]@{
+        $candidate = [pscustomobject][ordered]@{
             Kind = 'seed-acquisition'
             Name = [string]$entry.Name
             Version = [string]$entry.Version
@@ -508,7 +508,11 @@ function Get-CapsulenvSeedAcquisitionCandidates {
             SourceReference = [string]$entry.SourceReference
             ExpectedHash = [string]$entry.ExpectedHash
             ExecutableRelativePath = [string]$entry.ExecutableRelativePath
-        })
+            Capabilities = @($entry.Capabilities)
+        }
+        if ((Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement $Requirement -Candidate $candidate).Compatible) {
+            $candidates.Add($candidate)
+        }
     }
     return @($candidates.ToArray())
 }
@@ -542,7 +546,7 @@ function Invoke-CapsulenvBootstrapAcquisition {
     }
     $seed = @($SeedCandidates | Where-Object {
         [string]$_.Kind -eq 'seed-acquisition' -and
-        [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.Name)
+        (Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement $Requirement -Candidate $_).Compatible
     } | Select-Object -First 1)
     if ($seed.Count -eq 1) {
         return [pscustomobject][ordered]@{
