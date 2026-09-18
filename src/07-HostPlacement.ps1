@@ -49,7 +49,7 @@ function Get-CapsulenvHostIdentityDigest {
     # evidence and must never change the host-record namespace when a registry
     # read is temporarily unavailable.
     $evidence = Get-CapsulenvHostIdentityEvidence
-    $canonical = "capsulenv-host-identity-v2`n" + [string]$evidence.MachineUser.Value
+    $canonical = "capsulenv-host-identity-v1`n" + [string]$evidence.MachineUser.Value
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($canonical)
