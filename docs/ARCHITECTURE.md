@@ -277,14 +277,30 @@ The host placement foundation only resolves and materializes layout. Program
 resolution, immutable generations, activation, and integration ownership remain
 separate boundaries implemented by the downstream architecture issues.
 
-Host identity uses layered evidence. When available, the Windows GDID value at
-`HKCU\\SOFTWARE\\Microsoft\\IdentityCRL\\ExtendedProperties\\LID` is a
-strong host-installation signal; the machine/user tuple remains a fallback and
-co-factor. Capsulenv stores only the derived host digest in placement keys, and
-never copies raw GDID into portable state. GDID presence does not infer home or
-enable persistent retention; explicit enrollment remains authoritative.
+# Program resolution boundary
 
-Host JSON publication is fail-closed when replacement is unsupported, retaining
-the previous valid record. An invalid or unmarked ephemeral placement is stale
-material and is moved aside before rematerialization; an invalid persistent
-placement reports a diagnostic instead of being silently adopted.
+Program requirements are portable desired-state records; resolved executable,
+provider, scope, version, provenance, and lifecycle ownership are host-local
+derived results. Legacy `capsule/<app>` package roots remain portable storage
+and are not relabeled as `capsulenv-local` until #12 publishes a validated host
+realization/generation source.
+
+Exact versions compare the normalized package-version identity, including
+prerelease/build suffixes. Range checks use the numeric base only when the
+version grammar is valid; version-policy candidates with invalid versions are
+rejected diagnostically rather than coerced to `0.0.0.0`.
+
+# Program requirements and provider resolution
+
+Program requirements are explicit records containing the requested name,
+version policy, capabilities, executable selection metadata, and allowed
+providers. Resolution is read-only and deterministic: compatible trusted host
+Scoop is preferred, followed by a compatible Capsulenv-local realization, seed,
+and finally an explicitly supplied provider deployment. Arbitrary PATH entries
+are not package satisfaction.
+
+The selected record carries the concrete executable, root, provider, scope,
+version, provenance, trust, and lifecycle ownership. Reusing a trusted host
+Scoop app does not upgrade, rewrite, or take ownership of the host
+installation. The resolve command exposes this decision without performing
+repair or deployment.
