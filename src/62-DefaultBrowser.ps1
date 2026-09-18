@@ -314,6 +314,32 @@ function Get-CapsulenvDefaultBrowserState {
     }
 }
 
+function Resolve-CapsulenvRequiredDefaultBrowserBridge {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$App)
+
+    try {
+        $bridge = Get-CapsulenvUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity)
+        if ($null -eq $bridge -or [bool]$bridge.Persistent -ne $true) {
+            throw 'the host-local bridge is missing or not persistent'
+        }
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$bridge.CapsuleId, [string](Get-CapsulenvIdentity))) {
+            throw 'the bridge belongs to a different capsule'
+        }
+        $expectedIdentity = Get-CapsulenvBrowserStateIdentity -App $App
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$bridge.BrowserStateIdentity, $expectedIdentity)) {
+            throw 'the bridge is bound to a different browser'
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$bridge.BridgePath) -or -not (Test-Path -LiteralPath ([string]$bridge.BridgePath) -PathType Leaf)) {
+            throw 'the bridge script is missing'
+        }
+        [void](Resolve-CapsulenvUserIntegrationCapsuleRoot -CapsuleId (Get-CapsulenvIdentity))
+        $handler = Get-CapsulenvUserIntegrationBridgeCommand -Bridge $bridge
+        return [pscustomobject][ordered]@{ Bridge = $bridge; Handler = $handler }
+    } catch {
+        throw "Persistent default-browser registration requires a valid host-local UserIntegration bridge: $($_.Exception.Message)"
+    }
+}
 function Install-CapsulenvDefaultBrowserRegistration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
@@ -324,30 +350,14 @@ function Install-CapsulenvDefaultBrowserRegistration {
     $definition = Get-CapsulenvBrowserDefinition -App $App
     $displayName = Get-CapsulenvBrowserDisplayName -App $App -Definition $definition
     $registration = Get-CapsulenvDefaultBrowserRegistration -App $App
-    $bridge = Get-CapsulenvUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity)
-    $useBridge = $null -ne $bridge
-    if ($useBridge) {
-        $handler = Get-CapsulenvUserIntegrationBridgeCommand -Bridge $bridge
-        $executable = [string]$handler.Executable
-        $profile = ''
-        $profileArgument = ''
-        $urlCommand = [string]$handler.Command
-        $fileCommand = [string]$handler.Command
-    } else {
-        $executable = Get-CapsulenvBrowserDefaultExecutable -App $App
-        if ([string]::IsNullOrWhiteSpace([string]$executable) -or -not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-            throw "Cannot register $displayName as a User default-browser candidate because its capsule executable is missing."
-        }
-        $profile = Get-CapsulenvBrowserProfilePath -App $App
-        if ([string]::IsNullOrWhiteSpace([string]$profile) -or -not (Test-Path -LiteralPath $profile -PathType Container)) {
-            throw "Cannot register $displayName as a User default-browser candidate because its Scoop-persisted profile is missing."
-        }
-        $profileArgument = [string]$definition.ProfileArgument
-        if ([string]::IsNullOrWhiteSpace($profileArgument)) {
-            throw "Cannot register $displayName as a User default-browser candidate because its profile argument is not configured."
-        }
-    }
-
+    $bridgeBinding = Resolve-CapsulenvRequiredDefaultBrowserBridge -App $App
+    $bridge = $bridgeBinding.Bridge
+    $handler = $bridgeBinding.Handler
+    $executable = [string]$handler.Executable
+    $profile = ''
+    $profileArgument = ''
+    $urlCommand = [string]$handler.Command
+    $fileCommand = [string]$handler.Command
     $state = Get-CapsulenvDefaultBrowserState
     if ($null -eq $state) {
         foreach ($path in @($registration.ClientPath, $registration.UrlClassPath, $registration.HtmlClassPath)) {
@@ -385,10 +395,6 @@ function Install-CapsulenvDefaultBrowserRegistration {
         $registration = Get-CapsulenvDefaultBrowserRegistrationFromState -State $state -DisplayName $displayName
     }
 
-    if (-not $useBridge) {
-        $urlCommand = ConvertTo-CapsulenvDefaultBrowserCommand -Executable $executable -Profile $profile -ProfileArgument $profileArgument -Kind Url
-        $fileCommand = ConvertTo-CapsulenvDefaultBrowserCommand -Executable $executable -Profile $profile -ProfileArgument $profileArgument -Kind File
-    }
     $icon = '{0},0' -f $executable
 
     Set-CapsulenvCurrentUserRegistryStringValue -SubKey 'Software\RegisteredApplications' -Name $registration.RegisteredName -Value $registration.CapabilitiesPath
@@ -662,19 +668,19 @@ function Get-CapsulenvTrackedDefaultBrowserCommandStatus {
     if ([string]::IsNullOrWhiteSpace([string]$app)) {
         return $null
     }
-    $definition = Get-CapsulenvBrowserDefinition -App $app
-    $executable = Get-CapsulenvBrowserDefaultExecutable -App $app
-    $profile = Get-CapsulenvBrowserProfilePath -App $app
-    $profileArgument = [string]$definition.ProfileArgument
-    $expected = ConvertTo-CapsulenvDefaultBrowserCommand `
-        -Executable $executable `
-        -Profile $profile `
-        -ProfileArgument $profileArgument `
-        -Kind Url
     $actual = Get-CapsulenvRegistryStringValue `
         -Hive CurrentUser `
         -SubKey (([string]$state.UrlClassPath) + '\shell\open\command') `
         -Name ''
+    $expected = $null
+    $diagnostic = $null
+    try {
+        $bridgeBinding = Resolve-CapsulenvRequiredDefaultBrowserBridge -App $app
+        $expected = [string]$bridgeBinding.Handler.Command
+        $diagnostic = 'valid host-local UserIntegration bridge command'
+    } catch {
+        $diagnostic = $_.Exception.Message
+    }
 
     [pscustomobject]@{
         App = $app
@@ -682,7 +688,8 @@ function Get-CapsulenvTrackedDefaultBrowserCommandStatus {
         RegistryPath = 'HKCU\' + ([string]$state.UrlClassPath) + '\shell\open\command'
         ExpectedCommand = $expected
         ActualCommand = $actual
-        Matches = [System.StringComparer]::Ordinal.Equals([string]$expected, [string]$actual)
+        Matches = ($null -ne $expected -and [System.StringComparer]::Ordinal.Equals([string]$expected, [string]$actual))
+        Diagnostic = $diagnostic
     }
 }
 
