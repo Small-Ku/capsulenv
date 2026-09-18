@@ -386,26 +386,24 @@ non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
 requirement, and generation-selection names before constructing a candidate.
 
-# Portable seed and bootstrap networking
+# Browser Program and portable profile binding
 
-An optional portable seed is an immutable acquisition input containing name,
-version, a capsule-relative source locator, executable selection, and expected
-hash metadata. It never stores an absolute host path: the locator is resolved
-against the current capsule root, so moving the capsule does not make the
-entry point at the old location. Seed metadata is not installed-state
-authority. A missing, malformed, out-of-root, or hash-mismatched seed is
-rejected and the normal provider path remains available.
+Browser binaries resolve through the ordinary trusted Program order, including
+compatible host Scoop reuse. Portable profile identity is derived from the
+canonical browser product name, not a provider-qualified selector, so moving
+between `firefox`, `scoop/firefox`, and a Capsulenv-local realization does not
+silently select a different profile. The Gecko profile is a separate portable
+State root and is guarded by an exclusive OS-held lease.
 
-Seed discovery returns a `SeedAcquisitionCandidate`, not a resolved Program.
-The seed is therefore an input to acquisition only; the selected executable
-must be copied or deployed into a verified host-local realization before it
-can become an active Program/generation. Executable-relative paths are
-normalized and must remain descendants of the verified seed root. A removable
-seed cannot become active merely because its file is present.
+Each profile records minimal Gecko compatibility evidence (product identity and
+Gecko major). A browser binding establishes that evidence when the profile is
+new and fails diagnostically before leasing or launching when an existing
+profile is unreadable or incompatible. It never mutates around a compatibility
+mismatch or falls back to an unrelated host profile.
 
-The bootstrap tier is intentionally narrow and ordered: compatible trusted
-host Program, verified seed, then normal provider acquisition. If normal
-provider acquisition requires a proxy, bootstrap networking must be
-established before that final step. This is a fixed acquisition sequence, not
-a generic orchestration graph, and startup does not require Google Drive,
-rclone, or a mounted remote filesystem.
+The browser process owns the lease lifecycle through an exact process-start
+record and an exit watcher. Normal process exit releases the lease; the
+browser-specific stop/close operations release it after exact owned-process
+handling. Persistent default-browser registration remains the later
+UserIntegration boundary, and historical `--host` handling is migration
+compatibility only.
