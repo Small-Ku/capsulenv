@@ -237,6 +237,7 @@ Describe 'Capsulenv host identity and placement foundation' {
         }
         $fallback.First | Should -Be $fallback.Second
         $fallback.First | Should -Match '^unavailable-'
+    }
 
     It 'fails closed when portable identity authority is corrupt' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-corrupt-identity-' + [Guid]::NewGuid().ToString('N'))
@@ -268,6 +269,5 @@ Describe 'Capsulenv host identity and placement foundation' {
         $source = Get-Content -LiteralPath (Join-Path $script:Root 'src/05-Identity.ps1') -Raw
         $source | Should -Not -Match "Remove-Item -LiteralPath \\$path"
         $source | Should -Match 'previous valid identity was retained'
-    }
     }
 }
