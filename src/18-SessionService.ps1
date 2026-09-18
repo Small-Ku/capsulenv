@@ -190,6 +190,7 @@ function Start-CapsulenvSessionService {
             StateLease = $lease
             SessionId = $effectiveSessionId
             ProxyEnvironmentSnapshot = $proxySnapshot
+            CleanupCompleted = $false
             Diagnostics = @("SessionService '$($Definition.Name)' is ready and owned exactly.")
         }
         $watcher = Register-CapsulenvSessionServiceExitWatcher -Process $process -Binding $binding
@@ -207,6 +208,17 @@ function Start-CapsulenvSessionService {
         }
         if ($proxyApplied -and $null -ne $proxySnapshot) { [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $proxySnapshot) }
         if ($null -ne $lease -and -not $lease.Released) { [void](Release-CapsulenvStateLease -Lease $lease) }
+        if ([string]$Definition.Criticality -eq 'optional') {
+            return [pscustomobject][ordered]@{
+                Succeeded = $false
+                Attached = $false
+                Service = $Definition
+                Program = $resolved.Program
+                ProcessRecord = $record
+                StateLease = $null
+                Diagnostics = @("SessionService '$($Definition.Name)' failed during startup: $($_.Exception.Message)")
+            }
+        }
         throw
     }
 }
@@ -220,20 +232,27 @@ function Register-CapsulenvSessionServiceExitWatcher {
 
     $Process.EnableRaisingEvents = $true
     $key = [string]$Binding.SessionId
-    $eventData = [pscustomobject][ordered]@{
-        SessionId = [string]$Binding.SessionId
-        ProxyEnvironmentSnapshot = $Binding.ProxyEnvironmentSnapshot
-    }
-    $subscription = Register-ObjectEvent -InputObject $Process -EventName Exited -MessageData $eventData -Action {
+    $subscription = Register-ObjectEvent -InputObject $Process -EventName Exited -MessageData $Binding -Action {
         $payload = $event.MessageData
         try {
-            if ($null -ne $payload.ProxyEnvironmentSnapshot) {
-                foreach ($property in @($payload.ProxyEnvironmentSnapshot.PSObject.Properties)) {
-                    [Environment]::SetEnvironmentVariable($property.Name, $property.Value, 'Process')
+            $completedProperty = $payload.PSObject.Properties['CleanupCompleted']
+            if ($null -eq $completedProperty -or -not [bool]$completedProperty.Value) {
+                if ($null -ne $payload.ProxyEnvironmentSnapshot) {
+                    foreach ($property in @($payload.ProxyEnvironmentSnapshot.PSObject.Properties)) {
+                        [Environment]::SetEnvironmentVariable($property.Name, $property.Value, 'Process')
+                    }
                 }
-            }
-            if ($null -ne $script:CapsulenvSessionServiceBindings) {
-                [void]$script:CapsulenvSessionServiceBindings.Remove([string]$payload.SessionId)
+                if ($null -ne $payload.StateLease -and -not $payload.StateLease.Released) {
+                    [void](Release-CapsulenvStateLease -Lease $payload.StateLease)
+                }
+                if ($null -ne $script:CapsulenvSessionServiceBindings) {
+                    [void]$script:CapsulenvSessionServiceBindings.Remove([string]$payload.SessionId)
+                }
+                if ($null -eq $completedProperty) {
+                    $payload | Add-Member -NotePropertyName CleanupCompleted -NotePropertyValue $true
+                } else {
+                    $payload.CleanupCompleted = $true
+                }
             }
         } finally {
             if ($null -ne $event.SubscriptionId) {
@@ -241,7 +260,31 @@ function Register-CapsulenvSessionServiceExitWatcher {
             }
         }
     }
-    return [pscustomobject][ordered]@{ Key = $key; SubscriptionId = $subscription.Id }
+    return [pscustomobject][ordered]@{ Key = $key; SubscriptionId = $subscription.Id; Binding = $Binding }
+}
+
+function Complete-CapsulenvSessionServiceBinding {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Binding)
+
+    $completedProperty = $Binding.PSObject.Properties['CleanupCompleted']
+    if ($null -ne $completedProperty -and [bool]$completedProperty.Value) {
+        return $Binding
+    }
+    if ($null -eq $completedProperty) {
+        $Binding | Add-Member -NotePropertyName CleanupCompleted -NotePropertyValue $false
+    }
+    if ($null -ne $Binding.PSObject.Properties['ProxyEnvironmentSnapshot'] -and $null -ne $Binding.ProxyEnvironmentSnapshot) {
+        [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $Binding.ProxyEnvironmentSnapshot)
+    }
+    if ($null -ne $Binding.PSObject.Properties['StateLease'] -and $null -ne $Binding.StateLease -and -not $Binding.StateLease.Released) {
+        [void](Release-CapsulenvStateLease -Lease $Binding.StateLease)
+    }
+    if ($null -ne $Binding.PSObject.Properties['SessionId'] -and $null -ne $script:CapsulenvSessionServiceBindings) {
+        [void]$script:CapsulenvSessionServiceBindings.Remove([string]$Binding.SessionId)
+    }
+    $Binding.CleanupCompleted = $true
+    return $Binding
 }
 function New-CapsulenvAttachedSessionServiceBinding {
     [CmdletBinding()]
@@ -304,15 +347,7 @@ function Stop-CapsulenvSessionService {
         $result = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $Binding.ProcessRecord
         return $result
     } finally {
-        if ($null -ne $Binding.PSObject.Properties['ProxyEnvironmentSnapshot'] -and $null -ne $Binding.ProxyEnvironmentSnapshot) {
-            [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $Binding.ProxyEnvironmentSnapshot)
-        }
-        if ($null -ne $Binding.PSObject.Properties['SessionId']) {
-            $script:CapsulenvSessionServiceBindings.Remove([string]$Binding.SessionId)
-        }
-        if ($null -ne $Binding.PSObject.Properties['StateLease'] -and $null -ne $Binding.StateLease -and -not $Binding.StateLease.Released) {
-            [void](Release-CapsulenvStateLease -Lease $Binding.StateLease)
-        }
+        [void](Complete-CapsulenvSessionServiceBinding -Binding $Binding)
     }
 }
 
