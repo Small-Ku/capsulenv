@@ -57,7 +57,8 @@ function Copy-CapsulenvLegacyStateItem {
 
         if (Test-Path -LiteralPath $Source -PathType Leaf) {
             if ($destinationExists) {
-                [System.IO.File]::Replace($staging, $Destination, $null, $true)
+                [System.IO.File]::Replace($staging, $Destination, $backup, $true)
+                $backupMoved = $true
             } else {
                 Move-Item -LiteralPath $staging -Destination $Destination
             }
