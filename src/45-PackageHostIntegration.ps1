@@ -46,10 +46,7 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
         return
     }
 
-    $launcher = Join-Path (Get-CapsulenvContext).Root 'capsulenv.cmd'
-    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.HostIntegration.LauncherMissing' -Message ('[[CapsulenvText:HostIntegration.LauncherMissing.Message]]' -f $launcher) -TargetObject $launcher -Remediation @('Rebuild or reinstall the capsule launcher before synchronizing User-mode Start Menu integration.'))
-    }
+    $bridge = New-CapsulenvPackageUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity)
     [void](New-Item -ItemType Directory -Path $ownedRoot -Force)
     $shell = New-Object -ComObject WScript.Shell
     try {
@@ -61,26 +58,15 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
                 -RelativePath (([string]$declaration.Name) + '.lnk')
             [void](New-Item -ItemType Directory -Path (Split-Path -Parent $shortcutPath) -Force)
             $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = $launcher
-            $shortcut.Arguments = @(
-                'app',
-                'run',
-                (ConvertTo-CapsulenvLauncherArgument -Value ('capsule/' + [string]$declaration.Package)),
-                (ConvertTo-CapsulenvLauncherArgument -Value ([string]$declaration.Name))
-            ) -join ' '
-            $shortcut.WorkingDirectory = (Get-CapsulenvContext).Root
+            $handler = Get-CapsulenvPackageUserIntegrationBridgeCommand `
+                -Bridge $bridge `
+                -Package ('capsule/' + [string]$declaration.Package) `
+                -Shortcut ([string]$declaration.Name)
+            $shortcut.TargetPath = [string]$handler.Executable
+            $shortcut.Arguments = @($handler.Arguments) -join ' '
+            $shortcut.WorkingDirectory = [string]$handler.WorkingDirectory
             $shortcut.Description = "Capsulenv PortableSafe package: $($declaration.Package)"
-            $icon = if (
-                -not [string]::IsNullOrWhiteSpace([string]$declaration.Icon) -and
-                (Test-Path -LiteralPath ([string]$declaration.Icon) -PathType Leaf)
-            ) {
-                [string]$declaration.Icon
-            } else {
-                [string]$declaration.Target
-            }
-            if (Test-Path -LiteralPath $icon -PathType Leaf) {
-                $shortcut.IconLocation = $icon
-            }
+            $shortcut.IconLocation = [string]$handler.Executable
             $shortcut.Save()
         }
     } finally {

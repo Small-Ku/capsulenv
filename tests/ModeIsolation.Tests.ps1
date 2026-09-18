@@ -39,8 +39,9 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:PackageExecutorSource | Should -Match 'Get-CapsulenvPackageShimRoot'
         $script:PackageHostIntegrationSource | Should -Match "Get-CapsulenvInstallMode\) -ne 'User'"
         $script:PackageHostIntegrationSource | Should -Match "'capsule/'"
-        $script:PackageHostIntegrationSource | Should -Match "'app'"
-        $script:PackageHostIntegrationSource | Should -Match "'run'"
+        $script:PackageHostIntegrationSource | Should -Match 'New-CapsulenvPackageUserIntegrationBridge'
+        $script:PackageHostIntegrationSource | Should -Match 'Get-CapsulenvPackageUserIntegrationBridgeCommand'
+        $script:PackageHostIntegrationSource | Should -Not -Match '\$shortcut\.TargetPath\s*=\s*\[string\]\$launcher'
         $runtimeAdapters = @(Get-ChildItem -LiteralPath (Join-Path $script:Root 'module-runtime') -Filter 'scoop-capsulenv-*' -File -ErrorAction SilentlyContinue)
         $runtimeAdapters.Count | Should -Be 0
     }

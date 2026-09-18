@@ -144,4 +144,28 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
             if ($null -eq $oldStateRoot) { Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot }
         }
     }
+
+    It 'builds Start Menu package handlers on the host-local bridge' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-user-package-bridge-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $result = & $script:Module {
+                param($CapsuleRoot, $PlacementRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                $bridge = New-CapsulenvPackageUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity)
+                $handler = Get-CapsulenvPackageUserIntegrationBridgeCommand -Bridge $bridge -Package 'capsule/demo' -Shortcut 'Demo'
+                [pscustomobject]@{ Bridge = $bridge; Handler = $handler; Script = Get-Content -LiteralPath $bridge.BridgePath -Raw }
+            } (Join-Path $temporaryRoot 'capsule') (Join-Path $temporaryRoot 'nvme')
+
+            $result.Handler.Executable | Should -Not -BeLike '*capsule*'
+            ($result.Handler.Arguments -join ' ') | Should -Match 'capsulenv-package-bridge\.ps1'
+            ($result.Handler.Arguments -join ' ') | Should -Match 'capsule/demo'
+            $result.Script | Should -Match 'identity\.json'
+            $result.Script | Should -Not -Match 'CAPSULENV_ROOT'
+        } finally {
+            if ($null -eq $oldStateRoot) { Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot }
+        }
+    }
 }

@@ -70,6 +70,47 @@ Describe 'Capsulenv explicit migration and legacy isolation' {
         $result.Evidence.GeckoMajor | Should -Be 123
         $result.Evidence.ProductId | Should -Be 'firefox'
     }
+
+    It 'leaves the existing destination untouched when legacy browser evidence is invalid' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-migration-transaction-' + [Guid]::NewGuid().ToString('N'))
+        $legacy = Join-Path $temporaryRoot 'legacy-profile'
+        $portable = Join-Path $temporaryRoot 'portable-profile'
+        [void](New-Item -ItemType Directory -Path $legacy -Force)
+        [void](New-Item -ItemType Directory -Path $portable -Force)
+        'old-destination' | Set-Content -LiteralPath (Join-Path $portable 'sentinel.txt') -Encoding UTF8
+        $result = & $script:Module {
+            param($CapsuleRoot, $Legacy, $Portable)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            try {
+                Set-CapsulenvMigratedBrowserCompatibilityEvidence -LegacyProfile $Legacy -PortableProfile $Portable -BrowserApp firefox | Out-Null
+            } catch { $_.Exception.Message }
+        } (Join-Path $temporaryRoot 'capsule') $legacy $portable
+
+        $result | Should -Match 'compatibility.ini is missing'
+        (Get-Content -LiteralPath (Join-Path $portable 'sentinel.txt') -Raw).Trim() | Should -Be 'old-destination'
+        Test-Path -LiteralPath (Join-Path $portable '.capsulenv-gecko-compatibility.json') | Should -BeFalse
+    }
+
+    It 'replaces the whole browser destination instead of merging stale files' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-migration-replace-' + [Guid]::NewGuid().ToString('N'))
+        $legacy = Join-Path $temporaryRoot 'legacy-profile'
+        $portable = Join-Path $temporaryRoot 'portable-profile'
+        [void](New-Item -ItemType Directory -Path $legacy -Force)
+        [void](New-Item -ItemType Directory -Path $portable -Force)
+        'legacy' | Set-Content -LiteralPath (Join-Path $legacy 'prefs.js') -Encoding UTF8
+        "[Compatibility]`nLastVersion=123.0.1`n" | Set-Content -LiteralPath (Join-Path $legacy 'compatibility.ini') -Encoding UTF8
+        'stale' | Set-Content -LiteralPath (Join-Path $portable 'stale.txt') -Encoding UTF8
+        $result = & $script:Module {
+            param($CapsuleRoot, $Legacy, $Portable)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            Publish-CapsulenvMigratedBrowserProfile -Source $Legacy -Destination $Portable -BrowserApp firefox -Force
+        } (Join-Path $temporaryRoot 'capsule') $legacy $portable
+
+        $result.Status | Should -Be 'Migrated'
+        Test-Path -LiteralPath (Join-Path $portable 'prefs.js') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $portable 'stale.txt') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $portable '.capsulenv-gecko-compatibility.json') | Should -BeTrue
+    }
     It 'requires an explicit supported migration scope' {
         & $script:Module {
             { Invoke-CapsulenvLegacyMigration } | Should -Throw '*explicit supported scope*'

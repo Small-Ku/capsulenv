@@ -225,6 +225,100 @@ function Install-CapsulenvUserIntegration {
     return [pscustomobject][ordered]@{ Bridge = $bridge; Handler = $handler; DefaultBrowser = [bool]$DefaultBrowser }
 }
 
+function New-CapsulenvPackageUserIntegrationBridge {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$CapsuleId)
+
+    $root = Get-CapsulenvUserIntegrationBridgeRoot -CapsuleId $CapsuleId
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        throw 'Persistent Start Menu integration requires explicit host enrollment with retention=persistent; ephemeral hosts do not install a bridge.'
+    }
+    [void](New-Item -ItemType Directory -Path $root -Force)
+    $bridgePath = Join-Path $root 'capsulenv-package-bridge.ps1'
+    $context = Get-CapsulenvContext
+    $rootReference = [System.IO.Path]::GetFullPath($context.Root)
+    if (-not (Test-CapsulenvRegisteredCapsuleRoot -Root $rootReference -CapsuleId $CapsuleId)) {
+        throw "Capsule root does not prove the requested CapsuleId: $CapsuleId"
+    }
+    $bridgeScript = @'
+param(
+    [Parameter(Mandatory = $true)][string]$CapsuleId,
+    [Parameter(Mandatory = $true)][string]$Package,
+    [Parameter(Mandatory = $true)][string]$Shortcut,
+    [string[]]$Arguments = @()
+)
+
+$manifestPath = Join-Path $PSScriptRoot 'package-bridge.json'
+if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    throw "No host-local package bridge exists for capsule '$CapsuleId'."
+}
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+if ([int]$manifest.SchemaVersion -ne 1 -or [string]$manifest.CapsuleId -ne [string]$CapsuleId) {
+    throw "Package bridge identity does not match capsule '$CapsuleId'."
+}
+$capsuleRoot = $null
+foreach ($candidate in @($manifest.CapsuleRoots)) {
+    $identityPath = Join-Path ([string]$candidate) '.capsulenv/identity.json'
+    if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf)) { continue }
+    try {
+        $identity = Get-Content -LiteralPath $identityPath -Raw | ConvertFrom-Json
+        if ([int]$identity.SchemaVersion -eq 1 -and [string]$identity.Id -eq [string]$CapsuleId) {
+            $capsuleRoot = [System.IO.Path]::GetFullPath([string]$candidate)
+            break
+        }
+    } catch {}
+}
+if ([string]::IsNullOrWhiteSpace($capsuleRoot)) {
+    throw "Capsule '$CapsuleId' is absent. Attach the intended capsule; no removable path will be guessed."
+}
+$launcher = Join-Path $capsuleRoot 'capsulenv.cmd'
+if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+    throw "Capsule '$CapsuleId' is attached but its host launcher is unavailable."
+}
+& $launcher app run $Package $Shortcut @Arguments
+'@
+    Set-Content -LiteralPath $bridgePath -Value $bridgeScript -Encoding UTF8
+    $manifestPath = Join-Path $root 'package-bridge.json'
+    $manifest = [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        CapsuleId = $CapsuleId
+        HostKey = Get-CapsulenvHostKey
+        BridgePath = $bridgePath
+        Persistent = $true
+        CapsuleRoots = @($rootReference)
+        Handler = 'host-local-powershell-package-bridge'
+        CreatedAtUtc = [DateTime]::UtcNow.ToString('o')
+    }
+    Write-CapsulenvHostJsonAtomically -Path $manifestPath -Value $manifest
+    return $manifest
+}
+
+function Get-CapsulenvPackageUserIntegrationBridgeCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Bridge,
+        [Parameter(Mandatory = $true)][string]$Package,
+        [Parameter(Mandatory = $true)][string]$Shortcut
+    )
+
+    $hostPowerShell = if (Test-CapsulenvWindows) {
+        $windowsPowerShell = Join-Path ([Environment]::GetEnvironmentVariable('WINDIR')) 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        if (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf) { $windowsPowerShell } else { 'powershell.exe' }
+    } else {
+        $command = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $command) { [string]$command.Source } else { [System.IO.Path]::GetFullPath((Join-Path $PSHOME 'pwsh')) }
+    }
+    $values = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', [string]$Bridge.BridgePath, '-CapsuleId', [string]$Bridge.CapsuleId, '-Package', $Package, '-Shortcut', $Shortcut)
+    $arguments = @($values | ForEach-Object {
+        if ($_ -in @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '-CapsuleId', '-Package', '-Shortcut')) { $_ } else { ConvertTo-CapsulenvLauncherArgument -Value ([string]$_) }
+    })
+    return [pscustomobject][ordered]@{
+        Executable = $hostPowerShell
+        Arguments = $arguments
+        WorkingDirectory = Split-Path -Parent ([string]$Bridge.BridgePath)
+    }
+}
+
 function Remove-CapsulenvUserIntegrationBridge {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory = $true)][string]$CapsuleId)
@@ -238,7 +332,9 @@ function Remove-CapsulenvUserIntegrationBridge {
     }
     if ($PSCmdlet.ShouldProcess($root, 'Remove host-local UserIntegration bridge')) {
         if (Test-CapsulenvWindows) {
-            try { Restore-CapsulenvDefaultBrowserRegistration } catch {}
+            # Preserve the bridge when restore is blocked by Windows UserChoice;
+            # deleting it would leave the registry pointing at a dead handler.
+            Restore-CapsulenvDefaultBrowserRegistration
         }
         Remove-Item -LiteralPath $root -Recurse -Force
         return [pscustomobject]@{ Removed = $true; Root = $root }
@@ -246,4 +342,4 @@ function Remove-CapsulenvUserIntegrationBridge {
     return [pscustomobject]@{ Removed = $false; Root = $root; Reason = 'WhatIf' }
 }
 
-##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvUserIntegrationBridgeRoot, New-CapsulenvUserIntegrationBridge, Get-CapsulenvUserIntegrationBridge, Resolve-CapsulenvUserIntegrationCapsuleRoot, Get-CapsulenvUserIntegrationBridgeCommand, Invoke-CapsulenvUserIntegrationBridge, Install-CapsulenvUserIntegration, Remove-CapsulenvUserIntegrationBridge
+##MOD_EXEC## Export-ModuleMember -Function Get-CapsulenvUserIntegrationBridgeRoot, New-CapsulenvUserIntegrationBridge, Get-CapsulenvUserIntegrationBridge, Resolve-CapsulenvUserIntegrationCapsuleRoot, Get-CapsulenvUserIntegrationBridgeCommand, Invoke-CapsulenvUserIntegrationBridge, New-CapsulenvPackageUserIntegrationBridge, Get-CapsulenvPackageUserIntegrationBridgeCommand, Install-CapsulenvUserIntegration, Remove-CapsulenvUserIntegrationBridge
