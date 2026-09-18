@@ -76,22 +76,25 @@ Describe 'Capsulenv explicit migration and legacy isolation' {
         }
     }
 
-    It 'preserves an existing file when staged migration publication fails' {
+    It 'preserves an existing state directory when staged file publication fails' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-migration-transaction-' + [Guid]::NewGuid().ToString('N'))
         $source = Join-Path $temporaryRoot 'legacy/profile.ps1'
         $destination = Join-Path $temporaryRoot 'state/profile.ps1'
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
-        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force)
-        'old-valid-state' | Set-Content -LiteralPath $destination -Encoding UTF8
+        [void](New-Item -ItemType Directory -Path $destination -Force)
+        'old-valid-state' | Set-Content -LiteralPath (Join-Path $destination 'marker.txt') -Encoding UTF8
         'new-state' | Set-Content -LiteralPath $source -Encoding UTF8
         $result = & $script:Module {
             param($Source, $Destination)
-            $first = Copy-CapsulenvLegacyStateItem -Source $Source -Destination $Destination -Force
-            $after = Get-Content -LiteralPath $Destination -Raw
-            [pscustomobject]@{ Status = $first.Status; Content = $after }
+            $threw = $false
+            try { Copy-CapsulenvLegacyStateItem -Source $Source -Destination $Destination -Force | Out-Null } catch { $threw = $true }
+            [pscustomobject]@{
+                Threw = $threw
+                Marker = (Get-Content -LiteralPath (Join-Path $Destination 'marker.txt') -Raw).Trim()
+            }
         } $source $destination
-        $result.Status | Should -Be 'Migrated'
-        $result.Content.Trim() | Should -Be 'new-state'
+        $result.Threw | Should -BeTrue
+        $result.Marker | Should -Be 'old-valid-state'
     }
 
 
