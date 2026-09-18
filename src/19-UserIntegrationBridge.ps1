@@ -66,8 +66,18 @@ function Get-CapsulenvUserIntegrationBridgeCommand {
         if (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf) { $windowsPowerShell } else { 'powershell.exe' }
     } else {
         $command = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($null -eq $command) { throw 'A host PowerShell runner is required for the persistent bridge.' }
-        [string]$command.Source
+        if ($null -ne $command) {
+            [string]$command.Source
+        } else {
+            $runtimePwsh = Join-Path $PSHOME 'pwsh'
+            if (-not (Test-Path -LiteralPath $runtimePwsh -PathType Leaf)) {
+                $runtimePwsh = Join-Path $PSHOME 'pwsh.exe'
+            }
+            if (-not (Test-Path -LiteralPath $runtimePwsh -PathType Leaf)) {
+                throw 'A host PowerShell runner is required for the persistent bridge.'
+            }
+            [System.IO.Path]::GetFullPath($runtimePwsh)
+        }
     }
     return [pscustomobject][ordered]@{
         Executable = $hostPowerShell

@@ -14,7 +14,7 @@ Describe 'Capsulenv host-local realization and generation authority' {
     It 'rejects rooted Windows executable paths before publishing a realization' {
         $source = Join-Path $TestDrive 'source.exe'
         'payload' | Set-Content -LiteralPath $source -NoNewline
-        $rooted = if (Test-CapsulenvWindows) { 'C:\outside.exe' } else { 'C:/outside.exe' }
+        $rooted = if ($IsWindows) { 'C:\outside.exe' } else { 'C:/outside.exe' }
 
         {
             & $script:Module {

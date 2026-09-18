@@ -105,6 +105,8 @@ Describe 'Capsulenv PowerShell and seed ownership' {
             [void](New-Item -ItemType Directory -Path $currentHome -Force)
             $portablePwsh = Join-Path $currentHome 'pwsh.exe'
             '' | Set-Content -LiteralPath $portablePwsh -Encoding UTF8
+            @{ version = '7.6.5'; bin = @('pwsh.exe') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $currentHome 'manifest.json') -Encoding UTF8
+            @{ version = '7.6.5' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $currentHome 'install.json') -Encoding UTF8
 
             $selected = & $script:Module {
                 param($CapsuleRoot)

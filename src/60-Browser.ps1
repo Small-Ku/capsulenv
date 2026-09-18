@@ -10,6 +10,9 @@ function Get-CapsulenvBrowserDefinition {
     }
 }
 
+# Browser bindings never fall back to an unrelated host profile. The --host
+# compatibility switch never falls back to a different Gecko product.
+
 function Get-CapsulenvBrowserDisplayName {
     [CmdletBinding()]
     param(
