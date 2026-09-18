@@ -38,6 +38,33 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.PSObject.Properties.Name | Should -Not -Contain 'Executable'
     }
 
+    It 'enforces seed version provider and capability requirements before acquisition' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-requirement-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $source = Join-Path $capsuleRoot 'seed/pwsh.exe'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        'seed-pwsh' | Set-Content -LiteralPath $source -Encoding UTF8
+        $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        $result = & $script:Module {
+            param($CapsuleRoot, $Source, $Hash)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $entry = New-CapsulenvPortableSeedEntry -Name pwsh -Version 7.5.0 -SourcePath $Source -ExpectedHash $Hash
+            Set-CapsulenvPortableSeedManifest -Entries @($entry) | Out-Null
+            $exactMiss = @(Get-CapsulenvSeedProgramCandidates -Requirement (New-CapsulenvProgramRequirement -Name pwsh -ExactVersion 7.6.4))
+            $exactHit = @(Get-CapsulenvSeedProgramCandidates -Requirement (New-CapsulenvProgramRequirement -Name pwsh -ExactVersion 7.5.0 -AllowedProviders @('seed')))
+            $capabilityMiss = @(Get-CapsulenvSeedProgramCandidates -Requirement (New-CapsulenvProgramRequirement -Name pwsh -ExactVersion 7.5.0 -RequiredCapabilities @('interactive') -AllowedProviders @('seed')))
+            [pscustomobject]@{
+                ExactMiss = $exactMiss.Count
+                ExactHit = $exactHit.Count
+                CapabilityMiss = $capabilityMiss.Count
+            }
+        } $capsuleRoot $source $hash
+
+        $result.ExactMiss | Should -Be 0
+        $result.ExactHit | Should -Be 1
+        $result.CapabilityMiss | Should -Be 0
+    }
+
     It 'rejects a corrupt seed and allows normal provider fallback when no bootstrap is needed' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-fallback-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'
