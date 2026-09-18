@@ -34,17 +34,55 @@ function Copy-CapsulenvLegacyStateItem {
     if ((Test-Path -LiteralPath $Destination) -and -not $Force) {
         return [pscustomobject]@{ Status = 'Skipped'; Source = $Source; Destination = $Destination; Reason = 'destination exists; use -Force' }
     }
-    if ($PSCmdlet.ShouldProcess($Destination, 'Migrate legacy state into explicit portable State')) {
-        if (Test-Path -LiteralPath $Source -PathType Leaf) {
-            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force)
-            Copy-Item -LiteralPath $Source -Destination $Destination -Force
-        } else {
-            [void](New-Item -ItemType Directory -Path $Destination -Force)
-            Copy-Item -Path (Join-Path $Source '*') -Destination $Destination -Recurse -Force
-        }
-        return [pscustomobject]@{ Status = 'Migrated'; Source = $Source; Destination = $Destination }
+    if (-not $PSCmdlet.ShouldProcess($Destination, 'Migrate legacy state through a staging boundary')) {
+        return [pscustomobject]@{ Status = 'WhatIf'; Source = $Source; Destination = $Destination }
     }
-    return [pscustomobject]@{ Status = 'WhatIf'; Source = $Source; Destination = $Destination }
+
+    $destinationParent = Split-Path -Parent $Destination
+    [void](New-Item -ItemType Directory -Path $destinationParent -Force)
+    $staging = Join-Path $destinationParent ('.capsulenv-migration-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
+    $backup = Join-Path $destinationParent ('.capsulenv-migration-{0}.bak' -f [Guid]::NewGuid().ToString('N'))
+    $destinationExists = Test-Path -LiteralPath $Destination
+    $backupMoved = $false
+    $published = $false
+    try {
+        if (Test-Path -LiteralPath $Source -PathType Leaf) {
+            Copy-Item -LiteralPath $Source -Destination $staging -Force
+        } else {
+            [void](New-Item -ItemType Directory -Path $staging -Force)
+            foreach ($item in @(Get-ChildItem -LiteralPath $Source -Force)) {
+                Copy-Item -LiteralPath $item.FullName -Destination $staging -Recurse -Force
+            }
+        }
+
+        if (Test-Path -LiteralPath $Source -PathType Leaf) {
+            if ($destinationExists) {
+                [System.IO.File]::Replace($staging, $Destination, $null, $true)
+            } else {
+                Move-Item -LiteralPath $staging -Destination $Destination
+            }
+        } else {
+            if ($destinationExists) {
+                Move-Item -LiteralPath $Destination -Destination $backup
+                $backupMoved = $true
+            }
+            Move-Item -LiteralPath $staging -Destination $Destination
+        }
+        $published = $true
+        return [pscustomobject]@{ Status = 'Migrated'; Source = $Source; Destination = $Destination }
+    } catch {
+        if ($backupMoved -and -not (Test-Path -LiteralPath $Destination) -and (Test-Path -LiteralPath $backup)) {
+            Move-Item -LiteralPath $backup -Destination $Destination -ErrorAction SilentlyContinue
+        }
+        throw
+    } finally {
+        if (Test-Path -LiteralPath $staging) {
+            Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if ($published -and (Test-Path -LiteralPath $backup)) {
+            Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Set-CapsulenvMigratedBrowserCompatibilityEvidence {
@@ -107,11 +145,52 @@ function Invoke-CapsulenvLegacyMigration {
         }
         $source = [string]$inventory.LegacyBrowserProfile
         $destination = Get-CapsulenvPortableBrowserProfilePath -App $BrowserApp
-        $copyResult = Copy-CapsulenvLegacyStateItem -Source $source -Destination $destination -Force:$Force
-        $results.Add($copyResult)
-        if ([string]$copyResult.Status -eq 'Migrated') {
-            $evidence = Set-CapsulenvMigratedBrowserCompatibilityEvidence -LegacyProfile $source -PortableProfile $destination -BrowserApp $BrowserApp
-            $results.Add([pscustomobject][ordered]@{ Status = 'CompatibilityEvidenceEstablished'; BrowserApp = $BrowserApp; GeckoMajor = $evidence.GeckoMajor; Source = 'legacy-profile' })
+        $copyResult = $null
+        if (-not (Test-Path -LiteralPath $source)) {
+            $copyResult = [pscustomobject]@{ Status = 'Skipped'; Source = $source; Destination = $destination; Reason = 'source absent' }
+        } elseif ((Test-Path -LiteralPath $destination) -and -not $Force) {
+            $copyResult = [pscustomobject]@{ Status = 'Skipped'; Source = $source; Destination = $destination; Reason = 'destination exists; use -Force' }
+        } elseif ($PSCmdlet.ShouldProcess($destination, 'Migrate browser profile through staged validation and publication')) {
+            $destinationParent = Split-Path -Parent $destination
+            [void](New-Item -ItemType Directory -Path $destinationParent -Force)
+            $staging = Join-Path $destinationParent ('.capsulenv-browser-migration-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
+            $backup = Join-Path $destinationParent ('.capsulenv-browser-migration-{0}.bak' -f [Guid]::NewGuid().ToString('N'))
+            $destinationExists = Test-Path -LiteralPath $destination
+            $backupMoved = $false
+            $published = $false
+            try {
+                [void](New-Item -ItemType Directory -Path $staging -Force)
+                foreach ($item in @(Get-ChildItem -LiteralPath $source -Force)) {
+                    Copy-Item -LiteralPath $item.FullName -Destination $staging -Recurse -Force
+                }
+                $evidence = Set-CapsulenvMigratedBrowserCompatibilityEvidence -LegacyProfile $source -PortableProfile $staging -BrowserApp $BrowserApp
+                if ($destinationExists) {
+                    Move-Item -LiteralPath $destination -Destination $backup
+                    $backupMoved = $true
+                }
+                Move-Item -LiteralPath $staging -Destination $destination
+                $published = $true
+                $copyResult = [pscustomobject]@{ Status = 'Migrated'; Source = $source; Destination = $destination }
+                $results.Add($copyResult)
+                $results.Add([pscustomobject][ordered]@{ Status = 'CompatibilityEvidenceEstablished'; BrowserApp = $BrowserApp; GeckoMajor = $evidence.GeckoMajor; Source = 'legacy-profile' })
+            } catch {
+                if ($backupMoved -and -not (Test-Path -LiteralPath $destination) -and (Test-Path -LiteralPath $backup)) {
+                    Move-Item -LiteralPath $backup -Destination $destination -ErrorAction SilentlyContinue
+                }
+                throw
+            } finally {
+                if (Test-Path -LiteralPath $staging) {
+                    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                if ($published -and (Test-Path -LiteralPath $backup)) {
+                    Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } else {
+            $copyResult = [pscustomobject]@{ Status = 'WhatIf'; Source = $source; Destination = $destination }
+        }
+        if ($null -ne $copyResult -and [string]$copyResult.Status -in @('Skipped', 'WhatIf')) {
+            $results.Add($copyResult)
         }
     }
     if ($MigratePowerShellProfile) {

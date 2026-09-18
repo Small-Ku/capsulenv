@@ -75,4 +75,24 @@ Describe 'Capsulenv explicit migration and legacy isolation' {
             { Invoke-CapsulenvLegacyMigration } | Should -Throw '*explicit supported scope*'
         }
     }
+
+    It 'preserves an existing file when staged migration publication fails' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-migration-transaction-' + [Guid]::NewGuid().ToString('N'))
+        $source = Join-Path $temporaryRoot 'legacy/profile.ps1'
+        $destination = Join-Path $temporaryRoot 'state/profile.ps1'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force)
+        'old-valid-state' | Set-Content -LiteralPath $destination -Encoding UTF8
+        'new-state' | Set-Content -LiteralPath $source -Encoding UTF8
+        $result = & $script:Module {
+            param($Source, $Destination)
+            $first = Copy-CapsulenvLegacyStateItem -Source $Source -Destination $Destination -Force
+            $after = Get-Content -LiteralPath $Destination -Raw
+            [pscustomobject]@{ Status = $first.Status; Content = $after }
+        } $source $destination
+        $result.Status | Should -Be 'Migrated'
+        $result.Content.Trim() | Should -Be 'new-state'
+    }
+
+
 }
