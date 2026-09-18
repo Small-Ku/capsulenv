@@ -50,25 +50,7 @@ function ConvertTo-CapsulenvGenerationProgramCandidate {
 
     $selectionKind = if ($null -ne $Selection.PSObject.Properties['Kind']) { [string]$Selection.Kind } else { 'realization' }
     if ($selectionKind -eq 'host-program') {
-        # Host Scoop is mutable outside Capsulenv. Re-discover the selected
-        # provider/provenance at activation and validate the current executable
-        # and version against the live requirement.
-        $current = @(
-            Get-CapsulenvProgramCandidates -Requirement $Requirement |
-                Where-Object {
-                    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Provider, [string]$Selection.Provider) -and
-                    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Provenance, [string]$Selection.Provenance) -and
-                    (
-                        [string]::IsNullOrWhiteSpace([string]$Selection.Scope) -or
-                        [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Scope, [string]$Selection.Scope)
-                    )
-                } |
-                Select-Object -First 1
-        )
-        if ($null -eq $current) {
-            throw "Host program '$($Selection.Name)' is no longer available from its recorded provider binding."
-        }
-        return $current
+        return New-CapsulenvProgramCandidate -Name ([string]$Selection.Name) -Executable ([string]$Selection.Executable) -Root ([string]$Selection.Root) -Provider ([string]$Selection.Provider) -Version ([string]$Selection.Version) -Trusted:([bool]$Selection.Trusted) -OwnsLifecycle:([bool]$Selection.OwnsLifecycle) -Provenance ([string]$Selection.Provenance)
     }
     $relative = [string]$Selection.ExecutableRelativePath
     $executable = Join-Path (Join-Path ([string]$Selection.RealizationRoot) 'payload') ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
@@ -170,17 +152,7 @@ function Resolve-CapsulenvActivation {
             if ([string]$resource.Criticality -eq 'required') { $requiredFailures.Add($message) } else { $diagnostics.Add($message + ' Optional resource skipped.') }
             continue
         }
-        try {
-            $candidate = ConvertTo-CapsulenvGenerationProgramCandidate -Requirement $requirement -Selection $selection
-        } catch {
-            $message = "Program '$($resource.Name)' failed active-generation revalidation: $($_.Exception.Message)"
-            if ([string]$resource.Criticality -eq 'required') {
-                $requiredFailures.Add($message)
-            } else {
-                $diagnostics.Add($message + ' Optional resource skipped.')
-            }
-            continue
-        }
+        $candidate = ConvertTo-CapsulenvGenerationProgramCandidate -Requirement $requirement -Selection $selection
         $resolution = Resolve-CapsulenvProgram -Requirement $requirement -Candidates @($candidate)
         if (-not $resolution.Succeeded) {
             $message = "Program '$($resource.Name)' failed active-generation validation."

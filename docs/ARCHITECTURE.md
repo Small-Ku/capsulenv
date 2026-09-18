@@ -386,24 +386,23 @@ non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
 requirement, and generation-selection names before constructing a candidate.
 
-# Browser Program and portable profile binding
+# PowerShell runtime and profile binding
 
-Browser binaries resolve through the ordinary trusted Program order, including
-compatible host Scoop reuse. Portable profile identity is derived from the
-canonical browser product name, not a provider-qualified selector, so moving
-between `firefox`, `scoop/firefox`, and a Capsulenv-local realization does not
-silently select a different profile. The Gecko profile is a separate portable
-State root and is guarded by an exclusive OS-held lease.
+Interactive `pwsh` is a required Program when requested; the control-plane
+PowerShell is never a silent substitute. The binding keeps the profile and
+history under portable capsule State, while portable/private modules and
+large native modules can use separate portable and host-local module roots.
+Explicitly trusted host module paths may be added, but inherited `PSModulePath`
+entries are not trusted wholesale.
 
-Each profile records minimal Gecko compatibility evidence (product identity and
-Gecko major). A browser binding establishes that evidence when the profile is
-new and fails diagnostically before leasing or launching when an existing
-profile is unreadable or incompatible. It never mutates around a compatibility
-mismatch or falls back to an unrelated host profile.
+Because PowerShell does not reinterpret arbitrary environment variables as
+`$PROFILE`, the binding publishes a capsule-local child bootstrap script. The
+launch contract uses `-NoProfile` and explicitly dot-sources the portable
+profile, then configures `Set-PSReadLineOption -HistorySavePath` to the
+portable history path. A real child `pwsh` must consume this contract before
+the shell is considered activated.
 
-The browser process owns the lease lifecycle through an exact process-start
-record and an exit watcher. Normal process exit releases the lease; the
-browser-specific stop/close operations release it after exact owned-process
-handling. Persistent default-browser registration remains the later
-UserIntegration boundary, and historical `--host` handling is migration
-compatibility only.
+Host-local module storage is created only after
+`Initialize-CapsulenvHostPlacement` publishes and validates the host placement
+marker. A read-only path query never materializes an unmarked placement
+subtree.
