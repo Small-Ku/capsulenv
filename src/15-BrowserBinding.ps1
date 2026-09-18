@@ -274,6 +274,7 @@ function Resolve-CapsulenvBrowserBinding {
         [void](Release-CapsulenvStateLease -Lease $lease)
         throw
     }
+}
 
 function Start-CapsulenvPortableBrowser {
     [CmdletBinding()]
