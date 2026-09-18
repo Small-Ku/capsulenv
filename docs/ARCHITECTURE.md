@@ -469,3 +469,44 @@ bridge, not a removable capsule executable or profile. Installation and
 removal use the existing reversible registration state; when the capsule is
 absent the bridge reports the condition without repairing or guessing the
 registration target.
+
+# SessionService and sing-box lifecycle
+
+`SessionService` is a first-class lifecycle boundary, not a detached Routine.
+Required services must declare an explicit readiness probe; a spawned PID is
+not readiness. Health is evaluated only after readiness, and any exception
+after spawn cleans up the exact process identified by its captured start
+identity. Owned service records are stopped only through the exact ownership
+ledger path.
+
+For sing-box, the portable config is a real binding: the config must exist,
+is acquired under an exclusive state lease, and is passed to the resolved
+host-local Program with `-c`. The lease is released on failed start and exact
+owned stop. The running service never treats a missing or stale config as an
+implicit default.
+
+Attached reuse requires service identity in addition to PID/start identity and
+health: the process executable, service role, and Program provenance must
+match. An attached/foreign sing-box process remains non-stoppable. Proxy
+environment is a narrow acquisition/session input, not a generic orchestration
+DAG.
+
+# Migration and legacy isolation
+
+Migration is an explicit command with bounded supported scopes, currently
+portable browser profile and PowerShell profile/history state. It copies
+selected legacy state into the new State model and never becomes startup
+repair.
+
+Healthy activation no longer invokes broad rehydrate, automatic projection
+repair, or OnRehydrate routines. Process lifecycle decisions use the session
+ledger's exact PID plus process-start identity. The legacy rehydrate command
+remains only as a temporary explicit compatibility adapter; its retained
+scenarios and deletion path are audited here rather than treated as a second
+authority.
+
+`install-user` no longer writes a persistent default-browser command that
+contains a removable capsule executable or profile. It leaves the host default
+browser unchanged and reports the host-local UserIntegration bridge as the
+explicit integration surface; the old registry state helpers remain only for
+bounded restore/migration compatibility.

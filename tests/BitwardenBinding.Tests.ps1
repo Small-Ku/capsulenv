@@ -69,18 +69,36 @@ Describe 'Capsulenv host Bitwarden attach-only integration' {
         try {
             {
                 & $script:Module {
-                    param($CapsuleRoot, $Executable)
+                    param($CapsuleRoot, $Executable, $ProcessId)
                     Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                     $requirement = New-CapsulenvProgramRequirement -Name bitwarden
                     $candidate = New-CapsulenvProgramCandidate -Name bitwarden -Executable $Executable -Provider host-scoop -Version 2026.1.0
-                    Invoke-CapsulenvBitwardenSessionIntegration -App bitwarden -Requirement $requirement -Candidates @($candidate) -SshAuthSock 'agent://unreachable' -Criticality required
-                } $temporaryRoot $sleep.Source
+                    Invoke-CapsulenvBitwardenSessionIntegration -App bitwarden -Requirement $requirement -Candidates @($candidate) -SshAuthSock 'agent://unreachable' -AgentBinding ([pscustomobject]@{ Endpoint = 'agent://unreachable'; ProgramProvenance = 'host-scoop'; ProcessId = $ProcessId }) -Criticality required
+                } $temporaryRoot $sleep.Source $process.Id
             } | Should -Throw '*unreachable*'
         } finally {
             if ($null -ne (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) { Stop-Process -Id $process.Id -Force }
         }
     }
 
+    It 'rejects an agent endpoint without explicit process and provenance binding' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-bitwarden-agent-binding-' + [Guid]::NewGuid().ToString('N'))
+        $sleep = @(Get-Command sleep -CommandType Application -ErrorAction Stop | Select-Object -First 1)[0]
+        $process = Start-Process -FilePath $sleep.Source -ArgumentList '30' -PassThru
+        try {
+            {
+                & $script:Module {
+                    param($CapsuleRoot, $Executable)
+                    Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                    $requirement = New-CapsulenvProgramRequirement -Name bitwarden
+                    $candidate = New-CapsulenvProgramCandidate -Name bitwarden -Executable $Executable -Provider host-scoop -Version 2026.1.0
+                    Invoke-CapsulenvBitwardenSessionIntegration -App bitwarden -Requirement $requirement -Candidates @($candidate) -SshAuthSock 'agent://unreachable' -Criticality required
+                } $temporaryRoot $sleep.Source
+            } | Should -Throw '*explicit endpoint binding*'
+        } finally {
+            if ($null -ne (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) { Stop-Process -Id $process.Id -Force }
+        }
+    }
     It 'degrades optional integration when no trusted Bitwarden program is available' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-bitwarden-optional-' + [Guid]::NewGuid().ToString('N'))
         [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)

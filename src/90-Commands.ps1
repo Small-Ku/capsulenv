@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 13120)
-Total output lines: 1099
-
 # Root discovery keeps the stable 'help <topic>' entrypoint and states 'No separate init step is required'; an optional action adds focused help.
 function Show-CapsulenvHelp {
     [CmdletBinding()]
@@ -131,6 +128,16 @@ eject
 
       Eject never changes install mode. In User mode, run restore-user before
       removing the capsule from a host that will continue to be used.
+'@ | Write-Host
+        }
+        'migration' {
+@'
+migration
+  capsulenv migrate [--browser <app>] [--powershell-profile <path>] [--powershell-history <path>] [--force]
+      Migrate only explicitly selected legacy browser or PowerShell state into
+      the portable State layout. This command never runs during activation;
+      absent sources are reported and unsupported legacy projection/tool data
+      is not copied automatically.
 '@ | Write-Host
         }
         'seed' {
@@ -551,7 +558,113 @@ function New-CapsulenvCliUsageError {
     } else {
         $remediation.Add("Run 'capsulenv help' to see available commands.")
     }
-    return New-Capsulen…1120 tokens truncated…   if ([string]$installed.Provider -eq 'Capsulenv') {
+    return New-CapsulenvDiagnosticErrorRecord `
+        -Id 'Capsulenv.Cli.Usage' `
+        -Message $Message `
+        -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
+        -Remediation $remediation.ToArray()
+}
+
+function New-CapsulenvCliUnknownCommandError {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Command)
+
+    $remediation = New-Object System.Collections.Generic.List[string]
+    $suggestion = Get-CapsulenvCliCommandSuggestion -Command $Command
+    if (-not [string]::IsNullOrWhiteSpace([string]$suggestion)) {
+        $remediation.Add(("Did you mean 'capsulenv {0}'?" -f $suggestion))
+    }
+    $remediation.Add("Run 'capsulenv help' to see available commands.")
+    return New-CapsulenvDiagnosticErrorRecord `
+        -Id 'Capsulenv.Cli.UnknownCommand' `
+        -Message "Unknown capsulenv command '$Command'." `
+        -Category ([System.Management.Automation.ErrorCategory]::InvalidArgument) `
+        -TargetObject $Command `
+        -Remediation $remediation.ToArray()
+}
+
+function Invoke-CapsulenvBucketCommand {
+    [CmdletBinding()]
+    param([string[]]$Arguments)
+
+    if ($Arguments.Count -lt 1) {
+        Show-CapsulenvHelp -Topic bucket
+        return
+    }
+
+    $action = $Arguments[0].ToLowerInvariant()
+    $remaining = @($Arguments | Select-Object -Skip 1)
+    if ($action -in @('help', '--help', '-h')) {
+        if ($remaining.Count -gt 1) {
+            throw (New-CapsulenvCliUsageError -Message 'bucket help accepts at most one action.' -Usage 'capsulenv bucket help [action]' -Topic bucket)
+        }
+        $helpAction = if ($remaining.Count -eq 1) { [string]$remaining[0] } else { $null }
+        Show-CapsulenvHelp -Topic bucket -Action $helpAction
+        return
+    }
+    if ($remaining.Count -eq 1 -and [string]$remaining[0] -in @('--help', '-h')) {
+        Show-CapsulenvHelp -Topic bucket -Action $action
+        return
+    }
+    $scoopArguments = $null
+    switch ($action) {
+        'list' {
+            if ($remaining.Count -gt 0) {
+                throw (New-CapsulenvCliUsageError -Message 'bucket list does not accept additional arguments.' -Usage 'capsulenv bucket list' -Topic bucket)
+            }
+            $scoopArguments = @('bucket', 'list')
+        }
+        'known' {
+            if ($remaining.Count -gt 0) {
+                throw (New-CapsulenvCliUsageError -Message 'bucket known does not accept additional arguments.' -Usage 'capsulenv bucket known' -Topic bucket)
+            }
+            $scoopArguments = @('bucket', 'known')
+        }
+        'add' {
+            if ($remaining.Count -lt 1 -or $remaining.Count -gt 2) {
+                throw (New-CapsulenvCliUsageError -Message 'bucket add requires a bucket name and optional repository.' -Usage 'capsulenv bucket add <name> [repository]' -Topic bucket)
+            }
+            $scoopArguments = @('bucket', 'add') + @($remaining)
+        }
+        { $_ -in @('remove', 'rm') } {
+            if ($remaining.Count -ne 1) {
+                throw (New-CapsulenvCliUsageError -Message 'bucket remove requires exactly one bucket name.' -Usage 'capsulenv bucket remove <name>' -Topic bucket)
+            }
+            $scoopArguments = @('bucket', 'rm', [string]$remaining[0])
+        }
+        'update' {
+            if ($remaining.Count -gt 0) {
+                throw (New-CapsulenvCliUsageError -Message 'Scoop refreshes configured buckets together; bucket update does not accept a bucket name.' -Usage 'capsulenv bucket update' -Topic bucket)
+            }
+            $scoopArguments = @('update')
+        }
+        default {
+            throw (New-CapsulenvCliUnknownActionError -Group bucket -Action $action -Id 'Capsulenv.Cli.UnknownBucketAction')
+        }
+    }
+
+    [void](Set-CapsulenvSessionEnvironment)
+    [void](Invoke-CapsulenvScoopCommand -Arguments ([string[]]$scoopArguments))
+}
+
+function Update-CapsulenvAppMetadata {
+    [CmdletBinding()]
+    param()
+
+    [void](Set-CapsulenvSessionEnvironment)
+    [void](Invoke-CapsulenvScoopCommand -Arguments @('update'))
+}
+
+function Resolve-CapsulenvAppUpdateTarget {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Reference)
+
+    $separator = $Reference.IndexOf('/')
+    if ($separator -gt 0) {
+        $prefix = $Reference.Substring(0, $separator).ToLowerInvariant()
+        if ($prefix -in @('capsule', 'scoop', 'scoop:user', 'scoop:global', 'user', 'global')) {
+            $installed = Get-CapsulenvInstalledApp -Selector $Reference
+            if ([string]$installed.Provider -eq 'Capsulenv') {
                 $state = Get-CapsulenvInstalledPackageState -Name ([string]$installed.Name)
                 return [pscustomobject]@{ Provider='Capsulenv'; ProviderScope=$null; Scope='Capsule'; Name=[string]$installed.Name; Reference=[string]$state.Reference }
             }
@@ -863,6 +976,7 @@ function Invoke-Capsulenv {
                 -SkipToolRepairs:($remaining -contains '--skip-tool-repairs') `
                 -StrictToolRepairs:($remaining -contains '--strict-tool-repairs')
         }
+        'migrate' { Invoke-CapsulenvMigrationCommand -Arguments $remaining }
         'rehydrate' {
             $allowed = @('--skip-hooks', '--skip-persist-repairs', '--skip-tool-repairs', '--strict-tool-repairs')
             $unknown = @($remaining | Where-Object { $_ -notin $allowed })

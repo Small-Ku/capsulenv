@@ -89,7 +89,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'Run restore-user from an elevated terminal'
         $script:EnvironmentSource | Should -Match 'Initialize-CapsulenvGitOpenSshSession'
         $script:EnvironmentSource | Should -Match 'Sync-CapsulenvUserEnvironment -RelocationContext \$relocationContext'
-        $script:EnvironmentSource | Should -Match 'Sync-CapsulenvConfiguredDefaultBrowser'
+        $script:EnvironmentSource | Should -Match 'Persistent default-browser registration is not installed from a removable capsule path'
         $script:EnvironmentSource | Should -Match 'Assert-CapsulenvDefaultBrowserRestorable'
         $script:EnvironmentSource | Should -Match 'Restore-CapsulenvDefaultBrowserRegistration'
         $script:EnvironmentSource | Should -Match 'Remove-CapsulenvUserStartMenuShortcuts'

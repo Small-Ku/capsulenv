@@ -94,6 +94,45 @@ Describe 'Capsulenv activation fast path and criticality' {
         }
     }
 
+    It 'revalidates mutable host-program selections against current provider state' {
+        $executable = Join-Path $TestDrive 'current-firefox.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+        Mock Get-CapsulenvActiveGeneration {
+            [pscustomobject]@{
+                Generation = [pscustomobject]@{
+                    GenerationId = 'host-refresh'
+                    Selections = @([pscustomobject]@{
+                        Kind = 'host-program'
+                        Name = 'firefox'
+                        Provider = 'host-scoop'
+                        Scope = 'user'
+                        Provenance = 'scoop:user/firefox'
+                        Version = '1.0.0'
+                        Executable = 'C:\stale\firefox.exe'
+                        Root = 'C:\stale'
+                        Trusted = $true
+                        OwnsLifecycle = $false
+                    })
+                }
+            }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvProgramCandidates {
+            @(
+                (New-CapsulenvProgramCandidate -Name firefox -Executable $executable -Provider host-scoop -Scope user -Version 2.0.0 -Provenance 'scoop:user/firefox')
+            )
+        } -ModuleName Capsulenv
+
+        $plan = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name firefox
+            $resource = New-CapsulenvActivationResource -Name firefox -Criticality required -Kind program -Requirement $requirement
+            Resolve-CapsulenvActivation -Resources @($resource)
+        }
+
+        $plan.Succeeded | Should -BeTrue
+        $plan.ResolvedPrograms[0].Version | Should -Be '2.0.0'
+        $plan.ResolvedPrograms[0].Executable | Should -Be ([System.IO.Path]::GetFullPath($executable))
+    }
+
     It 'does not silently drop required binding or session-service resources' {
         $plan = & $script:Module {
             $binding = New-CapsulenvActivationResource -Name git -Criticality required -Kind binding -Value $null
