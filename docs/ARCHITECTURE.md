@@ -254,3 +254,25 @@ Package ownership與 tool cache/project storage是不同 surface。`tool-data/`�
 - control bootstrap/runtime command boundary保持 WinPS 5.1-compatible
 
 這些 gate需要 synthetic rejecting/accepting fixtures；不能為了 refactor方便降級成沒有 ownership意義的 string smoke test。
+
+# Host identity and depot retention
+
+Capsulenv keeps capsule identity and desired state portable, while resolving a
+host-local depot from an independent host record. A host record is keyed by a
+stable machine/user integration key and never by the portable root or drive
+letter.
+
+Unknown hosts resolve to retention = ephemeral by default. The ephemeral
+placement is namespaced by host key, capsule identity, and the current boot
+epoch, so a valid realization can be reused during one host lifetime without
+making reboot/reimage persistence part of correctness. No shutdown cleanup hook
+is required.
+
+Persistent placement requires an explicit host enrollment/tag such as home. An
+enrolled host may provide a stable local depot root, including a custom local
+volume. Portable state is not copied into this depot merely to simplify
+cleanup, and a stale host-local record never overrides portable desired state.
+
+The host placement foundation only resolves and materializes layout. Program
+resolution, immutable generations, activation, and integration ownership remain
+separate boundaries implemented by the downstream architecture issues.
