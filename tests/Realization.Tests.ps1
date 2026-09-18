@@ -11,6 +11,20 @@ Describe 'Capsulenv host-local realization and generation authority' {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
+    It 'rejects rooted Windows executable paths before publishing a realization' {
+        $source = Join-Path $TestDrive 'source.exe'
+        'payload' | Set-Content -LiteralPath $source -NoNewline
+        $rooted = if (Test-CapsulenvWindows) { 'C:\outside.exe' } else { 'C:/outside.exe' }
+
+        {
+            & $script:Module {
+                param($Source, $ExecutableRelativePath)
+                Initialize-CapsulenvContext -Root (Join-Path $TestDrive 'capsule') | Out-Null
+                Acquire-CapsulenvProgramRealization -Name demo -Version 1.0.0 -SourcePath $Source -ExecutableRelativePath $ExecutableRelativePath
+            } $source $rooted
+        } | Should -Throw '*non-rooted relative path*'
+    }
+
     It 'publishes a verified immutable realization before activating a small generation' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-realization-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT

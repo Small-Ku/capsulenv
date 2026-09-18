@@ -39,6 +39,35 @@ function Get-CapsulenvRealizationManifestPath {
     return Join-Path $RealizationRoot 'realization.json'
 }
 
+function Resolve-CapsulenvRealizationPayloadPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$PayloadRoot,
+        [Parameter(Mandatory = $true)][string]$ExecutableRelativePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ExecutableRelativePath)) {
+        throw 'ExecutableRelativePath must be a non-rooted relative path.'
+    }
+    $normalized = $ExecutableRelativePath.Replace('', [System.IO.Path]::DirectorySeparatorChar)
+    if ([System.IO.Path]::IsPathRooted($normalized) -or $normalized -match '^[A-Za-z]:[\\/]') {
+        throw 'ExecutableRelativePath must be a non-rooted relative path.'
+    }
+    $root = [System.IO.Path]::GetFullPath($PayloadRoot).TrimEnd([char[]]'\\/')
+    $candidate = [System.IO.Path]::GetFullPath((Join-Path $root $normalized))
+    $comparison = if (Test-CapsulenvWindows) {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+    $prefix = $root + [System.IO.Path]::DirectorySeparatorChar
+    $sameRoot = [System.StringComparer]::Ordinal.Equals($candidate, $root)
+    if (-not $sameRoot -and -not $candidate.StartsWith($prefix, $comparison)) {
+        throw 'ExecutableRelativePath must remain inside the realization payload.'
+    }
+    return $candidate
+}
+
 function Get-CapsulenvRealizationPayloadHash {
     [CmdletBinding()]
     param(
@@ -48,7 +77,7 @@ function Get-CapsulenvRealizationPayloadHash {
 
     $payloadRoot = Join-Path $RealizationRoot 'payload'
     if ([string]$Manifest.SourceKind -eq 'file') {
-        $publishedFile = Join-Path $payloadRoot ([string]$Manifest.ExecutableRelativePath)
+        $publishedFile = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payloadRoot -ExecutableRelativePath ([string]$Manifest.ExecutableRelativePath)
         if (-not (Test-Path -LiteralPath $publishedFile -PathType Leaf)) {
             throw "Published realization payload is missing: $publishedFile"
         }
@@ -110,9 +139,15 @@ function Test-CapsulenvProgramRealization {
         return $false
     }
     $payloadRoot = Join-Path $RealizationRoot 'payload'
-    $executable = Join-Path $payloadRoot ([string]$manifest.ExecutableRelativePath)
-    if (-not (Test-Path -LiteralPath $payloadRoot -PathType Container) -or
-        -not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $payloadRoot -PathType Container)) {
+        return $false
+    }
+    try {
+        $executable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payloadRoot -ExecutableRelativePath ([string]$manifest.ExecutableRelativePath)
+    } catch {
+        return $false
+    }
+    if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
         return $false
     }
     try {
@@ -153,9 +188,11 @@ function Acquire-CapsulenvProgramRealization {
     if ($sourceIsFile -and [string]::IsNullOrWhiteSpace($ExecutableRelativePath)) {
         $ExecutableRelativePath = [System.IO.Path]::GetFileName($sourceFull)
     }
-    $ExecutableRelativePath = $ExecutableRelativePath.Replace('\', '/').Trim('/')
-    if ([string]::IsNullOrWhiteSpace($ExecutableRelativePath) -or $ExecutableRelativePath.Contains('..')) {
-        throw 'ExecutableRelativePath must stay inside the realization payload.'
+    $ExecutableRelativePath = $ExecutableRelativePath.Replace('', '/').Trim('/')
+    if ([string]::IsNullOrWhiteSpace($ExecutableRelativePath) -or
+        [System.IO.Path]::IsPathRooted($ExecutableRelativePath) -or
+        $ExecutableRelativePath -match '^[A-Za-z]:[\\/]') {
+        throw 'ExecutableRelativePath must be a non-rooted relative path.'
     }
 
     $sourceHash = Get-CapsulenvRealizationSourceHash -SourcePath $sourceFull
@@ -169,12 +206,13 @@ function Acquire-CapsulenvProgramRealization {
     $payloadRoot = Join-Path $stagingRoot 'payload'
     try {
         [void](New-Item -ItemType Directory -Path $payloadRoot -Force)
+        $publishedExecutable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payloadRoot -ExecutableRelativePath $ExecutableRelativePath
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $publishedExecutable) -Force)
         if ($sourceIsDirectory) {
             Copy-Item -Path (Join-Path $sourceFull '*') -Destination $payloadRoot -Recurse -Force
         } else {
-            Copy-Item -LiteralPath $sourceFull -Destination (Join-Path $payloadRoot $ExecutableRelativePath) -Force
+            Copy-Item -LiteralPath $sourceFull -Destination $publishedExecutable -Force
         }
-        $publishedExecutable = Join-Path $payloadRoot ($ExecutableRelativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
         if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
             throw "Realization executable is missing from staging: $ExecutableRelativePath"
         }
