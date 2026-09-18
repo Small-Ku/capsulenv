@@ -386,20 +386,47 @@ non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
 requirement, and generation-selection names before constructing a candidate.
 
-# Bitwarden host attachment and SSH-agent integration
+# Portable seed and bootstrap networking
 
-Bitwarden account and desktop state remain host-local. A compatible Bitwarden
-Program is only availability evidence; attach succeeds only after Capsulenv
-finds a live process whose inspected executable matches that resolved Program.
-The resulting session-ledger record is `attached`/foreign with process-start
-identity and is never stoppable or patchable by Capsulenv.
+An optional portable seed is an immutable acquisition input containing name,
+version, a capsule-relative source locator, executable selection, and expected
+hash metadata. It never stores an absolute host path: the locator is resolved
+against the current capsule root, so moving the capsule does not make the
+entry point at the old location. Seed metadata is not installed-state
+authority. A missing, malformed, out-of-root, or hash-mismatched seed is
+rejected and the normal provider path remains available.
 
-SSH-agent setup is a required/optional SessionIntegration, not a non-empty
-environment string. The endpoint is probed with the real `ssh-add -L` transport
-before required activation succeeds; an `agent://` placeholder or unreachable
-socket/pipe fails closed. Git/OpenSSH configuration remains a process-scoped
-overlay.
+Seed discovery returns a `SeedAcquisitionCandidate`, not a resolved Program.
+The seed is therefore an input to acquisition only; the selected executable
+must be copied or deployed into a verified host-local realization before it
+can become an active Program/generation. Executable-relative paths are
+normalized and must remain descendants of the verified seed root. A removable
+seed cannot become active merely because its file is present.
 
-Attach captures the prior `SSH_AUTH_SOCK` and Git overlay environment. Detach
-restores those values deterministically, while leaving the attached Bitwarden
-process running. Capsulenv does not take ownership of a trusted host app.
+The bootstrap tier is intentionally narrow and ordered: compatible trusted
+host Program, verified seed, then normal provider acquisition. If normal
+provider acquisition requires a proxy, bootstrap networking must be
+established before that final step. This is a fixed acquisition sequence, not
+a generic orchestration graph, and startup does not require Google Drive,
+rclone, or a mounted remote filesystem.
+
+# SessionService and sing-box lifecycle
+
+`SessionService` is a first-class lifecycle boundary, not a detached Routine.
+Required services must declare an explicit readiness probe; a spawned PID is
+not readiness. Health is evaluated only after readiness, and any exception
+after spawn cleans up the exact process identified by its captured start
+identity. Owned service records are stopped only through the exact ownership
+ledger path.
+
+For sing-box, the portable config is a real binding: the config must exist,
+is acquired under an exclusive state lease, and is passed to the resolved
+host-local Program with `-c`. The lease is released on failed start and exact
+owned stop. The running service never treats a missing or stale config as an
+implicit default.
+
+Attached reuse requires service identity in addition to PID/start identity and
+health: the process executable, service role, and Program provenance must
+match. An attached/foreign sing-box process remains non-stoppable. Proxy
+environment is a narrow acquisition/session input, not a generic orchestration
+DAG.
