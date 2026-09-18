@@ -209,6 +209,9 @@ Describe 'Capsulenv User default-browser integration' {
             Mock Write-CapsulenvDefaultBrowserState {} -ModuleName Capsulenv
             Mock Set-CapsulenvCurrentUserRegistryStringValue {} -ModuleName Capsulenv
             Mock Send-CapsulenvAssociationChanged {} -ModuleName Capsulenv
+            $bridge = [pscustomobject]@{ Persistent = $true; CapsuleId = '11111111-2222-3333-4444-555555555555'; BrowserStateIdentity = 'librewolf'; BridgePath = (Join-Path $temporaryRoot 'bridge.ps1') }
+            $handler = [pscustomobject]@{ Executable = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'; Command = 'powershell.exe -NoLogo -NoProfile -File C:\host-state\bridge.ps1 -CapsuleId 11111111-2222-3333-4444-555555555555 -BrowserApp librewolf -Arguments "%1"' }
+            Mock Resolve-CapsulenvRequiredDefaultBrowserBridge { [pscustomobject]@{ Bridge = $bridge; Handler = $handler } } -ModuleName Capsulenv
 
             $registration = & $script:Module { Install-CapsulenvDefaultBrowserRegistration -App librewolf }
 
@@ -224,18 +227,12 @@ Describe 'Capsulenv User default-browser integration' {
             Should -Invoke Set-CapsulenvCurrentUserRegistryStringValue -ModuleName Capsulenv -Times 1 -ParameterFilter {
                 $SubKey -eq ($registration.UrlClassPath + '\shell\open\command') -and
                 $Name -eq '' -and
-                $Value -like ('*' + $executable + '*') -and
-                $Value -like ('*' + $profile + '*') -and
-                $Value -notlike '*-osint*' -and
-                $Value -like '*-url*' -and
-                $Value -notlike '*LibreWolf-Portable.exe*'
+                $Value -eq $handler.Command
             }
             Should -Invoke Set-CapsulenvCurrentUserRegistryStringValue -ModuleName Capsulenv -Times 1 -ParameterFilter {
                 $SubKey -eq ($registration.HtmlClassPath + '\shell\open\command') -and
                 $Name -eq '' -and
-                $Value -like ('*' + $executable + '*') -and
-                $Value -like ('*' + $profile + '*') -and
-                $Value -notlike '*-url*'
+                $Value -eq $handler.Command
             }
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {
@@ -285,6 +282,9 @@ Describe 'Capsulenv User default-browser integration' {
             Mock Get-CapsulenvDefaultBrowserState { $legacyState } -ModuleName Capsulenv
             Mock Set-CapsulenvCurrentUserRegistryStringValue {} -ModuleName Capsulenv
             Mock Send-CapsulenvAssociationChanged {} -ModuleName Capsulenv
+            $bridge = [pscustomobject]@{ Persistent = $true; CapsuleId = '11111111-2222-3333-4444-555555555555'; BrowserStateIdentity = 'librewolf'; BridgePath = (Join-Path $temporaryRoot 'bridge.ps1') }
+            $handler = [pscustomobject]@{ Executable = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'; Command = 'powershell.exe -NoLogo -NoProfile -File C:\host-state\bridge.ps1 -CapsuleId 11111111-2222-3333-4444-555555555555 -BrowserApp librewolf -Arguments "%1"' }
+            Mock Resolve-CapsulenvRequiredDefaultBrowserBridge { [pscustomobject]@{ Bridge = $bridge; Handler = $handler } } -ModuleName Capsulenv
 
             $registration = & $script:Module { Install-CapsulenvDefaultBrowserRegistration -App librewolf }
 
@@ -406,6 +406,9 @@ Describe 'Capsulenv User default-browser integration' {
         Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile' } } -ModuleName Capsulenv
         Mock Get-CapsulenvBrowserDefaultExecutable { 'F:\capenv\scoop\apps\librewolf\current\LibreWolf\librewolf.exe' } -ModuleName Capsulenv
         Mock Get-CapsulenvBrowserProfilePath { 'F:\capenv\scoop\apps\librewolf\current\Profiles\Default' } -ModuleName Capsulenv
+        $bridge = [pscustomobject]@{ Persistent = $true; CapsuleId = '11111111-2222-3333-4444-555555555555'; BrowserStateIdentity = 'librewolf'; BridgePath = 'F:\host-state\bridge.ps1' }
+        $handler = [pscustomobject]@{ Executable = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'; Command = 'powershell.exe -NoLogo -NoProfile -File F:\host-state\bridge.ps1 -CapsuleId 11111111-2222-3333-4444-555555555555 -BrowserApp librewolf -Arguments "%1"' }
+        Mock Resolve-CapsulenvRequiredDefaultBrowserBridge { [pscustomobject]@{ Bridge = $bridge; Handler = $handler } } -ModuleName Capsulenv
         Mock Get-CapsulenvRegistryStringValue {
             'F:\capenv\scoop\apps\librewolf\current\LibreWolf\librewolf.exe -profile F:\capenv\scoop\persist\librewolf\Profiles\Default -osint -url "%1"'
         } -ModuleName Capsulenv
@@ -417,7 +420,7 @@ Describe 'Capsulenv User default-browser integration' {
         $status.Matches | Should -BeFalse
         $status.ActualCommand | Should -Match '(?i)-osint'
         $status.ExpectedCommand | Should -Not -Match '(?i)-osint'
-        $status.ExpectedCommand | Should -Match ([regex]::Escape('F:\capenv\scoop\apps\librewolf\current\Profiles\Default'))
+        $status.ExpectedCommand | Should -Be $handler.Command
     }
 
 
