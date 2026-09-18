@@ -386,23 +386,20 @@ non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
 requirement, and generation-selection names before constructing a candidate.
 
-# PowerShell runtime and profile binding
+# Bitwarden host attachment and SSH-agent integration
 
-Interactive `pwsh` is a required Program when requested; the control-plane
-PowerShell is never a silent substitute. The binding keeps the profile and
-history under portable capsule State, while portable/private modules and
-large native modules can use separate portable and host-local module roots.
-Explicitly trusted host module paths may be added, but inherited `PSModulePath`
-entries are not trusted wholesale.
+Bitwarden account and desktop state remain host-local. A compatible Bitwarden
+Program is only availability evidence; attach succeeds only after Capsulenv
+finds a live process whose inspected executable matches that resolved Program.
+The resulting session-ledger record is `attached`/foreign with process-start
+identity and is never stoppable or patchable by Capsulenv.
 
-Because PowerShell does not reinterpret arbitrary environment variables as
-`$PROFILE`, the binding publishes a capsule-local child bootstrap script. The
-launch contract uses `-NoProfile` and explicitly dot-sources the portable
-profile, then configures `Set-PSReadLineOption -HistorySavePath` to the
-portable history path. A real child `pwsh` must consume this contract before
-the shell is considered activated.
+SSH-agent setup is a required/optional SessionIntegration, not a non-empty
+environment string. The endpoint is probed with the real `ssh-add -L` transport
+before required activation succeeds; an `agent://` placeholder or unreachable
+socket/pipe fails closed. Git/OpenSSH configuration remains a process-scoped
+overlay.
 
-Host-local module storage is created only after
-`Initialize-CapsulenvHostPlacement` publishes and validates the host placement
-marker. A read-only path query never materializes an unmarked placement
-subtree.
+Attach captures the prior `SSH_AUTH_SOCK` and Git overlay environment. Detach
+restores those values deterministically, while leaving the attached Bitwarden
+process running. Capsulenv does not take ownership of a trusted host app.
