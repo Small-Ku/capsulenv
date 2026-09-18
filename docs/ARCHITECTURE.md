@@ -385,3 +385,21 @@ contract, including `program`, `binding`, and `session-service`; a required
 non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
 requirement, and generation-selection names before constructing a candidate.
+
+# Bitwarden host attachment and SSH-agent integration
+
+Bitwarden account and desktop state remain host-local. A compatible Bitwarden
+Program is only availability evidence; attach succeeds only after Capsulenv
+finds a live process whose inspected executable matches that resolved Program.
+The resulting session-ledger record is `attached`/foreign with process-start
+identity and is never stoppable or patchable by Capsulenv.
+
+SSH-agent setup is a required/optional SessionIntegration, not a non-empty
+environment string. The endpoint is probed with the real `ssh-add -L` transport
+before required activation succeeds; an `agent://` placeholder or unreachable
+socket/pipe fails closed. Git/OpenSSH configuration remains a process-scoped
+overlay.
+
+Attach captures the prior `SSH_AUTH_SOCK` and Git overlay environment. Detach
+restores those values deterministically, while leaving the attached Bitwarden
+process running. Capsulenv does not take ownership of a trusted host app.
