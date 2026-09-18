@@ -116,6 +116,22 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         Test-Path -LiteralPath (Join-Path $result.Profile '.capsulenv-gecko-compatibility.json') | Should -BeTrue
     }
 
+    It 'waits using the nested binding returned by Start-CapsulenvPortableBrowser' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-wait-' + [Guid]::NewGuid().ToString('N'))
+        $executable = Join-Path $temporaryRoot 'host/browser.sh'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
+        "#!/bin/sh`nsleep 1`n" | Set-Content -LiteralPath $executable -NoNewline
+        & chmod +x $executable
+        $browser = & $script:Module {
+            param($CapsuleRoot, $Executable)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $requirement = New-CapsulenvProgramRequirement -Name firefox
+            $candidate = New-CapsulenvProgramCandidate -Name firefox -Executable $Executable -Provider host-scoop -Version 1.0.0
+            Start-CapsulenvPortableBrowser -App firefox -Requirement $requirement -Candidates @($candidate)
+        } $temporaryRoot $executable
+
+        { Wait-CapsulenvPortableBrowser -Browser $browser | Out-Null } | Should -Not -Throw
+    }
     It 'releases the exclusive profile lease when the exact browser process exits' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-exit-' + [Guid]::NewGuid().ToString('N'))
         $executable = Join-Path $temporaryRoot 'host/browser.sh'
