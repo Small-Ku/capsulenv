@@ -45,13 +45,11 @@ function Get-CapsulenvHostIdentityDigest {
     [CmdletBinding()]
     param()
 
+    # The machine/user tuple is the continuity key. GDID is optional strong
+    # evidence and must never change the host-record namespace when a registry
+    # read is temporarily unavailable.
     $evidence = Get-CapsulenvHostIdentityEvidence
-    $parts = New-Object System.Collections.Generic.List[string]
-    $parts.Add(('machine-user={0}' -f [string]$evidence.MachineUser.Value))
-    if ([bool]$evidence.WindowsGdid.Available) {
-        $parts.Add(('windows-gdid={0}' -f [string]$evidence.WindowsGdid.Value))
-    }
-    $canonical = "capsulenv-host-identity-v1`n" + ($parts -join "`n")
+    $canonical = "capsulenv-host-identity-v2`n" + [string]$evidence.MachineUser.Value
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($canonical)
