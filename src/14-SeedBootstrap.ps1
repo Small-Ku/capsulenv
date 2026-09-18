@@ -321,28 +321,6 @@ function Invoke-CapsulenvBootstrapAcquisition {
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function New-CapsulenvPortableSeedEntry, Set-CapsulenvPortableSeedManifest, Get-CapsulenvPortableSeedEntries, Get-CapsulenvPortableSeedEntry, Test-CapsulenvPortableSeedEntry, Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement, Get-CapsulenvSeedAcquisitionCandidates, Get-CapsulenvSeedProgramCandidates, Invoke-CapsulenvBootstrapAcquisition
-)][string]$ExpectedHash,
-        [string]$ExecutableRelativePath,
-        [string[]]$Capabilities = @(),
-        [string]$Provenance
-    )
-
-    $sourceFull = [System.IO.Path]::GetFullPath($SourcePath)
-    $sourceReference = ConvertTo-CapsulenvStatePathReference -Path $sourceFull
-    if (-not $sourceReference.StartsWith('capsule://', [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Portable seed sources must be inside the current capsule root.'
-    }
-    return [pscustomobject][ordered]@{
-        SchemaVersion = 1
-        Immutable = $true
-        Name = $Name
-        Version = $Version
-        SourceReference = $sourceReference
-        ExpectedHash = $ExpectedHash.ToLowerInvariant()
-        ExecutableRelativePath = $ExecutableRelativePath
-        Provenance = if ([string]::IsNullOrWhiteSpace($Provenance)) { 'portable-seed' } else { $Provenance }
-    }
-}
 
 function Resolve-CapsulenvPortableSeedSourcePath {
     [CmdletBinding()]
