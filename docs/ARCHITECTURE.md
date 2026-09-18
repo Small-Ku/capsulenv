@@ -276,3 +276,18 @@ cleanup, and a stale host-local record never overrides portable desired state.
 The host placement foundation only resolves and materializes layout. Program
 resolution, immutable generations, activation, and integration ownership remain
 separate boundaries implemented by the downstream architecture issues.
+
+# Program requirements and provider resolution
+
+Program requirements are explicit records containing the requested name,
+version policy, capabilities, executable selection metadata, and allowed
+providers. Resolution is read-only and deterministic: compatible trusted host
+Scoop is preferred, followed by a compatible Capsulenv-local realization, seed,
+and finally an explicitly supplied provider deployment. Arbitrary PATH entries
+are not package satisfaction.
+
+The selected record carries the concrete executable, root, provider, scope,
+version, provenance, trust, and lifecycle ownership. Reusing a trusted host
+Scoop app does not upgrade, rewrite, or take ownership of the host
+installation. The resolve command exposes this decision without performing
+repair or deployment.
