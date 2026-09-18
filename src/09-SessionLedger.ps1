@@ -177,7 +177,7 @@ function Initialize-CapsulenvOwnedSession {
     $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $ProcessId
     return Invoke-CapsulenvSessionLedgerMutation {
         param($ledger)
-        $processRecord = New-CapsulenvProcessRecord -SessionId $sessionId -ProcessId $ProcessId -Role $Role -Ownership owned -Provenance $Provenance -ProcessStartIdentity $startIdentity
+        $processRecord = New-CapsulenvProcessRecord -SessionId $sessionId -ProcessId $ProcessId -Role $Role -Ownership 'owned' -Provenance $Provenance -ProcessStartIdentity $startIdentity
         $session = [pscustomobject][ordered]@{
             SessionId = $sessionId
             HostKey = Get-CapsulenvHostKey
@@ -185,7 +185,7 @@ function Initialize-CapsulenvOwnedSession {
             ProcessStartIdentity = $processRecord.ProcessStartIdentity
             ProcessNonce = $processRecord.ProcessNonce
             Role = $Role
-            Ownership = owned
+            Ownership = 'owned'
             Provenance = $Provenance
             ProcessRecords = @($processRecord)
             HeldLeases = @()
