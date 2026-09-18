@@ -385,3 +385,25 @@ contract, including `program`, `binding`, and `session-service`; a required
 non-program resource cannot disappear because it is outside the program loop.
 Program activation also requires case-insensitive agreement between resource,
 requirement, and generation-selection names before constructing a candidate.
+
+# Browser Program and portable profile binding
+
+Browser binaries resolve through the ordinary trusted Program order, including
+compatible host Scoop reuse. Portable profile identity is derived from the
+canonical browser product name, not a provider-qualified selector, so moving
+between `firefox`, `scoop/firefox`, and a Capsulenv-local realization does not
+silently select a different profile. The Gecko profile is a separate portable
+State root and is guarded by an exclusive OS-held lease.
+
+Each profile records minimal Gecko compatibility evidence (product identity and
+Gecko major). A browser binding establishes that evidence when the profile is
+new and fails diagnostically before leasing or launching when an existing
+profile is unreadable or incompatible. It never mutates around a compatibility
+mismatch or falls back to an unrelated host profile.
+
+The browser process owns the lease lifecycle through an exact process-start
+record and an exit watcher. Normal process exit releases the lease; the
+browser-specific stop/close operations release it after exact owned-process
+handling. Persistent default-browser registration remains the later
+UserIntegration boundary, and historical `--host` handling is migration
+compatibility only.
