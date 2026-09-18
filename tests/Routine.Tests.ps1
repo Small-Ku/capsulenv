@@ -83,20 +83,19 @@ Describe 'Capsulenv lifecycle routine contracts' {
             }
         } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
-        Mock Invoke-CapsulenvProcessPlan {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvProcessPlan { $script:CapturedChildPlan = $Plan } -ModuleName Capsulenv
         Mock Invoke-CapsulenvRoutines {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell -Command 'Write-Output ok' }
 
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnEnter' }
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnExit' }
-        Should -Invoke Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $Plan.Executable -eq 'pwsh.exe' -and
-            $Plan.Environment['CAPSULENV_POWERSHELL_PROFILE'] -eq '/capsule/profile.ps1' -and
-            $Plan.Environment['CAPSULENV_POWERSHELL_HISTORY'] -eq '/capsule/history.txt' -and
-            $Plan.Environment['PSModulePath'] -eq '/capsule/modules:/host/modules' -and
-            @($Plan.Arguments) -contains 'Write-Output ok'
-        }
+        Should -Invoke Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
+        $script:CapturedChildPlan.Executable | Should -Be 'pwsh.exe'
+        $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_PROFILE'] | Should -Be '/capsule/profile.ps1'
+        $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_HISTORY'] | Should -Be '/capsule/history.txt'
+        $script:CapturedChildPlan.Environment['PSModulePath'] | Should -Be '/capsule/modules:/host/modules'
+        @($script:CapturedChildPlan.Arguments) | Should -Contain 'Write-Output ok'
     }
 
     It 'runs the rehydrate lifecycle trigger after projection reconciliation' {
