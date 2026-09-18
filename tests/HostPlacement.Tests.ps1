@@ -237,5 +237,37 @@ Describe 'Capsulenv host identity and placement foundation' {
         }
         $fallback.First | Should -Be $fallback.Second
         $fallback.First | Should -Match '^unavailable-'
+
+    It 'fails closed when portable identity authority is corrupt' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-corrupt-identity-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $capsuleRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $capsuleRoot 'config/capsulenv.psd1')
+            $identityRoot = Join-Path $capsuleRoot '.capsulenv'
+            [void](New-Item -ItemType Directory -Path $identityRoot -Force)
+            $identityPath = Join-Path $identityRoot 'identity.json'
+            $original = '{"SchemaVersion":1,"Id":"not-a-guid"}'
+            Set-Content -LiteralPath $identityPath -Value $original -Encoding UTF8
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                { Get-CapsulenvIdentity } | Should -Throw '*Refusing to replace*'
+            } $capsuleRoot
+
+            (Get-Content -LiteralPath $identityPath -Raw).Trim() | Should -Be $original
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
+    It 'does not contain a destructive identity replacement fallback' {
+        $source = Get-Content -LiteralPath (Join-Path $script:Root 'src/05-Identity.ps1') -Raw
+        $source | Should -Not -Match "Remove-Item -LiteralPath \\$path"
+        $source | Should -Match 'previous valid identity was retained'
+    }
     }
 }
