@@ -19,7 +19,7 @@ function Restore-CapsulenvSessionServiceProxyEnvironment {
     param([Parameter(Mandatory = $true)]$Snapshot)
 
     foreach ($property in @($Snapshot.PSObject.Properties)) {
-        [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process')
+        [Environment]::SetEnvironmentVariable($property.Name, $property.Value, 'Process')
     }
     return $Snapshot
 }
