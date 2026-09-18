@@ -27,7 +27,8 @@ Describe 'Capsulenv SessionService lifecycle' {
             $session = Initialize-CapsulenvSession -Role service-test
             $requirement = New-CapsulenvProgramRequirement -Name sing-box
             $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable $Executable -Provider host-scoop -Version 1.0.0
-            $definition = New-CapsulenvSessionServiceDefinition -Name sing-box -Requirement $requirement -Criticality required -ConfigPath $ConfigPath -ReadinessProbe { param($Process) -not $Process.HasExited }
+            $proxyBefore = [Environment]::GetEnvironmentVariable('CAPSULENV_TEST_SESSION_PROXY', 'Process')
+            $definition = New-CapsulenvSessionServiceDefinition -Name sing-box -Requirement $requirement -Criticality required -ConfigPath $ConfigPath -ReadinessProbe { param($Process) -not $Process.HasExited } -ProxyEnvironment @{ CAPSULENV_TEST_SESSION_PROXY = 'http://127.0.0.1:45999' }
             $started = Start-CapsulenvSessionService -Definition $definition -Candidates @($candidate) -SessionId $session.SessionId
             $stopped = Stop-CapsulenvSessionService -Binding $started
             [pscustomobject]@{
@@ -37,6 +38,8 @@ Describe 'Capsulenv SessionService lifecycle' {
                 Owned = ($started.ProcessRecord.Ownership -eq 'owned')
                 ConfigArgument = ($started.Arguments -contains $ConfigPath)
                 Stopped = $stopped.Stopped
+                ProxyBefore = $proxyBefore
+                ProxyAfter = [Environment]::GetEnvironmentVariable('CAPSULENV_TEST_SESSION_PROXY', 'Process')
             }
         } $temporaryRoot $sleep $config
 
@@ -46,8 +49,27 @@ Describe 'Capsulenv SessionService lifecycle' {
         $result.Owned | Should -BeTrue
         $result.ConfigArgument | Should -BeTrue
         $result.Stopped | Should -BeTrue
+        $result.ProxyAfter | Should -Be $result.ProxyBefore
     }
 
+    It 'restores proxy environment when an owned service exits' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-proxy-exit-' + [Guid]::NewGuid().ToString('N'))
+        $sleep = @(Get-Command sleep -CommandType Application -ErrorAction Stop | Select-Object -First 1)[0]
+        $result = & $script:Module {
+            param($CapsuleRoot, $Executable)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $before = [Environment]::GetEnvironmentVariable('CAPSULENV_TEST_SESSION_PROXY_EXIT', 'Process')
+            $requirement = New-CapsulenvProgramRequirement -Name sing-box
+            $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable $Executable -Provider host-scoop -Version 1.0.0
+            $definition = New-CapsulenvSessionServiceDefinition -Name sing-box -Requirement $requirement -Criticality required -ReadinessProbe { param($Process) -not $Process.HasExited } -ProxyEnvironment @{ CAPSULENV_TEST_SESSION_PROXY_EXIT = 'http://127.0.0.1:45998' }
+            $started = Start-CapsulenvSessionService -Definition $definition -Candidates @($candidate) -ReadinessTimeoutMilliseconds 500
+            $started.Process.WaitForExit()
+            Start-Sleep -Milliseconds 300
+            [pscustomobject]@{ Before = $before; After = [Environment]::GetEnvironmentVariable('CAPSULENV_TEST_SESSION_PROXY_EXIT', 'Process') }
+        } $temporaryRoot $sleep.Source
+
+        $result.After | Should -Be $result.Before
+    }
     It 'fails optional activation when readiness never arrives and cleans the owned process' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-fail-' + [Guid]::NewGuid().ToString('N'))
         $truePath = if (Test-Path -LiteralPath '/bin/true' -PathType Leaf) { '/bin/true' } else { 'true' }
