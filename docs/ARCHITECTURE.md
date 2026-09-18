@@ -409,3 +409,24 @@ provider acquisition requires a proxy, bootstrap networking must be
 established before that final step. This is a fixed acquisition sequence, not
 a generic orchestration graph, and startup does not require Google Drive,
 rclone, or a mounted remote filesystem.
+
+# SessionService and sing-box lifecycle
+
+`SessionService` is a first-class lifecycle boundary, not a detached Routine.
+Required services must declare an explicit readiness probe; a spawned PID is
+not readiness. Health is evaluated only after readiness, and any exception
+after spawn cleans up the exact process identified by its captured start
+identity. Owned service records are stopped only through the exact ownership
+ledger path.
+
+For sing-box, the portable config is a real binding: the config must exist,
+is acquired under an exclusive state lease, and is passed to the resolved
+host-local Program with `-c`. The lease is released on failed start and exact
+owned stop. The running service never treats a missing or stale config as an
+implicit default.
+
+Attached reuse requires service identity in addition to PID/start identity and
+health: the process executable, service role, and Program provenance must
+match. An attached/foreign sing-box process remains non-stoppable. Proxy
+environment is a narrow acquisition/session input, not a generic orchestration
+DAG.
