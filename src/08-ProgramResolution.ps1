@@ -242,6 +242,27 @@ function Get-CapsulenvProgramCandidates {
         $provider = [string]$selector.Provider
         $candidates.Add((New-CapsulenvProgramCandidate -Name $Requirement.Name -Executable $executable -Root $installed.Current -Provider $provider -Scope ([string]$selector.Scope) -Version ([string]$installed.Manifest.version) -Trusted:$true -OwnsLifecycle:($provider -eq 'capsulenv-local') -Provenance ([string]$installed.Selector)))
     }
+    $active = Get-CapsulenvActiveGeneration
+    if ($null -ne $active) {
+        foreach ($selection in @($active.Generation.Selections)) {
+            if ([string]$selection.Kind -ne 'realization' -and -not [string]::IsNullOrWhiteSpace([string]$selection.Kind)) {
+                continue
+            }
+            if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$selection.Name, [string]$Requirement.Name)) {
+                continue
+            }
+            $realizationRoot = [string]$selection.RealizationRoot
+            if (-not (Test-CapsulenvProgramRealization -RealizationRoot $realizationRoot -ExpectedName ([string]$selection.Name) -ExpectedHash ([string]$selection.SourceHash))) {
+                continue
+            }
+            $manifest = Read-CapsulenvRealizationManifest -RealizationRoot $realizationRoot
+            if ($null -eq $manifest) { continue }
+            $relative = ([string]$manifest.ExecutableRelativePath).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+            $executable = Join-Path (Join-Path $realizationRoot 'payload') $relative
+            if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { continue }
+            $candidates.Add((New-CapsulenvProgramCandidate -Name ([string]$manifest.Name) -Executable $executable -Root $realizationRoot -Provider 'capsulenv-local' -Scope 'host-local' -Version ([string]$manifest.Version) -Trusted:$true -OwnsLifecycle:$true -Provenance ([string]$manifest.Provenance)))
+        }
+    }
     return @($candidates.ToArray())
 }
 
