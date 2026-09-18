@@ -223,9 +223,9 @@ function Test-CapsulenvLegacyIsolation {
     $owned = (Get-Command Get-CapsulenvOwnedProcesses -CommandType Function).Definition
     $rehydrate = (Get-Command Invoke-CapsulenvScoopRehydrate -CommandType Function).Definition
     $browser = (Get-Command Start-CapsulenvBrowser -CommandType Function).Definition
-    $powershell = (Get-Command Get-CapsulenvInteractivePowerShellExecutable -CommandType Function).Definition
+    $powershell = (Get-Command Invoke-CapsulenvChildShell -CommandType Function).Definition
     $bitwarden = (Get-Command Assert-CapsulenvNoForeignBitwardenProcess -CommandType Function).Definition
-    $userIntegration = (Get-Command Install-CapsulenvUserEnvironment -CommandType Function).Definition
+    $userIntegration = (Get-Command Sync-CapsulenvPackageStartMenuShortcuts -CommandType Function).Definition
     return [pscustomobject][ordered]@{
         StartupBroadRehydrate = ($initialize -match 'Invoke-CapsulenvScoopRehydrate')
         ExecutablePathOwnership = ($owned -match 'StartsWith|Get-CapsulenvScoop|CapsulenvContext')
