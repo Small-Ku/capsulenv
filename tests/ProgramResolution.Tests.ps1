@@ -103,4 +103,27 @@ Describe 'Capsulenv program requirement and provider resolution' {
         @($result).Count | Should -Be 0
         Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 2 -Exactly
     }
+    It 'uses SemVer prerelease precedence for minimum and maximum ranges' {
+        $executable = Join-Path $TestDrive 'semver-range.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+        $result = & $script:Module {
+            param($Executable)
+            $minimum = New-CapsulenvProgramRequirement -Name demo -MinimumVersion '1.2.3'
+            $maximum = New-CapsulenvProgramRequirement -Name demo -MaximumVersion '1.2.3-beta'
+            $candidateBeta = New-CapsulenvProgramCandidate -Name demo -Executable $Executable -Provider host-scoop -Version '1.2.3-beta'
+            $candidateStable = New-CapsulenvProgramCandidate -Name demo -Executable $Executable -Provider host-scoop -Version '1.2.3'
+            [pscustomobject]@{
+                BetaAgainstStableMinimum = Test-CapsulenvProgramCandidate -Requirement $minimum -Candidate $candidateBeta
+                StableAgainstBetaMaximum = Test-CapsulenvProgramCandidate -Requirement $maximum -Candidate $candidateStable
+                StableVsBeta = Compare-CapsulenvProgramVersionInfo -Left (Get-CapsulenvProgramVersionInfo -Version '1.2.3') -Right (Get-CapsulenvProgramVersionInfo -Version '1.2.3-beta')
+            }
+        } $executable
+
+        $result.BetaAgainstStableMinimum.Compatible | Should -BeFalse
+        $result.BetaAgainstStableMinimum.Reasons | Should -Contain 'below-minimum-version'
+        $result.StableAgainstBetaMaximum.Compatible | Should -BeFalse
+        $result.StableAgainstBetaMaximum.Reasons | Should -Contain 'above-maximum-version'
+        $result.StableVsBeta | Should -BeGreaterThan 0
+    }
+
 }
