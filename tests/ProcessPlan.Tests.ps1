@@ -36,4 +36,22 @@ Describe 'Capsulenv process plans' {
         $result.HasNonce | Should -BeTrue
         $result.ChildResidue | Should -Be 0
     }
+
+    It 'does not kill a reused PID when registration fails after spawn' {
+        InModuleScope Capsulenv {
+            $process = [pscustomobject]@{ Id = 4242 }
+            $identityCall = 0
+            Mock Start-Process { $process }
+            Mock Get-CapsulenvProcessStartIdentity {
+                $identityCall++
+                if ($identityCall -eq 1) { return 'spawned-identity' }
+                return 'reused-identity'
+            }
+            Mock Initialize-CapsulenvOwnedChildSession { throw 'registration failed' }
+            Mock Stop-Process {}
+            $plan = New-CapsulenvProcessPlan -Executable 'tool.exe'
+            { Invoke-CapsulenvOwnedProcessPlan -Plan $plan } | Should -Throw '*registration failed*'
+            Should -Invoke Stop-Process -Times 0 -Exactly
+        }
+    }
 }

@@ -885,7 +885,10 @@ function Invoke-CapsulenvChildShell {
     )
 
     [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
-    Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode
+    $powerShellRequirement = (Get-CapsulenvInteractivePowerShellRequirement -Criticality required).Requirement
+    [void](Ensure-CapsulenvProgramGeneration -Requirement $powerShellRequirement)
+    $activationSnapshot = New-CapsulenvActivationSnapshot
+    Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode -ActivationSnapshot $activationSnapshot
     if (-not $SkipUserIntegrationSync -and $IntegrationMode -eq 'User') {
         # A normal `capsulenv.cmd` activation must observe persistent User
         # integration config changes too. Previously DefaultBrowser was parsed
@@ -894,8 +897,7 @@ function Invoke-CapsulenvChildShell {
         Sync-CapsulenvConfiguredDefaultBrowser
     }
 
-    $powerShellRequirement = (Get-CapsulenvInteractivePowerShellRequirement -Criticality required).Requirement
-    $powerShellProgram = Get-CapsulenvActiveGenerationProgram -Requirement $powerShellRequirement
+    $powerShellProgram = Get-CapsulenvActiveGenerationProgram -Requirement $powerShellRequirement -ActivationSnapshot $activationSnapshot
     $binding = Resolve-CapsulenvPowerShellBinding -Requirement $powerShellRequirement -Program $powerShellProgram -Criticality required
     if (-not $binding.Succeeded) {
         throw 'Required interactive pwsh binding could not be established.'

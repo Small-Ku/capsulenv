@@ -77,14 +77,43 @@ function ConvertTo-CapsulenvGenerationProgramCandidate {
     $relative = [string]$Selection.ExecutableRelativePath
     $executable = Join-Path (Join-Path ([string]$Selection.RealizationRoot) 'payload') ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
     $authority = Get-CapsulenvRealizationAuthority -Manifest $Selection
-    return New-CapsulenvProgramCandidate -Name ([string]$Selection.Name) -Executable $executable -Root ([string]$Selection.RealizationRoot) -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Version ([string]$Selection.Version) -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance ([string]$Selection.Provenance)
+    return New-CapsulenvProgramCandidate -Name ([string]$Selection.Name) -Executable $executable -Root ([string]$Selection.RealizationRoot) -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope host-local -Version ([string]$Selection.Version) -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance ([string]$Selection.Provenance)
+}
+
+function New-CapsulenvActivationSnapshot {
+    [CmdletBinding()]
+    param(
+        $ActiveGeneration
+    )
+
+    $active = if ($PSBoundParameters.ContainsKey('ActiveGeneration')) {
+        $ActiveGeneration
+    } else {
+        Get-CapsulenvActiveGeneration
+    }
+    if ($null -eq $active -or $null -eq $active.Generation) {
+        return $null
+    }
+    return [pscustomobject][ordered]@{
+        GenerationId = [string]$active.Generation.GenerationId
+        Generation = $active.Generation
+        Authority = $active.Authority
+    }
 }
 
 function Get-CapsulenvActiveGenerationProgram {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)]$Requirement)
+    param(
+        [Parameter(Mandatory = $true)]$Requirement,
+        $ActivationSnapshot
+    )
 
-    $active = Get-CapsulenvActiveGeneration
+    $snapshot = if ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        $ActivationSnapshot
+    } else {
+        New-CapsulenvActivationSnapshot
+    }
+    $active = $snapshot
     if ($null -eq $active -or $null -eq $active.Generation) {
         throw "Program '$($Requirement.Name)' has no active generation authority."
     }
