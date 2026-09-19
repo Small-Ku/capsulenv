@@ -52,6 +52,27 @@ Describe 'Capsulenv host-local PowerShell binding' {
         $result.Provider | Should -Be 'capsulenv-local'
         Test-Path -LiteralPath $result.Executable -PathType Leaf | Should -BeTrue
     }
+    It 'keeps the activation-selected pwsh program instead of re-resolving a newer local candidate' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-pwsh-selected-program-' + [Guid]::NewGuid().ToString('N'))
+        $selectedPath = Join-Path $temporaryRoot 'pwsh-7.5'
+        $newerPath = Join-Path $temporaryRoot 'pwsh-7.6'
+        [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
+        'selected' | Set-Content -LiteralPath $selectedPath -NoNewline
+        'newer' | Set-Content -LiteralPath $newerPath -NoNewline
+        $result = & $script:Module {
+            param($CapsuleRoot, $SelectedPath, $NewerPath)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $requirement = (Get-CapsulenvInteractivePowerShellRequirement -MinimumVersion 7.0.0).Requirement
+            $selected = New-CapsulenvProgramCandidate -Name pwsh -Executable $SelectedPath -Provider capsulenv-local -Scope host-local -Version 7.5.0 -Capabilities @('interactive') -OwnsLifecycle:$true -Provenance 'generation/7.5'
+            $newer = New-CapsulenvProgramCandidate -Name pwsh -Executable $NewerPath -Provider capsulenv-local -Scope host-local -Version 7.6.5 -Capabilities @('interactive') -OwnsLifecycle:$true -Provenance 'unselected/7.6'
+            $binding = Resolve-CapsulenvPowerShellBinding -Requirement $requirement -Program $selected -Candidates @($newer)
+            [pscustomobject]@{ Version = $binding.Program.Version; Provenance = $binding.Program.Provenance }
+        } $temporaryRoot $selectedPath $newerPath
+
+        $result.Version | Should -Be '7.5.0'
+        $result.Provenance | Should -Be 'generation/7.5'
+    }
+
     It 'fails closed for required pwsh and does not return a control-plane substitute' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-pwsh-missing-' + [Guid]::NewGuid().ToString('N'))
         $bindingError = $null
