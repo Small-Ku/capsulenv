@@ -85,12 +85,11 @@ param([Parameter(Mandatory = $true)][string]$ResultPath)
 
     It 'does not kill a reused PID when registration fails after spawn' {
         InModuleScope Capsulenv {
-            $process = [pscustomobject]@{ Id = 4242 }
-            $identityCall = 0
-            Mock Start-Process { $process }
+            $script:registrationIdentityCalls = 0
+            Mock Start-Process { [pscustomobject]@{ Id = 4242 } }
             Mock Get-CapsulenvProcessStartIdentity {
-                $identityCall++
-                if ($identityCall -eq 1) { return 'spawned-identity' }
+                $script:registrationIdentityCalls++
+                if ($script:registrationIdentityCalls -eq 1) { return 'spawned-identity' }
                 return 'reused-identity'
             }
             Mock Initialize-CapsulenvOwnedChildSession { throw 'registration failed' }
