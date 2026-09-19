@@ -39,8 +39,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:PackageExecutorSource | Should -Match 'Get-CapsulenvPackageShimRoot'
         $script:PackageHostIntegrationSource | Should -Match "Get-CapsulenvInstallMode\) -ne 'User'"
         $script:PackageHostIntegrationSource | Should -Match "'capsule/'"
-        $script:PackageHostIntegrationSource | Should -Match "'app'"
-        $script:PackageHostIntegrationSource | Should -Match "'run'"
+        $script:PackageHostIntegrationSource | Should -Match 'New-CapsulenvUserIntegrationPackageBridge'
         $runtimeAdapters = @(Get-ChildItem -LiteralPath (Join-Path $script:Root 'module-runtime') -Filter 'scoop-capsulenv-*' -File -ErrorAction SilentlyContinue)
         $runtimeAdapters.Count | Should -Be 0
     }
@@ -89,7 +88,7 @@ Describe 'Capsulenv install-mode isolation contracts' {
         $script:EnvironmentSource | Should -Match 'Run restore-user from an elevated terminal'
         $script:EnvironmentSource | Should -Match 'Initialize-CapsulenvGitOpenSshSession'
         $script:EnvironmentSource | Should -Match 'Sync-CapsulenvUserEnvironment -RelocationContext \$relocationContext'
-        $script:EnvironmentSource | Should -Match 'Sync-CapsulenvConfiguredDefaultBrowser'
+        $script:DefaultBrowserSource | Should -Match 'Persistent default-browser registration requires a valid host-local UserIntegration bridge'
         $script:EnvironmentSource | Should -Match 'Assert-CapsulenvDefaultBrowserRestorable'
         $script:EnvironmentSource | Should -Match 'Restore-CapsulenvDefaultBrowserRegistration'
         $script:EnvironmentSource | Should -Match 'Remove-CapsulenvUserStartMenuShortcuts'
