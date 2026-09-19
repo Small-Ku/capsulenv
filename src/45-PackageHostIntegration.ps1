@@ -46,10 +46,8 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
         return
     }
 
-    $launcher = Join-Path (Get-CapsulenvContext).Root 'capsulenv.cmd'
-    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.HostIntegration.LauncherMissing' -Message ('[[CapsulenvText:HostIntegration.LauncherMissing.Message]]' -f $launcher) -TargetObject $launcher -Remediation @('Rebuild or reinstall the capsule launcher before synchronizing User-mode Start Menu integration.'))
-    }
+    $packageBridge = New-CapsulenvUserIntegrationPackageBridge -CapsuleId (Get-CapsulenvIdentity)
+    $hostPowerShell = Get-CapsulenvPersistentHostPowerShellExecutable
     [void](New-Item -ItemType Directory -Path $ownedRoot -Force)
     $shell = New-Object -ComObject WScript.Shell
     try {
@@ -61,14 +59,22 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
                 -RelativePath (([string]$declaration.Name) + '.lnk')
             [void](New-Item -ItemType Directory -Path (Split-Path -Parent $shortcutPath) -Force)
             $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = $launcher
+            $shortcut.TargetPath = $hostPowerShell
             $shortcut.Arguments = @(
-                'app',
-                'run',
+                '-NoLogo',
+                '-NoProfile',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-File',
+                (ConvertTo-CapsulenvLauncherArgument -Value $packageBridge),
+                '-CapsuleId',
+                (ConvertTo-CapsulenvLauncherArgument -Value (Get-CapsulenvIdentity)),
+                '-Package',
                 (ConvertTo-CapsulenvLauncherArgument -Value ('capsule/' + [string]$declaration.Package)),
+                '-Shortcut',
                 (ConvertTo-CapsulenvLauncherArgument -Value ([string]$declaration.Name))
             ) -join ' '
-            $shortcut.WorkingDirectory = (Get-CapsulenvContext).Root
+            $shortcut.WorkingDirectory = (Split-Path -Parent $packageBridge)
             $shortcut.Description = "Capsulenv PortableSafe package: $($declaration.Package)"
             $icon = if (
                 -not [string]::IsNullOrWhiteSpace([string]$declaration.Icon) -and
