@@ -79,6 +79,7 @@ function Resolve-CapsulenvPowerShellBinding {
     param(
         $Requirement,
         [object[]]$Candidates,
+        $Program,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'required',
         [string[]]$TrustedHostModulePaths = @()
@@ -87,36 +88,23 @@ function Resolve-CapsulenvPowerShellBinding {
     if ($null -eq $Requirement) {
         $Requirement = (Get-CapsulenvInteractivePowerShellRequirement -Criticality $Criticality).Requirement
     }
-    $effectiveCandidates = if ($PSBoundParameters.ContainsKey('Candidates')) {
+    $effectiveCandidates = if ($PSBoundParameters.ContainsKey('Program')) {
+        @($Program)
+    } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         @($Candidates)
     } else {
-        @(Get-CapsulenvProgramCandidates -Requirement $Requirement | ForEach-Object {
-            [pscustomobject][ordered]@{
-                Name = $_.Name
-                Executable = $_.Executable
-                Root = $_.Root
-                Provider = $_.Provider
-                Scope = $_.Scope
-                Version = $_.Version
-                Capabilities = @('interactive')
-                Trusted = $_.Trusted
-                OwnsLifecycle = $_.OwnsLifecycle
-                Provenance = $_.Provenance
+        $active = Get-CapsulenvActiveGeneration
+        if ($null -ne $active) {
+            @(Get-CapsulenvActiveGenerationProgram -Requirement $Requirement)
+        } else {
+            $acquired = Resolve-CapsulenvProgramWithAcquisition -Requirement $Requirement
+            if (-not $acquired.Succeeded) {
+                throw 'Required interactive pwsh has no active generation or compatible acquired realization.'
             }
-        })
-    }
-    $resolution = Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates $effectiveCandidates
-    if (-not $resolution.Succeeded -and -not $PSBoundParameters.ContainsKey('Candidates')) {
-        $seed = @(Get-CapsulenvSeedAcquisitionCandidates -Requirement $Requirement | Select-Object -First 1)
-        if ($seed.Count -eq 1) {
-            $source = Resolve-CapsulenvPortableSeedSourcePath -Entry $seed[0]
-            $manifest = Acquire-CapsulenvProgramRealization -Name ([string]$seed[0].Name) -Version ([string]$seed[0].Version) -SourcePath $source -ExecutableRelativePath ([string]$seed[0].ExecutableRelativePath) -ExpectedHash ([string]$seed[0].ExpectedHash) -Provider seed -Provenance ([string]$seed[0].Provenance)
-            $payload = Join-Path $manifest.RealizationRoot 'payload'
-            $seedExecutable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payload -ExecutableRelativePath ([string]$manifest.ExecutableRelativePath)
-            $effectiveCandidates = @($effectiveCandidates) + @(New-CapsulenvProgramCandidate -Name ([string]$manifest.Name) -Executable $seedExecutable -Root ([string]$manifest.RealizationRoot) -Provider seed -Scope host-local -Version ([string]$manifest.Version) -Capabilities @('interactive') -Trusted:$true -Provenance ([string]$manifest.Provenance))
-            $resolution = Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates $effectiveCandidates
+            @($acquired.Selected)
         }
     }
+    $resolution = Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates $effectiveCandidates
     if (-not $resolution.Succeeded) {
         $message = 'Required interactive pwsh has no compatible trusted realization.'
         if ($Criticality -eq 'required') {
