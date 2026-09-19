@@ -172,6 +172,35 @@ Describe 'Capsulenv activation fast path and criticality' {
         }
     }
 
+    It 'keeps the activation generation snapshot stable across later active-generation changes' {
+        $activeA = [pscustomobject]@{
+            Authority = [pscustomobject]@{ GenerationId = 'generation-a' }
+            Generation = [pscustomobject]@{
+                GenerationId = 'generation-a'
+                Selections = @([pscustomobject]@{ Name = 'pwsh'; Kind = 'host-program'; Provider = 'host-scoop'; Scope = 'user'; Provenance = 'scoop:user/pwsh'; Version = '7.5.0'; Executable = 'pwsh.exe'; Trusted = $true; OwnsLifecycle = $false })
+            }
+        }
+        $activeB = [pscustomobject]@{
+            Authority = [pscustomobject]@{ GenerationId = 'generation-b' }
+            Generation = [pscustomobject]@{ GenerationId = 'generation-b'; Selections = @() }
+        }
+        Mock Get-CapsulenvActiveGeneration { $activeA } -ModuleName Capsulenv
+        Mock ConvertTo-CapsulenvGenerationProgramCandidate {
+            New-CapsulenvProgramCandidate -Name 'pwsh' -Executable 'pwsh.exe' -Provider host-scoop -Scope user -Version '7.5.0' -Provenance 'scoop:user/pwsh' -Capabilities @('interactive')
+        } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name pwsh -RequiredCapabilities @('interactive')
+            $snapshot = New-CapsulenvActivationSnapshot
+            $first = Get-CapsulenvActiveGenerationProgram -Requirement $requirement -ActivationSnapshot $snapshot
+            [pscustomobject]@{ GenerationId = $snapshot.GenerationId; Version = $first.Version }
+        }
+
+        $result.GenerationId | Should -Be 'generation-a'
+        $result.Version | Should -Be '7.5.0'
+        Should -Invoke Get-CapsulenvActiveGeneration -ModuleName Capsulenv -Times 1 -Exactly
+    }
+
     It 'does not silently drop required binding or session-service resources' {
         $plan = & $script:Module {
             $binding = New-CapsulenvActivationResource -Name git -Criticality required -Kind binding -Value $null
