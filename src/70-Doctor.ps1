@@ -318,9 +318,13 @@ function Initialize-CapsulenvIntegrations {
     [CmdletBinding()]
     param(
         [ValidateSet('ShellOnly', 'User')]
-        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode),
+        $ActivationSnapshot
     )
 
+    if (-not $PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        $ActivationSnapshot = New-CapsulenvActivationSnapshot
+    }
     [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
     $session = Initialize-CapsulenvSession -Role activation -Provenance ('capsulenv:{0}' -f $IntegrationMode)
     $configuration = Get-CapsulenvConfiguration
@@ -328,7 +332,7 @@ function Initialize-CapsulenvIntegrations {
         $endpoint = if ($configuration.Bitwarden.SetSshAuthSock) { '\\.\pipe\openssh-ssh-agent' } else { [Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process') }
         try {
             $bitwardenRequirement = (Get-CapsulenvBitwardenProgramRequirement -App ([string]$configuration.Bitwarden.App) -Criticality optional).Requirement
-            $bitwardenProgram = Get-CapsulenvActiveGenerationProgram -Requirement $bitwardenRequirement
+            $bitwardenProgram = Get-CapsulenvActiveGenerationProgram -Requirement $bitwardenRequirement -ActivationSnapshot $ActivationSnapshot
             $resolvedBinding = Resolve-CapsulenvBitwardenBinding -App ([string]$configuration.Bitwarden.App) -Requirement $bitwardenRequirement -Program $bitwardenProgram -Criticality optional -SessionId $session.SessionId
             if ($resolvedBinding.Succeeded) {
                 $agentBinding = [pscustomobject][ordered]@{
@@ -362,7 +366,7 @@ function Initialize-CapsulenvIntegrations {
                 -LogRoot (Join-Path $servicePlacement.ScratchRoot 'session-service/logs') `
                 -ReadinessProbe $serviceProbes.ReadinessProbe `
                 -HealthProbe $serviceProbes.HealthProbe
-            $serviceProgram = Get-CapsulenvActiveGenerationProgram -Requirement $serviceRequirement
+            $serviceProgram = Get-CapsulenvActiveGenerationProgram -Requirement $serviceRequirement -ActivationSnapshot $ActivationSnapshot
             $serviceBinding = Start-CapsulenvSessionService -Definition $serviceDefinition -Program $serviceProgram -SessionId $session.SessionId
             if ($serviceBinding.Succeeded) {
                 Write-CapsulenvMessage -Level Detail -Message 'Configured session service attached through the generic SessionService lifecycle.'
