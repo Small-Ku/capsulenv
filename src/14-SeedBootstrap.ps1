@@ -278,6 +278,92 @@ function Get-CapsulenvSeedProgramCandidates {
     return Get-CapsulenvSeedAcquisitionCandidates -Requirement $Requirement
 }
 
+function Resolve-CapsulenvProgramWithAcquisition {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Requirement,
+        [object[]]$HostCandidates,
+        [object[]]$SeedCandidates,
+        [object[]]$ProviderCandidates = @()
+    )
+
+    $hostCandidates = if ($PSBoundParameters.ContainsKey('HostCandidates')) {
+        @($HostCandidates)
+    } else {
+        @(Get-CapsulenvProgramCandidates -Requirement $Requirement)
+    }
+    $current = Resolve-CapsulenvProgram -Requirement $Requirement -Candidates $hostCandidates
+    if ($current.Succeeded) {
+        return [pscustomobject][ordered]@{
+            Succeeded = $true
+            Stage = 'existing-host-program'
+            Selected = $current.Selected
+            Diagnostics = @('trusted current host authority selected before acquisition')
+        }
+    }
+
+    $seedCandidates = if ($PSBoundParameters.ContainsKey('SeedCandidates')) {
+        @($SeedCandidates)
+    } else {
+        @(Get-CapsulenvSeedAcquisitionCandidates -Requirement $Requirement)
+    }
+    $seed = @(
+        $seedCandidates |
+            Where-Object {
+                [string]$_.Kind -eq 'seed-acquisition' -and
+                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.Name)
+            } |
+            Where-Object { (Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement $Requirement -Candidate $_).Compatible } |
+            Select-Object -First 1
+    )
+    if ($seed.Count -eq 1) {
+        $entry = $seed[0]
+        $source = Resolve-CapsulenvPortableSeedSourcePath -Entry $entry
+        $manifest = Acquire-CapsulenvProgramRealization `
+            -Name ([string]$entry.Name) `
+            -Version ([string]$entry.Version) `
+            -SourcePath $source `
+            -ExecutableRelativePath ([string]$entry.ExecutableRelativePath) `
+            -ExpectedHash ([string]$entry.ExpectedHash) `
+            -Provider capsulenv-local `
+            -AcquisitionProvider seed `
+            -Provenance ([string]$entry.Provenance)
+        $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
+        $payload = Join-Path ([string]$manifest.RealizationRoot) 'payload'
+        $executable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payload -ExecutableRelativePath ([string]$manifest.ExecutableRelativePath)
+        $selected = New-CapsulenvProgramCandidate `
+            -Name ([string]$manifest.Name) `
+            -Executable $executable `
+            -Root ([string]$manifest.RealizationRoot) `
+            -Provider $authority.Provider `
+            -AcquisitionProvider $authority.AcquisitionProvider `
+            -Scope $authority.Scope `
+            -Version ([string]$manifest.Version) `
+            -Capabilities @($entry.Capabilities) `
+            -Trusted:$true `
+            -OwnsLifecycle:$authority.OwnsLifecycle `
+            -Provenance $authority.Provenance
+        $check = Test-CapsulenvProgramCandidate -Requirement $Requirement -Candidate $selected
+        if (-not $check.Compatible) {
+            throw "Materialized seed program '$($entry.Name)' failed current authority validation: $($check.Reasons -join ', ')"
+        }
+        return [pscustomobject][ordered]@{
+            Succeeded = $true
+            Stage = 'materialized-portable-seed'
+            Selected = $selected
+            Diagnostics = @('verified seed was materialized into a host-local owned realization')
+        }
+    }
+
+    $provider = Resolve-CapsulenvProgram -Requirement $Requirement -Candidates @($ProviderCandidates)
+    return [pscustomobject][ordered]@{
+        Succeeded = [bool]$provider.Succeeded
+        Stage = 'normal-provider'
+        Selected = $provider.Selected
+        Diagnostics = if ($provider.Succeeded) { @('normal provider acquisition is permitted') } else { @('no compatible host, seed, or provider candidate is available') }
+    }
+}
+
 function Invoke-CapsulenvBootstrapAcquisition {
     [CmdletBinding()]
     param(
@@ -289,46 +375,16 @@ function Invoke-CapsulenvBootstrapAcquisition {
         [switch]$BootstrapNetworkReady
     )
 
-    $host = Resolve-CapsulenvProgram -Requirement $Requirement -Candidates $HostCandidates
-    if ($host.Succeeded) {
-        return [pscustomobject][ordered]@{
-            Succeeded = $true
-            Stage = 'existing-host-program'
-            Selected = $host.Selected
-            Diagnostics = @('trusted host realization selected before bootstrap')
-        }
-    }
-    $seed = @(
-        $SeedCandidates |
-            Where-Object {
-                [string]$_.Kind -eq 'seed-acquisition' -and
-                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.Name)
-            } |
-            Where-Object {
-                (Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement $Requirement -Candidate $_).Compatible
-            } |
-            Select-Object -First 1
-    )
-    if ($seed.Count -eq 1) {
-        return [pscustomobject][ordered]@{
-            Succeeded = $true
-            Stage = 'portable-seed'
-            Selected = $seed[0]
-            Diagnostics = @('verified immutable seed acquisition selected before provider acquisition')
-        }
-    }
+    $acquisitionParameters = @{ Requirement = $Requirement }
+    if ($PSBoundParameters.ContainsKey('HostCandidates')) { $acquisitionParameters['HostCandidates'] = $HostCandidates }
+    if ($PSBoundParameters.ContainsKey('SeedCandidates')) { $acquisitionParameters['SeedCandidates'] = $SeedCandidates }
+    if ($PSBoundParameters.ContainsKey('ProviderCandidates')) { $acquisitionParameters['ProviderCandidates'] = $ProviderCandidates }
+    $resolved = Resolve-CapsulenvProgramWithAcquisition @acquisitionParameters
+    if ($resolved.Succeeded) { return $resolved }
     if ($RequireBootstrapNetwork -and -not $BootstrapNetworkReady) {
         throw 'Bootstrap network is required before normal provider acquisition, but no host or seed bootstrap program is available.'
     }
-    $provider = Resolve-CapsulenvProgram -Requirement $Requirement -Candidates $ProviderCandidates
-    return [pscustomobject][ordered]@{
-        Succeeded = [bool]$provider.Succeeded
-        Stage = 'normal-provider'
-        Selected = $provider.Selected
-        Diagnostics = if ($provider.Succeeded) { @('normal provider acquisition is permitted') } else { @('no compatible provider candidate is available') }
-    }
+    return $resolved
 }
 
-##MOD_EXEC## Export-ModuleMember -Function New-CapsulenvPortableSeedEntry, Set-CapsulenvPortableSeedManifest, Get-CapsulenvPortableSeedEntries, Get-CapsulenvPortableSeedEntry, Test-CapsulenvPortableSeedEntry, Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement, Get-CapsulenvSeedAcquisitionCandidates, Get-CapsulenvSeedProgramCandidates, Invoke-CapsulenvBootstrapAcquisition
-
-
+##MOD_EXEC## Export-ModuleMember -Function New-CapsulenvPortableSeedEntry, Set-CapsulenvPortableSeedManifest, Get-CapsulenvPortableSeedEntries, Get-CapsulenvPortableSeedEntry, Test-CapsulenvPortableSeedEntry, Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement, Get-CapsulenvSeedAcquisitionCandidates, Get-CapsulenvSeedProgramCandidates, Resolve-CapsulenvProgramWithAcquisition, Invoke-CapsulenvBootstrapAcquisition
