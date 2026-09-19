@@ -358,9 +358,9 @@ Describe 'Capsulenv host-local realization and generation authority' {
             } $temporaryRoot $source
 
             $tampered = Get-Content -LiteralPath $generationPath.Path -Raw | ConvertFrom-Json
-            foreach ($property in @('Version', 'Provider', 'Provenance', 'ExecutableRelativePath')) {
+            foreach ($property in @('Version', 'Provider', 'AcquisitionProvider', 'Provenance', 'ExecutableRelativePath')) {
                 $candidate = $tampered | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-                $candidate.Selections[0].$property = if ($property -eq 'Version') { '9.9.9' } elseif ($property -eq 'ExecutableRelativePath') { 'other.exe' } else { 'tampered' }
+                $candidate.Selections[0].$property = if ($property -eq 'Version') { '9.9.9' } elseif ($property -eq 'ExecutableRelativePath') { 'other.exe' } elseif ($property -eq 'AcquisitionProvider') { 'seed' } else { 'tampered' }
                 $candidate | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $generationPath.Path -Encoding UTF8
                 Get-CapsulenvGeneration -GenerationId $generationPath.Id | Should -BeNullOrEmpty
             }
