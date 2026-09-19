@@ -11,6 +11,26 @@ Describe 'Capsulenv SessionService lifecycle' {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
+    It 'does not call an alive process ready when its configured TCP endpoint is closed' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-readiness-' + [Guid]::NewGuid().ToString('N'))
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $listener.Start()
+        $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+        $listener.Stop()
+        $sleep = @(Get-Command sleep -CommandType Application -ErrorAction Stop | Select-Object -First 1)[0]
+        $process = Start-Process -FilePath $sleep.Source -ArgumentList @('30') -PassThru
+        try {
+            $result = & $script:Module {
+                param($Process, $Port)
+                Test-CapsulenvSessionServiceReady -Process $Process -ReadinessProbe { param($Child) Test-CapsulenvTcpEndpoint -Address '127.0.0.1' -Port $Port } -HealthProbe { param($Child) $true } -TimeoutMilliseconds 150
+            } $process $port
+            $result.Ready | Should -BeFalse
+            $result.Healthy | Should -BeFalse
+        } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'does not treat detached spawn as ready and stops only the exact owned service' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-' + [Guid]::NewGuid().ToString('N'))
         $sleep = Join-Path $temporaryRoot 'sing-box.sh'
