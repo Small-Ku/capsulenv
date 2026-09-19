@@ -116,6 +116,7 @@ function Resolve-CapsulenvBitwardenBinding {
         [string]$App,
         $Requirement,
         [object[]]$Candidates,
+        $Program,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'optional',
         [string]$SessionId,
@@ -131,11 +132,14 @@ function Resolve-CapsulenvBitwardenBinding {
         Requirement = $requirementRecord.Requirement
         Criticality = $requirementRecord.Criticality
     }
-    if ($PSBoundParameters.ContainsKey('Candidates')) { $parameters['Candidates'] = $Candidates }
-    $resolution = if ($PSBoundParameters.ContainsKey('Candidates')) {
+    if ($PSBoundParameters.ContainsKey('Program')) { $parameters['Program'] = $Program }
+    elseif ($PSBoundParameters.ContainsKey('Candidates')) { $parameters['Candidates'] = $Candidates }
+    $resolution = if ($PSBoundParameters.ContainsKey('Program')) {
+        Get-CapsulenvProgramResolution -Requirement $parameters.Requirement -Candidates @($Program)
+    } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Get-CapsulenvProgramResolution -Requirement $parameters.Requirement -Candidates $parameters.Candidates
     } else {
-        Get-CapsulenvProgramResolution -Requirement $parameters.Requirement
+        Get-CapsulenvProgramResolution -Requirement $parameters.Requirement -Candidates @(Get-CapsulenvActiveGenerationProgram -Requirement $parameters.Requirement)
     }
     if (-not $resolution.Succeeded) {
         $message = "Bitwarden program '$($requirementRecord.App)' has no compatible trusted realization."
@@ -193,6 +197,7 @@ function Invoke-CapsulenvBitwardenSessionIntegration {
         [string]$App,
         $Requirement,
         [object[]]$Candidates,
+        $Program,
         [string]$SshAuthSock,
         [object]$AgentBinding,
         [object]$ResolvedBinding,
@@ -208,6 +213,7 @@ function Invoke-CapsulenvBitwardenSessionIntegration {
     }
     if ($null -ne $Requirement) { $parameters['Requirement'] = $Requirement }
     if ($PSBoundParameters.ContainsKey('Candidates')) { $parameters['Candidates'] = $Candidates }
+    if ($PSBoundParameters.ContainsKey('Program')) { $parameters['Program'] = $Program }
     if (-not [string]::IsNullOrWhiteSpace($SessionId)) { $parameters['SessionId'] = $SessionId }
     if ($null -ne $AgentBinding) { $parameters['AgentBinding'] = $AgentBinding }
     $binding = if ($null -ne $ResolvedBinding) { $ResolvedBinding } else { Resolve-CapsulenvBitwardenBinding @parameters }

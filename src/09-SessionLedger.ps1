@@ -294,6 +294,61 @@ function Register-CapsulenvOwnedProcessRecord {
     }
 }
 
+function Initialize-CapsulenvOwnedChildSession {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][int]$ProcessId,
+        [Parameter(Mandatory = $true)][string]$ProcessStartIdentity,
+        [string]$Role = 'child-shell',
+        [string]$Provenance = 'capsulenv'
+    )
+
+    if ($ProcessId -le 0 -or [string]::IsNullOrWhiteSpace($ProcessStartIdentity)) {
+        throw 'Owned child sessions require an exact child PID and ProcessStartIdentity.'
+    }
+    $sessionId = [Guid]::NewGuid().ToString('N')
+    return Invoke-CapsulenvSessionLedgerMutation {
+        param($ledger)
+        $record = New-CapsulenvProcessRecord -SessionId $sessionId -ProcessId $ProcessId -Role $Role -Ownership owned -Provenance $Provenance -ProcessStartIdentity $ProcessStartIdentity
+        $session = [pscustomobject][ordered]@{
+            SessionId = $sessionId
+            HostKey = Get-CapsulenvHostKey
+            PID = $ProcessId
+            ProcessStartIdentity = $ProcessStartIdentity
+            ProcessNonce = $record.ProcessNonce
+            Role = $Role
+            Ownership = 'owned'
+            Provenance = $Provenance
+            ProcessRecords = @($record)
+            HeldLeases = @()
+            CreatedAtUtc = [DateTime]::UtcNow.ToString('o')
+            UpdatedAtUtc = [DateTime]::UtcNow.ToString('o')
+        }
+        $ledger.Sessions = @($ledger.Sessions) + @($session)
+        return $session
+    }
+}
+
+function Complete-CapsulenvOwnedChildSession {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$ProcessRecord)
+
+    return Invoke-CapsulenvSessionLedgerMutation {
+        param($ledger)
+        $canonical = Get-CapsulenvLedgerOwnedProcessRecord -Ledger $ledger -RequestedRecord $ProcessRecord
+        if ($null -eq $canonical) {
+            return [pscustomobject][ordered]@{ Completed = $false; Reason = 'child is not an exact owned ledger record' }
+        }
+        $session = @($ledger.Sessions | Where-Object { [string]$_.SessionId -eq [string]$canonical.SessionId }) | Select-Object -First 1
+        if ($null -eq $session) {
+            return [pscustomobject][ordered]@{ Completed = $false; Reason = 'child session is no longer present' }
+        }
+        $session.ProcessRecords = @($session.ProcessRecords | Where-Object { [string]$_.ProcessNonce -ne [string]$canonical.ProcessNonce })
+        $ledger.Sessions = @($ledger.Sessions | Where-Object { [string]$_.SessionId -ne [string]$canonical.SessionId })
+        return [pscustomobject][ordered]@{ Completed = $true; SessionId = $canonical.SessionId; PID = $canonical.PID }
+    }
+}
+
 function Test-CapsulenvProcessRecordLive {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$ProcessRecord)

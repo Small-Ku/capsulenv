@@ -178,6 +178,9 @@ Describe 'Capsulenv portable workflow contracts' {
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
         Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
         Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram {
+            New-CapsulenvProgramCandidate -Name pwsh -Executable (Join-Path $PSHOME 'pwsh') -Provider capsulenv-local -Version 7.6.5 -Capabilities @('interactive')
+        } -ModuleName Capsulenv
         Mock Resolve-CapsulenvPowerShellBinding {
             [pscustomobject][ordered]@{
                 Succeeded = $true
@@ -191,6 +194,7 @@ Describe 'Capsulenv portable workflow contracts' {
                 BootstrapPath = $null
             }
         } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvOwnedProcessPlan { [pscustomobject]@{ ProcessId = 4242; ExitCode = 0 } } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null

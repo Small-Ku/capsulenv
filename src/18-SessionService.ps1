@@ -24,6 +24,75 @@ function Restore-CapsulenvSessionServiceProxyEnvironment {
     return $Snapshot
 }
 
+function Test-CapsulenvTcpEndpoint {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Address,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [int]$TimeoutMilliseconds = 200
+    )
+
+    if ($Port -lt 1 -or $Port -gt 65535) { return $false }
+    $client = [System.Net.Sockets.TcpClient]::new()
+    $async = $null
+    try {
+        $async = $client.BeginConnect($Address, $Port, $null, $null)
+        if (-not $async.AsyncWaitHandle.WaitOne($TimeoutMilliseconds)) { return $false }
+        $client.EndConnect($async)
+        return $client.Connected
+    } catch {
+        return $false
+    } finally {
+        if ($null -ne $async -and $null -ne $async.AsyncWaitHandle) { $async.AsyncWaitHandle.Dispose() }
+        $client.Dispose()
+    }
+}
+
+function Get-CapsulenvSessionServiceTcpEndpoint {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$ConfigPath)
+
+    try {
+        $configuration = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+    } catch {
+        throw "SessionService endpoint configuration is unreadable: $($_.Exception.Message)"
+    }
+    foreach ($inbound in @($configuration.inbounds)) {
+        $port = 0
+        foreach ($propertyName in @('listen_port', 'port')) {
+            if ($null -ne $inbound.PSObject.Properties[$propertyName] -and [int]::TryParse([string]$inbound.$propertyName, [ref]$port) -and $port -gt 0) { break }
+        }
+        if ($port -le 0) { continue }
+        $address = '127.0.0.1'
+        if ($null -ne $inbound.PSObject.Properties['listen'] -and -not [string]::IsNullOrWhiteSpace([string]$inbound.listen)) {
+            $address = [string]$inbound.listen
+            if ($address -in @('0.0.0.0', '::', '[::]')) { $address = '127.0.0.1' }
+        }
+        return [pscustomobject][ordered]@{ Address = $address; Port = $port }
+    }
+    throw "SessionService config has no TCP inbound endpoint: $ConfigPath"
+}
+
+function New-CapsulenvSessionServiceTcpProbes {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$ConfigPath)
+
+    $endpoint = Get-CapsulenvSessionServiceTcpEndpoint -ConfigPath $ConfigPath
+    $address = [string]$endpoint.Address
+    $port = [int]$endpoint.Port
+    $probe = {
+        param($Process)
+        if ($Process.HasExited) { return $false }
+        return Test-CapsulenvTcpEndpoint -Address $address -Port $port
+    }.GetNewClosure()
+    return [pscustomobject][ordered]@{
+        Address = $address
+        Port = $port
+        ReadinessProbe = $probe
+        HealthProbe = $probe
+    }
+}
+
 function New-CapsulenvSessionServiceDefinition {
     [CmdletBinding()]
     param(
@@ -58,13 +127,16 @@ function Resolve-CapsulenvSessionService {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]$Definition,
-        [object[]]$Candidates
+        [object[]]$Candidates,
+        $Program
     )
 
-    $resolution = if ($PSBoundParameters.ContainsKey('Candidates')) {
+    $resolution = if ($PSBoundParameters.ContainsKey('Program')) {
+        Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates @($Program)
+    } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates $Candidates
     } else {
-        Get-CapsulenvProgramResolution -Requirement $Definition.Requirement
+        Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates @(Get-CapsulenvActiveGenerationProgram -Requirement $Definition.Requirement)
     }
     if (-not $resolution.Succeeded) {
         return [pscustomobject][ordered]@{
@@ -115,11 +187,14 @@ function Start-CapsulenvSessionService {
     param(
         [Parameter(Mandatory = $true)]$Definition,
         [object[]]$Candidates,
+        $Program,
         [string]$SessionId,
         [int]$ReadinessTimeoutMilliseconds = 1500
     )
 
-    $resolved = if ($PSBoundParameters.ContainsKey('Candidates')) {
+    $resolved = if ($PSBoundParameters.ContainsKey('Program')) {
+        Resolve-CapsulenvSessionService -Definition $Definition -Program $Program
+    } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Resolve-CapsulenvSessionService -Definition $Definition -Candidates $Candidates
     } else {
         Resolve-CapsulenvSessionService -Definition $Definition

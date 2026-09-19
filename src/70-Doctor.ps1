@@ -327,7 +327,9 @@ function Initialize-CapsulenvIntegrations {
     if ($configuration.Bitwarden.Enabled) {
         $endpoint = if ($configuration.Bitwarden.SetSshAuthSock) { '\\.\pipe\openssh-ssh-agent' } else { [Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process') }
         try {
-            $resolvedBinding = Resolve-CapsulenvBitwardenBinding -App ([string]$configuration.Bitwarden.App) -Criticality optional -SessionId $session.SessionId
+            $bitwardenRequirement = (Get-CapsulenvBitwardenProgramRequirement -App ([string]$configuration.Bitwarden.App) -Criticality optional).Requirement
+            $bitwardenProgram = Get-CapsulenvActiveGenerationProgram -Requirement $bitwardenRequirement
+            $resolvedBinding = Resolve-CapsulenvBitwardenBinding -App ([string]$configuration.Bitwarden.App) -Requirement $bitwardenRequirement -Program $bitwardenProgram -Criticality optional -SessionId $session.SessionId
             if ($resolvedBinding.Succeeded) {
                 $agentBinding = [pscustomobject][ordered]@{
                     Endpoint = $endpoint
@@ -350,6 +352,7 @@ function Initialize-CapsulenvIntegrations {
         try {
             $serviceRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed', 'provider')
             $servicePlacement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
+            $serviceProbes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $sessionServiceConfigPath
             $serviceDefinition = New-CapsulenvSessionServiceDefinition `
                 -Name 'sing-box' `
                 -Requirement $serviceRequirement `
@@ -357,9 +360,10 @@ function Initialize-CapsulenvIntegrations {
                 -ConfigPath $sessionServiceConfigPath `
                 -RuntimeRoot (Join-Path $servicePlacement.ScratchRoot 'session-service') `
                 -LogRoot (Join-Path $servicePlacement.ScratchRoot 'session-service/logs') `
-                -ReadinessProbe { param($Process) -not $Process.HasExited } `
-                -HealthProbe { param($Process) -not $Process.HasExited }
-            $serviceBinding = Start-CapsulenvSessionService -Definition $serviceDefinition -SessionId $session.SessionId
+                -ReadinessProbe $serviceProbes.ReadinessProbe `
+                -HealthProbe $serviceProbes.HealthProbe
+            $serviceProgram = Get-CapsulenvActiveGenerationProgram -Requirement $serviceRequirement
+            $serviceBinding = Start-CapsulenvSessionService -Definition $serviceDefinition -Program $serviceProgram -SessionId $session.SessionId
             if ($serviceBinding.Succeeded) {
                 Write-CapsulenvMessage -Level Detail -Message 'Configured session service attached through the generic SessionService lifecycle.'
             }

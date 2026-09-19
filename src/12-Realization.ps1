@@ -126,6 +126,7 @@ function Test-CapsulenvProgramRealization {
         [string]$ExpectedHash,
         [string]$ExpectedVersion,
         [string]$ExpectedProvider,
+        [string]$ExpectedAcquisitionProvider,
         [string]$ExpectedProvenance,
         [string]$ExpectedExecutableRelativePath
     )
@@ -142,9 +143,11 @@ function Test-CapsulenvProgramRealization {
         -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$manifest.SourceHash, $ExpectedHash)) {
         return $false
     }
+    $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
     foreach ($pair in @(
         [pscustomobject]@{ Expected = $ExpectedVersion; Actual = [string]$manifest.Version },
-        [pscustomobject]@{ Expected = $ExpectedProvider; Actual = [string]$manifest.Provider },
+        [pscustomobject]@{ Expected = $ExpectedProvider; Actual = [string]$authority.Provider },
+        [pscustomobject]@{ Expected = $ExpectedAcquisitionProvider; Actual = [string]$authority.AcquisitionProvider },
         [pscustomobject]@{ Expected = $ExpectedProvenance; Actual = [string]$manifest.Provenance },
         [pscustomobject]@{ Expected = $ExpectedExecutableRelativePath; Actual = [string]$manifest.ExecutableRelativePath }
     )) {
@@ -184,8 +187,18 @@ function Acquire-CapsulenvProgramRealization {
         [string]$ExpectedHash,
         [ValidateSet('seed', 'provider', 'host-scoop', 'capsulenv-local')]
         [string]$Provider = 'provider',
+        [string]$AcquisitionProvider,
         [string]$Provenance
     )
+
+    if ([string]::IsNullOrWhiteSpace($AcquisitionProvider)) {
+        $AcquisitionProvider = $Provider
+        if ($Provider -in @('seed', 'provider', 'host-scoop')) {
+            # The pre-schema-2 API used Provider for acquisition origin. A
+            # materialized realization is always a host-local authority.
+            $Provider = 'capsulenv-local'
+        }
+    }
 
     if (-not (Test-CapsulenvSafeRealizationComponent -Value $Name) -or
         -not (Test-CapsulenvSafeRealizationComponent -Value $Version)) {
@@ -241,18 +254,19 @@ function Acquire-CapsulenvProgramRealization {
         }
         $finalRoot = Join-Path (Join-Path (Join-Path $placement.PackagesRoot $Name) $Version) $stagedSourceHash
         if (Test-Path -LiteralPath $finalRoot) {
-            if (Test-CapsulenvProgramRealization -RealizationRoot $finalRoot -ExpectedName $Name -ExpectedHash $stagedSourceHash -ExpectedVersion $Version -ExpectedProvider $Provider -ExpectedProvenance $Provenance -ExpectedExecutableRelativePath $ExecutableRelativePath) {
+            if (Test-CapsulenvProgramRealization -RealizationRoot $finalRoot -ExpectedName $Name -ExpectedHash $stagedSourceHash -ExpectedVersion $Version -ExpectedProvider $Provider -ExpectedAcquisitionProvider $AcquisitionProvider -ExpectedProvenance $Provenance -ExpectedExecutableRelativePath $ExecutableRelativePath) {
                 return (Read-CapsulenvRealizationManifest -RealizationRoot $finalRoot) | Add-Member -NotePropertyName RealizationRoot -NotePropertyValue $finalRoot -PassThru
             }
             throw "An immutable realization with the same bytes has incompatible semantic identity: $finalRoot"
         }
         $manifest = [pscustomobject][ordered]@{
-            SchemaVersion = 1
+            SchemaVersion = 2
             Complete = $true
             Immutable = $true
             Name = $Name
             Version = $Version
             Provider = $Provider
+            AcquisitionProvider = $AcquisitionProvider
             Provenance = $Provenance
             SourceKind = if ($sourceIsFile) { 'file' } else { 'directory' }
             SourceHash = $stagedSourceHash
@@ -315,7 +329,7 @@ function Get-CapsulenvGeneration {
                 return $null
             }
         } elseif ([string]$selection.Kind -eq 'realization' -or [string]::IsNullOrWhiteSpace([string]$selection.Kind)) {
-            if (-not (Test-CapsulenvProgramRealization -RealizationRoot ([string]$selection.RealizationRoot) -ExpectedName ([string]$selection.Name) -ExpectedHash ([string]$selection.SourceHash) -ExpectedVersion ([string]$selection.Version) -ExpectedProvider ([string]$selection.Provider) -ExpectedProvenance ([string]$selection.Provenance) -ExpectedExecutableRelativePath ([string]$selection.ExecutableRelativePath))) {
+            if (-not (Test-CapsulenvProgramRealization -RealizationRoot ([string]$selection.RealizationRoot) -ExpectedName ([string]$selection.Name) -ExpectedHash ([string]$selection.SourceHash) -ExpectedVersion ([string]$selection.Version) -ExpectedProvider ([string]$selection.Provider) -ExpectedAcquisitionProvider ([string]$selection.AcquisitionProvider) -ExpectedProvenance ([string]$selection.Provenance) -ExpectedExecutableRelativePath ([string]$selection.ExecutableRelativePath))) {
                 return $null
             }
         } else {
@@ -350,7 +364,7 @@ function Publish-CapsulenvGeneration {
                 throw "Cannot materialize an invalid portable seed acquisition: $($realization.Name)"
             }
             $source = Resolve-CapsulenvPortableSeedSourcePath -Entry $realization
-            $realization = Acquire-CapsulenvProgramRealization -Name ([string]$realization.Name) -Version ([string]$realization.Version) -SourcePath $source -ExecutableRelativePath ([string]$realization.ExecutableRelativePath) -ExpectedHash ([string]$realization.ExpectedHash) -Provider seed -Provenance ([string]$realization.Provenance)
+            $realization = Acquire-CapsulenvProgramRealization -Name ([string]$realization.Name) -Version ([string]$realization.Version) -SourcePath $source -ExecutableRelativePath ([string]$realization.ExecutableRelativePath) -ExpectedHash ([string]$realization.ExpectedHash) -Provider capsulenv-local -AcquisitionProvider seed -Provenance ([string]$realization.Provenance)
             $kind = 'realization'
         }
         if ($kind -eq 'realization') {
@@ -359,6 +373,7 @@ function Publish-CapsulenvGeneration {
                 throw "Cannot publish a generation with an incomplete realization: $root"
             }
             $manifest = Read-CapsulenvRealizationManifest -RealizationRoot $root
+            $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
             $selectionName = [string]$manifest.Name
             if (
                 [string]::IsNullOrWhiteSpace($selectionName) -or
@@ -370,7 +385,8 @@ function Publish-CapsulenvGeneration {
                 Kind = 'realization'
                 Name = [string]$manifest.Name
                 Version = [string]$manifest.Version
-                Provider = [string]$manifest.Provider
+                Provider = [string]$authority.Provider
+                AcquisitionProvider = [string]$authority.AcquisitionProvider
                 Provenance = [string]$manifest.Provenance
                 SourceHash = [string]$manifest.SourceHash
                 ExecutableRelativePath = [string]$manifest.ExecutableRelativePath
@@ -400,6 +416,7 @@ function Publish-CapsulenvGeneration {
                 Root = [string]$program.Root
                 Trusted = [bool]$program.Trusted
                 OwnsLifecycle = [bool]$program.OwnsLifecycle
+                AcquisitionProvider = [string]$program.AcquisitionProvider
             }
             if (-not (Test-CapsulenvHostProgramSelection -Selection $selection)) {
                 throw "Cannot publish an invalid host-program generation selection: $($selection.Name)"

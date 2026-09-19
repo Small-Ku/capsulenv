@@ -894,7 +894,9 @@ function Invoke-CapsulenvChildShell {
         Sync-CapsulenvConfiguredDefaultBrowser
     }
 
-    $binding = Resolve-CapsulenvPowerShellBinding -Criticality required
+    $powerShellRequirement = (Get-CapsulenvInteractivePowerShellRequirement -Criticality required).Requirement
+    $powerShellProgram = Get-CapsulenvActiveGenerationProgram -Requirement $powerShellRequirement
+    $binding = Resolve-CapsulenvPowerShellBinding -Requirement $powerShellRequirement -Program $powerShellProgram -Criticality required
     if (-not $binding.Succeeded) {
         throw 'Required interactive pwsh binding could not be established.'
     }
@@ -931,7 +933,7 @@ function Invoke-CapsulenvChildShell {
     }
     [void](Invoke-CapsulenvRoutines -Trigger OnEnter)
     try {
-        Invoke-CapsulenvProcessPlan -Plan $launchPlan
+        Invoke-CapsulenvOwnedProcessPlan -Plan $launchPlan -Role child-shell -Provenance ('capsulenv/child-shell/{0}' -f $IntegrationMode)
     } finally {
         [void](Stop-CapsulenvActiveSessionServices)
         [void](Invoke-CapsulenvRoutines -Trigger OnExit)

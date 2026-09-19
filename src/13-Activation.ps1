@@ -72,11 +72,40 @@ function ConvertTo-CapsulenvGenerationProgramCandidate {
     }
     if ($selectionKind -eq 'seed-acquisition') {
         $source = Resolve-CapsulenvPortableSeedSourcePath -Entry $Selection
-        $Selection = Acquire-CapsulenvProgramRealization -Name ([string]$Selection.Name) -Version ([string]$Selection.Version) -SourcePath $source -ExecutableRelativePath ([string]$Selection.ExecutableRelativePath) -ExpectedHash ([string]$Selection.ExpectedHash) -Provider seed -Provenance ([string]$Selection.Provenance)
+        $Selection = Acquire-CapsulenvProgramRealization -Name ([string]$Selection.Name) -Version ([string]$Selection.Version) -SourcePath $source -ExecutableRelativePath ([string]$Selection.ExecutableRelativePath) -ExpectedHash ([string]$Selection.ExpectedHash) -Provider capsulenv-local -AcquisitionProvider seed -Provenance ([string]$Selection.Provenance)
     }
     $relative = [string]$Selection.ExecutableRelativePath
     $executable = Join-Path (Join-Path ([string]$Selection.RealizationRoot) 'payload') ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
-    return New-CapsulenvProgramCandidate -Name ([string]$Selection.Name) -Executable $executable -Root ([string]$Selection.RealizationRoot) -Provider ([string]$Selection.Provider) -Version ([string]$Selection.Version) -Trusted:$true -OwnsLifecycle:($Selection.Provider -eq 'capsulenv-local') -Provenance ([string]$Selection.Provenance)
+    $authority = Get-CapsulenvRealizationAuthority -Manifest $Selection
+    return New-CapsulenvProgramCandidate -Name ([string]$Selection.Name) -Executable $executable -Root ([string]$Selection.RealizationRoot) -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope host-local -Version ([string]$Selection.Version) -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance ([string]$Selection.Provenance)
+}
+
+function Get-CapsulenvActiveGenerationProgram {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Requirement)
+
+    $active = Get-CapsulenvActiveGeneration
+    if ($null -eq $active -or $null -eq $active.Generation) {
+        throw "Program '$($Requirement.Name)' has no active generation authority."
+    }
+    $selection = @($active.Generation.Selections |
+        Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.Name) } |
+        Select-Object -First 1)
+    if ($selection.Count -ne 1) {
+        throw "Program '$($Requirement.Name)' is not selected by the active generation authority."
+    }
+
+    $candidate = ConvertTo-CapsulenvGenerationProgramCandidate -Requirement $Requirement -Selection $selection[0]
+    # Generation metadata predates capability persistence. The binding still
+    # validates the executable/version/provider contract here; required
+    # capabilities are the binding's explicit contract and are carried on the
+    # canonical selected candidate for downstream consumers.
+    $candidate.Capabilities = @($candidate.Capabilities + @($Requirement.RequiredCapabilities) | Sort-Object -Unique)
+    $check = Test-CapsulenvProgramCandidate -Requirement $Requirement -Candidate $candidate
+    if (-not $check.Compatible) {
+        throw "Active generation program '$($Requirement.Name)' failed binding validation: $($check.Reasons -join ', ')"
+    }
+    return $candidate
 }
 
 function Resolve-CapsulenvActivation {
