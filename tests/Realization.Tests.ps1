@@ -71,6 +71,28 @@ Describe 'Capsulenv host-local realization and generation authority' {
         }
     }
 
+    It 'normalizes legacy provider acquisition into a local owned realization' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-realization-' + [Guid]::NewGuid().ToString('N'))
+        $source = Join-Path $temporaryRoot 'source/provider.exe'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        'provider' | Set-Content -LiteralPath $source -NoNewline
+        $result = & $script:Module {
+            param($CapsuleRoot, $Source)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $manifest = Acquire-CapsulenvProgramRealization -Name demo -Version 1.0.0 -SourcePath $Source -Provider provider -Provenance 'provider/demo'
+            [pscustomobject]@{
+                ManifestProvider = $manifest.Provider
+                ManifestOrigin = $manifest.AcquisitionProvider
+                Candidate = Get-CapsulenvRealizationAuthority -Manifest $manifest
+            }
+        } $temporaryRoot $source
+
+        $result.ManifestProvider | Should -Be 'capsulenv-local'
+        $result.ManifestOrigin | Should -Be 'provider'
+        $result.Candidate.Provider | Should -Be 'capsulenv-local'
+        $result.Candidate.OwnsLifecycle | Should -BeTrue
+    }
+
     It 'rejects a hash-mismatched acquire without publishing partial content' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-failed-realization-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
