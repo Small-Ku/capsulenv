@@ -38,6 +38,43 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.PSObject.Properties.Name | Should -Not -Contain 'Executable'
     }
 
+    It 'materializes a valid seed through the production acquisition boundary' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-materialize-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $source = Join-Path $capsuleRoot 'seed/sing-box'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        'seed-sing-box' | Set-Content -LiteralPath $source -Encoding UTF8 -NoNewline
+        $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        $result = & $script:Module {
+            param($CapsuleRoot, $Source, $Hash)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $entry = New-CapsulenvPortableSeedEntry -Name sing-box -Version 1.0.0 -SourcePath $Source -ExpectedHash $Hash -Provenance 'seed/sing-box'
+            Set-CapsulenvPortableSeedManifest -Entries @($entry) | Out-Null
+            $requirement = New-CapsulenvProgramRequirement -Name sing-box -ExactVersion 1.0.0
+            $resolved = Resolve-CapsulenvProgramWithAcquisition -Requirement $requirement -HostCandidates @() -SeedCandidates @(Get-CapsulenvSeedAcquisitionCandidates -Requirement $requirement)
+            $rediscovered = Get-CapsulenvProgramResolution -Requirement $requirement
+            [pscustomobject]@{
+                Stage = $resolved.Stage
+                AcquiredProvider = $resolved.Selected.Provider
+                AcquiredOrigin = $resolved.Selected.AcquisitionProvider
+                AcquiredScope = $resolved.Selected.Scope
+                AcquiredOwnsLifecycle = $resolved.Selected.OwnsLifecycle
+                NormalSucceeded = $rediscovered.Succeeded
+                NormalProvider = $rediscovered.Selected.Provider
+                NormalOrigin = $rediscovered.Selected.AcquisitionProvider
+            }
+        } $capsuleRoot $source $hash
+
+        $result.Stage | Should -Be 'materialized-portable-seed'
+        $result.AcquiredProvider | Should -Be 'capsulenv-local'
+        $result.AcquiredOrigin | Should -Be 'seed'
+        $result.AcquiredScope | Should -Be 'host-local'
+        $result.AcquiredOwnsLifecycle | Should -BeTrue
+        $result.NormalSucceeded | Should -BeTrue
+        $result.NormalProvider | Should -Be 'capsulenv-local'
+        $result.NormalOrigin | Should -Be 'seed'
+    }
+
     It 'enforces seed version provider and capability requirements before acquisition' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-requirement-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'
