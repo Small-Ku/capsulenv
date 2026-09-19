@@ -71,6 +71,28 @@ Describe 'Capsulenv host-local realization and generation authority' {
         }
     }
 
+    It 'normalizes legacy provider acquisition into a local owned realization' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-realization-' + [Guid]::NewGuid().ToString('N'))
+        $source = Join-Path $temporaryRoot 'source/provider.exe'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        'provider' | Set-Content -LiteralPath $source -NoNewline
+        $result = & $script:Module {
+            param($CapsuleRoot, $Source)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $manifest = Acquire-CapsulenvProgramRealization -Name demo -Version 1.0.0 -SourcePath $Source -Provider provider -Provenance 'provider/demo'
+            [pscustomobject]@{
+                ManifestProvider = $manifest.Provider
+                ManifestOrigin = $manifest.AcquisitionProvider
+                Candidate = Get-CapsulenvRealizationAuthority -Manifest $manifest
+            }
+        } $temporaryRoot $source
+
+        $result.ManifestProvider | Should -Be 'capsulenv-local'
+        $result.ManifestOrigin | Should -Be 'provider'
+        $result.Candidate.Provider | Should -Be 'capsulenv-local'
+        $result.Candidate.OwnsLifecycle | Should -BeTrue
+    }
+
     It 'rejects a hash-mismatched acquire without publishing partial content' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-failed-realization-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
@@ -358,9 +380,9 @@ Describe 'Capsulenv host-local realization and generation authority' {
             } $temporaryRoot $source
 
             $tampered = Get-Content -LiteralPath $generationPath.Path -Raw | ConvertFrom-Json
-            foreach ($property in @('Version', 'Provider', 'Provenance', 'ExecutableRelativePath')) {
+            foreach ($property in @('Version', 'Provider', 'AcquisitionProvider', 'Provenance', 'ExecutableRelativePath')) {
                 $candidate = $tampered | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-                $candidate.Selections[0].$property = if ($property -eq 'Version') { '9.9.9' } elseif ($property -eq 'ExecutableRelativePath') { 'other.exe' } else { 'tampered' }
+                $candidate.Selections[0].$property = if ($property -eq 'Version') { '9.9.9' } elseif ($property -eq 'ExecutableRelativePath') { 'other.exe' } elseif ($property -eq 'AcquisitionProvider') { 'seed' } else { 'tampered' }
                 $candidate | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $generationPath.Path -Encoding UTF8
                 Get-CapsulenvGeneration -GenerationId $generationPath.Id | Should -BeNullOrEmpty
             }
