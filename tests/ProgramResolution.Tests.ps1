@@ -126,4 +126,43 @@ Describe 'Capsulenv program requirement and provider resolution' {
         $result.StableVsBeta | Should -BeGreaterThan 0
     }
 
+    It 'normalizes a legacy materialized seed into the host-local authority model' {
+        $result = & $script:Module {
+            $authority = Get-CapsulenvRealizationAuthority -Manifest ([pscustomobject][ordered]@{
+                SchemaVersion = 1
+                Provider = 'seed'
+                Provenance = 'portable-seed/sing-box'
+            })
+            $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable '/tmp/sing-box' -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope $authority.Scope -OwnsLifecycle:$authority.OwnsLifecycle -Provenance $authority.Provenance
+            [pscustomobject]@{
+                Authority = $authority
+                Candidate = $candidate
+            }
+        }
+
+        $result.Authority.Provider | Should -Be 'capsulenv-local'
+        $result.Authority.AcquisitionProvider | Should -Be 'seed'
+        $result.Authority.Scope | Should -Be 'host-local'
+        $result.Authority.OwnsLifecycle | Should -BeTrue
+        $result.Candidate.Provider | Should -Be 'capsulenv-local'
+        $result.Candidate.AcquisitionProvider | Should -Be 'seed'
+        $result.Candidate.OwnsLifecycle | Should -BeTrue
+    }
+
+    It 'preserves explicit current authority and acquisition origin independently' {
+        $result = & $script:Module {
+            Get-CapsulenvRealizationAuthority -Manifest ([pscustomobject][ordered]@{
+                SchemaVersion = 2
+                Provider = 'capsulenv-local'
+                AcquisitionProvider = 'provider'
+                Provenance = 'provider/cache'
+            })
+        }
+
+        $result.Provider | Should -Be 'capsulenv-local'
+        $result.AcquisitionProvider | Should -Be 'provider'
+        $result.Scope | Should -Be 'host-local'
+        $result.OwnsLifecycle | Should -BeTrue
+    }
+
 }
