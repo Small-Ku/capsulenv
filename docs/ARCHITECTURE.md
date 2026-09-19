@@ -254,3 +254,134 @@ Package ownership與 tool cache/project storage是不同 surface。`tool-data/`�
 - control bootstrap/runtime command boundary保持 WinPS 5.1-compatible
 
 這些 gate需要 synthetic rejecting/accepting fixtures；不能為了 refactor方便降級成沒有 ownership意義的 string smoke test。
+
+# Host identity and depot retention
+
+Capsulenv keeps capsule identity and desired state portable, while resolving a
+host-local depot from an independent host record. A host record is keyed by a
+stable machine/user integration key and never by the portable root or drive
+letter.
+
+Unknown hosts resolve to retention = ephemeral by default. The ephemeral
+placement is namespaced by host key, capsule identity, and the current boot
+epoch, so a valid realization can be reused during one host lifetime without
+making reboot/reimage persistence part of correctness. No shutdown cleanup hook
+is required.
+
+Persistent placement requires an explicit host enrollment/tag such as home. An
+enrolled host may provide a stable local depot root, including a custom local
+volume. Portable state is not copied into this depot merely to simplify
+cleanup, and a stale host-local record never overrides portable desired state.
+
+The host placement foundation only resolves and materializes layout. Program
+resolution, immutable generations, activation, and integration ownership remain
+separate boundaries implemented by the downstream architecture issues.
+
+Host identity uses layered evidence. When available, the Windows GDID value at
+`HKCU\\SOFTWARE\\Microsoft\\IdentityCRL\\ExtendedProperties\\LID` is a
+strong host-installation signal; the machine/user tuple remains a fallback and
+co-factor. Capsulenv stores only the derived host digest in placement keys, and
+never copies raw GDID into portable state. GDID presence does not infer home or
+enable persistent retention; explicit enrollment remains authoritative.
+
+Host JSON publication is fail-closed when replacement is unsupported, retaining
+the previous valid record. An invalid or unmarked ephemeral placement is stale
+material and is moved aside before rematerialization; an invalid persistent
+placement reports a diagnostic instead of being silently adopted.
+# Session ledger and portable-state leases
+
+Process ownership is recorded in a host-local session ledger. Each record
+contains the session ID, PID, process-start identity, a nonce, role, provider
+provenance, ownership classification, and held leases. Only an exact live
+record marked owned is actionable; attached and foreign processes are never
+stopped by Capsulenv. A reused PID with a different start identity is stale
+residue.
+
+The exported registration boundary can create only attached or foreign
+records. Owned records are created only by the internal launch-boundary path
+with an already captured process-start identity, so an arbitrary live PID
+cannot be promoted by a general registration call. Ledger mutations use an
+OS-held ledger lock before read-modify-write publication, and a failed lease
+bookkeeping step releases its already acquired OS handle before rethrowing.
+
+Portable mutable state declares one of three policies: exclusive, shared-read,
+or unmanaged. Exclusive and shared-read acquisitions hold an OS file handle
+for the lifetime of the lease, so a crash releases the lock when the process
+dies. The ledger is diagnostic metadata; lock-file existence is never used as
+authority. Gecko profiles and other single-writer state should use exclusive
+leases, while unmanaged state is intentionally outside Capsulenv ownership.
+
+# Program resolution boundary
+
+Program requirements are portable desired-state records; resolved executable,
+provider, scope, version, provenance, and lifecycle ownership are host-local
+derived results. Legacy `capsule/<app>` package roots remain portable storage
+and are not relabeled as `capsulenv-local` until #12 publishes a validated host
+realization/generation source.
+
+Exact versions compare the normalized package-version identity, including
+prerelease/build suffixes. Range checks use the numeric base only when the
+version grammar is valid; version-policy candidates with invalid versions are
+rejected diagnostically rather than coerced to `0.0.0.0`.
+
+# Program requirements and provider resolution
+
+Program requirements are explicit records containing the requested name,
+version policy, capabilities, executable selection metadata, and allowed
+providers. Resolution is read-only and deterministic: compatible trusted host
+Scoop is preferred, followed by a compatible Capsulenv-local realization, seed,
+and finally an explicitly supplied provider deployment. Arbitrary PATH entries
+are not package satisfaction.
+
+The selected record carries the concrete executable, root, provider, scope,
+version, provenance, trust, and lifecycle ownership. Reusing a trusted host
+Scoop app does not upgrade, rewrite, or take ownership of the host
+installation. The resolve command exposes this decision without performing
+repair or deployment.
+
+# Host-local realization and generation authority
+
+Realization follows Acquire, staging, verify, publish. Acquisition scratch is
+host-local and disposable; the published package realization contains a
+complete immutable manifest and payload, and an incomplete or hash-mismatched
+staging tree cannot be selected.
+
+Generations are small manifests of concrete realization roots and provenance.
+They do not copy the environment tree. The active-generation authority is
+switched only after every selected realization validates. Authority publication
+uses replacement semantics that preserve the previous valid pointer on failure.
+Garbage collection computes reachability from active and explicitly pinned
+generations, rather than introducing a second installed-state index or a
+mandatory persistent BlobStore/CAS.
+
+The realization manifest records the source kind and a verified payload hash.
+Validation recomputes that hash from the published payload, so a mutated file
+cannot remain eligible merely because `Complete` and `Immutable` still claim
+validity. Acquisition verifies the staged bytes after copy and rejects a
+source that changed between the initial read and staging.
+
+Generation selections have an explicit kind: `realization` points to a
+Capsulenv-owned immutable package, while `host-program` records a trusted
+host-Scoop executable, provenance, and non-owned lifecycle without copying it
+into the depot. Reachability follows `PinnedGenerationIds` stored in each
+generation, and host-program selections do not become GC roots.
+
+# Activation fast path and resource criticality
+
+Healthy activation reads the active generation once, resolves each selected
+Program once, constructs process bindings, and then establishes the session.
+Resources and bindings carry explicit required or optional criticality. A
+required missing or incompatible resource fails closed; an optional resource is
+skipped with a diagnostic.
+
+Activation does not rebuild projections, reconcile legacy Scoop trees, rewrite
+current or persist, repair UserIntegration, or invoke broad rehydrate. The
+control-plane PowerShell is never substituted for a missing required
+interactive pwsh. Deploy, activate, repair, and migrate remain separate
+operations.
+
+Every advertised activation resource is evaluated through the same criticality
+contract, including `program`, `binding`, and `session-service`; a required
+non-program resource cannot disappear because it is outside the program loop.
+Program activation also requires case-insensitive agreement between resource,
+requirement, and generation-selection names before constructing a candidate.
