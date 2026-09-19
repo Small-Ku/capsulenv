@@ -133,6 +133,45 @@ Describe 'Capsulenv activation fast path and criticality' {
         $plan.ResolvedPrograms[0].Executable | Should -Be ([System.IO.Path]::GetFullPath($executable))
     }
 
+    It 'uses the active generation selection instead of a newer unselected local realization' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-active-generation-authority-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        $oldBootEpoch = $env:CAPSULENV_HOST_BOOT_EPOCH
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $env:CAPSULENV_HOST_BOOT_EPOCH = 'active-generation-authority-test'
+            $result = & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $pwsh75 = Join-Path $CapsuleRoot 'source/pwsh-7.5.0'
+                $pwsh76 = Join-Path $CapsuleRoot 'source/pwsh-7.6.5'
+                [void](New-Item -ItemType Directory -Path (Split-Path -Parent $pwsh75) -Force)
+                '7.5' | Set-Content -LiteralPath $pwsh75 -NoNewline
+                '7.6' | Set-Content -LiteralPath $pwsh76 -NoNewline
+                $older = Acquire-CapsulenvProgramRealization -Name pwsh -Version 7.5.0 -SourcePath $pwsh75 -Provider capsulenv-local -Provenance 'local/7.5'
+                $newer = Acquire-CapsulenvProgramRealization -Name pwsh -Version 7.6.5 -SourcePath $pwsh76 -Provider capsulenv-local -Provenance 'local/7.6'
+                $generation = Publish-CapsulenvGeneration -Realizations @($older)
+                Set-CapsulenvActiveGenerationAuthority -GenerationId $generation.GenerationId | Out-Null
+                $requirement = (Get-CapsulenvInteractivePowerShellRequirement -MinimumVersion 7.0.0).Requirement
+                $selected = Get-CapsulenvActiveGenerationProgram -Requirement $requirement
+                $allLocal = @(Get-CapsulenvProgramCandidates -Requirement $requirement | Where-Object Provider -eq 'capsulenv-local')
+                [pscustomobject]@{
+                    SelectedVersion = $selected.Version
+                    SelectedProvenance = $selected.Provenance
+                    LocalVersions = @($allLocal.Version)
+                    NewerRoot = $newer.RealizationRoot
+                }
+            } $temporaryRoot
+
+            $result.SelectedVersion | Should -Be '7.5.0'
+            $result.SelectedProvenance | Should -Be 'local/7.5'
+            @($result.LocalVersions) | Should -Contain '7.6.5'
+        } finally {
+            if ($null -eq $oldStateRoot) { Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot }
+            if ($null -eq $oldBootEpoch) { Remove-Item Env:CAPSULENV_HOST_BOOT_EPOCH -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_BOOT_EPOCH = $oldBootEpoch }
+        }
+    }
+
     It 'does not silently drop required binding or session-service resources' {
         $plan = & $script:Module {
             $binding = New-CapsulenvActivationResource -Name git -Criticality required -Kind binding -Value $null
