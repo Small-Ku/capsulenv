@@ -388,3 +388,25 @@ function Stop-CapsulenvSessionService {
     }
     if ($null -ne $Binding.PSObject.Properties['ProxyEnvironmentSnapshot'] -and $null -ne $Binding.ProxyEnvironmentSnapshot) {
         [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $Binding.ProxyEnvironmentSnapshot)
+    }
+    if ($null -ne $Binding.PSObject.Properties['SessionId']) {
+        [void]$script:CapsulenvSessionServiceBindings.Remove([string]$Binding.SessionId)
+    }
+    if ($null -ne $Binding.PSObject.Properties['StateLease'] -and $null -ne $Binding.StateLease -and -not $Binding.StateLease.Released) {
+        [void](Release-CapsulenvStateLease -Lease $Binding.StateLease)
+    }
+    return $result
+}
+
+function Stop-CapsulenvActiveSessionServices {
+    [CmdletBinding()]
+    param()
+
+    $results = New-Object System.Collections.Generic.List[object]
+    foreach ($binding in @($script:CapsulenvSessionServiceBindings.Values)) {
+        try { $results.Add((Stop-CapsulenvSessionService -Binding $binding)) } catch { $results.Add([pscustomobject]@{ Stopped = $false; Error = $_.Exception.Message }) }
+    }
+    return @($results.ToArray())
+}
+
+##MOD_EXEC## Export-ModuleMember -Function New-CapsulenvSessionServiceDefinition, Resolve-CapsulenvSessionService, Start-CapsulenvSessionService, New-CapsulenvAttachedSessionServiceBinding, Stop-CapsulenvSessionService
