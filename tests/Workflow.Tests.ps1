@@ -172,24 +172,35 @@ Describe 'Capsulenv portable workflow contracts' {
         $lifecycleSource | Should -Not -Match 'Restore-CapsulenvUserEnvironment\s*(-|\()'
     }
 
-    It 'synchronizes configured persistent browser integration on ordinary User shell activation only once' {
+    It 'synchronizes default-browser integration only for an explicit User activation' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration {
+            [pscustomobject]@{ Succeeded = $true; Stage = 'existing-active-generation'; Selected = $null }
+        } -ModuleName Capsulenv
+        Mock New-CapsulenvActivationSnapshot {
+            [pscustomobject]@{ GenerationId = 'workflow-test'; Generation = [pscustomobject]@{ Selections = @() } }
+        } -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
         Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
         Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
-        Mock Get-CapsulenvPowerShellChildLaunchPlan {
+        Mock Get-CapsulenvActiveGenerationProgram {
+            New-CapsulenvProgramCandidate -Name pwsh -Executable (Join-Path $PSHOME 'pwsh') -Provider capsulenv-local -Version 7.6.5 -Capabilities @('interactive')
+        } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvPowerShellBinding {
             [pscustomobject][ordered]@{
-                PSTypeName = 'Capsulenv.ProcessPlan'
-                Executable = 'Write-Output'
-                Arguments = @('capsulenv-child')
-                WorkingDirectory = $null
+                Succeeded = $true
+                Program = [pscustomobject]@{ Executable = (Join-Path $PSHOME 'pwsh') }
+                LaunchArguments = @('-NoLogo', '-NoProfile', '-NoExit', '-Command', 'Write-Output capsulenv-child')
+                BootstrapCommand = 'Write-Output capsulenv-child'
+                ProfilePath = $null
+                HistoryPath = $null
+                PSModulePath = $null
                 Environment = [ordered]@{}
-                PathEntries = @()
-                ExecutionMode = 'Passthrough'
-                Metadata = [ordered]@{}
+                BootstrapPath = $null
             }
         } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvOwnedProcessPlan { [pscustomobject]@{ ProcessId = 4242; ExitCode = 0 } } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
