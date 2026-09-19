@@ -193,6 +193,11 @@ function Acquire-CapsulenvProgramRealization {
 
     if ([string]::IsNullOrWhiteSpace($AcquisitionProvider)) {
         $AcquisitionProvider = $Provider
+        if ($Provider -in @('seed', 'provider', 'host-scoop')) {
+            # The pre-schema-2 API used Provider for acquisition origin. A
+            # materialized realization is always a host-local authority.
+            $Provider = 'capsulenv-local'
+        }
     }
 
     if (-not (Test-CapsulenvSafeRealizationComponent -Value $Name) -or
