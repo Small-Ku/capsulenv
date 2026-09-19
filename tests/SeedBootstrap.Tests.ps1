@@ -75,6 +75,30 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.NormalOrigin | Should -Be 'seed'
     }
 
+    It 'ensures a seeded program is published and activated when no generation exists' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-ensure-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $source = Join-Path $capsuleRoot 'seed/pwsh.exe'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+        'seed-pwsh' | Set-Content -LiteralPath $source -Encoding UTF8 -NoNewline
+        $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        $result = & $script:Module {
+            param($CapsuleRoot, $Source, $Hash)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $entry = New-CapsulenvPortableSeedEntry -Name pwsh -Version 7.5.0 -SourcePath $Source -ExpectedHash $Hash -Capabilities @('interactive')
+            Set-CapsulenvPortableSeedManifest -Entries @($entry) | Out-Null
+            $requirement = New-CapsulenvProgramRequirement -Name pwsh -ExactVersion 7.5.0 -RequiredCapabilities @('interactive')
+            $ensured = Ensure-CapsulenvProgramGeneration -Requirement $requirement
+            $active = Get-CapsulenvActiveGeneration
+            [pscustomobject]@{ Stage = $ensured.Stage; SelectedProvider = $ensured.Selected.Provider; ActiveId = $active.Generation.GenerationId; ActiveSelection = $active.Generation.Selections[0].Name }
+        } $capsuleRoot $source $hash
+
+        $result.Stage | Should -Be 'materialized-portable-seed'
+        $result.SelectedProvider | Should -Be 'capsulenv-local'
+        $result.ActiveId | Should -Not -BeNullOrEmpty
+        $result.ActiveSelection | Should -Be 'pwsh'
+    }
+
     It 'enforces seed version provider and capability requirements before acquisition' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-requirement-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'
@@ -102,7 +126,7 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.CapabilityMiss | Should -Be 0
     }
 
-    It 'rejects a corrupt seed and allows normal provider fallback when no bootstrap is needed' {
+    It 'rejects a corrupt seed and materializes a normal provider fallback as local authority' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-fallback-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'
         $source = Join-Path $capsuleRoot 'seed/bad.exe'
@@ -126,8 +150,8 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         } $capsuleRoot $source $provider
 
         $result.SeedVerified | Should -BeFalse
-        $result.Stage | Should -Be 'normal-provider'
-        $result.Provider | Should -Be 'provider'
+        $result.Provider | Should -Be 'capsulenv-local'
+        $result.Stage | Should -Be 'materialized-normal-provider'
     }
 
     It 'resolves a capsule-relative seed after the capsule root moves' {

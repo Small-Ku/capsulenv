@@ -356,11 +356,121 @@ function Resolve-CapsulenvProgramWithAcquisition {
     }
 
     $provider = Resolve-CapsulenvProgram -Requirement $Requirement -Candidates @($ProviderCandidates)
+    if ($provider.Succeeded) {
+        $sourceCandidate = $provider.Selected
+        $sourcePath = [string]$sourceCandidate.Executable
+        $relativePath = $null
+        if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {
+            $relativePath = [System.IO.Path]::GetFileName($sourcePath)
+        } elseif (-not [string]::IsNullOrWhiteSpace([string]$sourceCandidate.Root) -and
+            (Test-Path -LiteralPath ([string]$sourceCandidate.Root) -PathType Container) -and
+            (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            $root = [System.IO.Path]::GetFullPath([string]$sourceCandidate.Root).TrimEnd([char[]]'\/')
+            $fullExecutable = [System.IO.Path]::GetFullPath($sourcePath)
+            $prefix = $root + [System.IO.Path]::DirectorySeparatorChar
+            $comparison = if (Test-CapsulenvWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+            if ($fullExecutable.StartsWith($prefix, $comparison)) {
+                $relativePath = $fullExecutable.Substring($prefix.Length).Replace('\', '/')
+                $sourcePath = $root
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($relativePath)) {
+            throw "Provider candidate '$($sourceCandidate.Name)' has no safe materialization source."
+        }
+        $manifest = Acquire-CapsulenvProgramRealization `
+            -Name ([string]$sourceCandidate.Name) `
+            -Version ([string]$sourceCandidate.Version) `
+            -SourcePath $sourcePath `
+            -ExecutableRelativePath $relativePath `
+            -Provider capsulenv-local `
+            -AcquisitionProvider provider `
+            -Provenance ([string]$sourceCandidate.Provenance)
+        $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
+        $payload = Join-Path ([string]$manifest.RealizationRoot) 'payload'
+        $executable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payload -ExecutableRelativePath ([string]$manifest.ExecutableRelativePath)
+        $selected = New-CapsulenvProgramCandidate `
+            -Name ([string]$manifest.Name) `
+            -Executable $executable `
+            -Root ([string]$manifest.RealizationRoot) `
+            -Provider $authority.Provider `
+            -AcquisitionProvider $authority.AcquisitionProvider `
+            -Scope $authority.Scope `
+            -Version ([string]$manifest.Version) `
+            -Capabilities @($sourceCandidate.Capabilities) `
+            -Trusted:$true `
+            -OwnsLifecycle:$authority.OwnsLifecycle `
+            -Provenance $authority.Provenance
+        return [pscustomobject][ordered]@{
+            Succeeded = $true
+            Stage = 'materialized-normal-provider'
+            Selected = $selected
+            Diagnostics = @('provider candidate was materialized into a host-local owned realization')
+        }
+    }
     return [pscustomobject][ordered]@{
-        Succeeded = [bool]$provider.Succeeded
+        Succeeded = $false
         Stage = 'normal-provider'
-        Selected = $provider.Selected
-        Diagnostics = if ($provider.Succeeded) { @('normal provider acquisition is permitted') } else { @('no compatible host, seed, or provider candidate is available') }
+        Selected = $null
+        Diagnostics = @('no compatible host, seed, or provider candidate is available')
+    }
+}
+
+function Ensure-CapsulenvProgramGeneration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Requirement,
+        [object[]]$HostCandidates,
+        [object[]]$SeedCandidates,
+        [object[]]$ProviderCandidates = @()
+    )
+
+    $active = Get-CapsulenvActiveGeneration
+    if ($null -ne $active) {
+        try {
+            $selected = Get-CapsulenvActiveGenerationProgram -Requirement $Requirement -ActivationSnapshot (New-CapsulenvActivationSnapshot -ActiveGeneration $active)
+            return [pscustomobject][ordered]@{
+                Succeeded = $true
+                Stage = 'existing-active-generation'
+                Selected = $selected
+                Generation = $active.Generation
+            }
+        } catch {}
+    }
+
+    $parameters = @{ Requirement = $Requirement }
+    if ($PSBoundParameters.ContainsKey('HostCandidates')) { $parameters.HostCandidates = $HostCandidates }
+    if ($PSBoundParameters.ContainsKey('SeedCandidates')) { $parameters.SeedCandidates = $SeedCandidates }
+    if ($PSBoundParameters.ContainsKey('ProviderCandidates')) { $parameters.ProviderCandidates = $ProviderCandidates }
+    $resolved = Resolve-CapsulenvProgramWithAcquisition @parameters
+    if (-not $resolved.Succeeded -or $null -eq $resolved.Selected) {
+        throw "Program '$($Requirement.Name)' could not be acquired for a new active generation."
+    }
+
+    $realizations = New-Object System.Collections.Generic.List[object]
+    if ($null -ne $active) {
+        foreach ($selection in @($active.Generation.Selections)) {
+            if ([string]$selection.Kind -eq 'host-program') {
+                $realizations.Add([pscustomobject]@{ Kind = 'host-program'; Program = $selection })
+            } elseif ([string]$selection.Kind -eq 'realization' -or [string]::IsNullOrWhiteSpace([string]$selection.Kind)) {
+                $realizations.Add([pscustomobject]@{ Kind = 'realization'; RealizationRoot = [string]$selection.RealizationRoot })
+            }
+        }
+    }
+    if ([string]$resolved.Selected.Provider -eq 'capsulenv-local' -and
+        -not [string]::IsNullOrWhiteSpace([string]$resolved.Selected.Root)) {
+        $realizations.Add([pscustomobject]@{ Kind = 'realization'; RealizationRoot = [string]$resolved.Selected.Root })
+    } elseif ([string]$resolved.Selected.Provider -eq 'host-scoop') {
+        $realizations.Add([pscustomobject]@{ Kind = 'host-program'; Program = $resolved.Selected })
+    } else {
+        throw "Acquisition for '$($Requirement.Name)' did not produce a publishable host authority."
+    }
+    $generation = Publish-CapsulenvGeneration -Realizations $realizations.ToArray()
+    [void](Set-CapsulenvActiveGenerationAuthority -GenerationId ([string]$generation.GenerationId))
+    return [pscustomobject][ordered]@{
+        Succeeded = $true
+        Stage = $resolved.Stage
+        Selected = $resolved.Selected
+        Generation = $generation
     }
 }
 
@@ -387,6 +497,6 @@ function Invoke-CapsulenvBootstrapAcquisition {
     return $resolved
 }
 
-##MOD_EXEC## Export-ModuleMember -Function New-CapsulenvPortableSeedEntry, Set-CapsulenvPortableSeedManifest, Get-CapsulenvPortableSeedEntries, Get-CapsulenvPortableSeedEntry, Test-CapsulenvPortableSeedEntry, Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement, Get-CapsulenvSeedAcquisitionCandidates, Get-CapsulenvSeedProgramCandidates, Resolve-CapsulenvProgramWithAcquisition, Invoke-CapsulenvBootstrapAcquisition
+##MOD_EXEC## Export-ModuleMember -Function New-CapsulenvPortableSeedEntry, Set-CapsulenvPortableSeedManifest, Get-CapsulenvPortableSeedEntries, Get-CapsulenvPortableSeedEntry, Test-CapsulenvPortableSeedEntry, Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement, Get-CapsulenvSeedAcquisitionCandidates, Get-CapsulenvSeedProgramCandidates, Resolve-CapsulenvProgramWithAcquisition, Ensure-CapsulenvProgramGeneration, Invoke-CapsulenvBootstrapAcquisition
 
 

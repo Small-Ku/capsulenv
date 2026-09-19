@@ -175,6 +175,12 @@ Describe 'Capsulenv portable workflow contracts' {
     It 'does not synchronize removable default-browser integration during shell activation' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration {
+            [pscustomobject]@{ Succeeded = $true; Stage = 'existing-active-generation'; Selected = $null }
+        } -ModuleName Capsulenv
+        Mock New-CapsulenvActivationSnapshot {
+            [pscustomobject]@{ GenerationId = 'workflow-test'; Generation = [pscustomobject]@{ Selections = @() } }
+        } -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
         Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
         Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
