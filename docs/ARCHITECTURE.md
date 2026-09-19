@@ -254,3 +254,53 @@ Package ownership與 tool cache/project storage是不同 surface。`tool-data/`�
 - control bootstrap/runtime command boundary保持 WinPS 5.1-compatible
 
 這些 gate需要 synthetic rejecting/accepting fixtures；不能為了 refactor方便降級成沒有 ownership意義的 string smoke test。
+
+# Host identity and depot retention
+
+Capsulenv keeps capsule identity and desired state portable, while resolving a
+host-local depot from an independent host record. A host record is keyed by a
+stable machine/user integration key and never by the portable root or drive
+letter.
+
+Unknown hosts resolve to retention = ephemeral by default. The ephemeral
+placement is namespaced by host key, capsule identity, and the current boot
+epoch, so a valid realization can be reused during one host lifetime without
+making reboot/reimage persistence part of correctness. No shutdown cleanup hook
+is required.
+
+Persistent placement requires an explicit host enrollment/tag such as home. An
+enrolled host may provide a stable local depot root, including a custom local
+volume. Portable state is not copied into this depot merely to simplify
+cleanup, and a stale host-local record never overrides portable desired state.
+
+The host placement foundation only resolves and materializes layout. Program
+resolution, immutable generations, activation, and integration ownership remain
+separate boundaries implemented by the downstream architecture issues.
+
+# Program resolution boundary
+
+Program requirements are portable desired-state records; resolved executable,
+provider, scope, version, provenance, and lifecycle ownership are host-local
+derived results. Legacy `capsule/<app>` package roots remain portable storage
+and are not relabeled as `capsulenv-local` until #12 publishes a validated host
+realization/generation source.
+
+Exact versions compare the normalized package-version identity, including
+prerelease/build suffixes. Range checks use the numeric base only when the
+version grammar is valid; version-policy candidates with invalid versions are
+rejected diagnostically rather than coerced to `0.0.0.0`.
+
+# Program requirements and provider resolution
+
+Program requirements are explicit records containing the requested name,
+version policy, capabilities, executable selection metadata, and allowed
+providers. Resolution is read-only and deterministic: compatible trusted host
+Scoop is preferred, followed by a compatible Capsulenv-local realization, seed,
+and finally an explicitly supplied provider deployment. Arbitrary PATH entries
+are not package satisfaction.
+
+The selected record carries the concrete executable, root, provider, scope,
+version, provenance, trust, and lifecycle ownership. Reusing a trusted host
+Scoop app does not upgrade, rewrite, or take ownership of the host
+installation. The resolve command exposes this decision without performing
+repair or deployment.
