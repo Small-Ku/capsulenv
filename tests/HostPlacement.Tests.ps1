@@ -267,7 +267,7 @@ Describe 'Capsulenv host identity and placement foundation' {
 
     It 'does not contain a destructive identity replacement fallback' {
         $source = Get-Content -LiteralPath (Join-Path $script:Root 'src/05-Identity.ps1') -Raw
-        $source | Should -Not -Match "Remove-Item -LiteralPath \\$path"
+        $source | Should -Not -Match 'Remove-Item -LiteralPath \$path'
         $source | Should -Match 'previous valid identity was retained'
     }
 }

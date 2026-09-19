@@ -310,7 +310,8 @@ function Resolve-CapsulenvProgramWithAcquisition {
     $seed = @(
         $seedCandidates |
             Where-Object {
-                [string]$_.Kind -eq 'seed-acquisition' -and
+                $kind = if ($null -ne $_ -and $null -ne $_.PSObject -and $null -ne $_.PSObject.Properties['Kind']) { [string]$_.Kind } else { '' }
+                $kind -eq 'seed-acquisition' -and
                 [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.Name)
             } |
             Where-Object { (Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement $Requirement -Candidate $_).Compatible } |

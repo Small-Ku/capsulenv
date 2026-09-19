@@ -185,8 +185,8 @@ Describe 'Capsulenv static and relocation' {
             -Condition $environmentSource.Contains('Resolve-CapsulenvPowerShellBinding') `
             -Message 'Child PowerShell launch must be delegated to the independent PowerShell binding.'
         Assert-CapsulenvTest `
-            -Condition $environmentSource.Contains('Resolve-CapsulenvPowerShellBinding -Criticality required') `
-            -Message 'Interactive shell selection must be independent from the Windows PowerShell control host.'
+            -Condition $environmentSource.Contains('Get-CapsulenvActiveGenerationProgram') `
+            -Message 'Interactive shell selection must use the active generation authority.'
         foreach ($requiredLaunchBehavior in @(
             "`$arguments.Add('-ExecutionPolicy')",
             "`$arguments.Add('Bypass')",
