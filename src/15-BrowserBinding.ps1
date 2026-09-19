@@ -246,6 +246,7 @@ function Resolve-CapsulenvBrowserBinding {
         [Parameter(Mandatory = $true)][string]$App,
         $Requirement,
         [object[]]$Candidates,
+        $Program,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'required',
         [string]$SessionId
@@ -254,10 +255,12 @@ function Resolve-CapsulenvBrowserBinding {
     if ($null -eq $Requirement) {
         $Requirement = Get-CapsulenvBrowserProgramRequirement -App $App
     }
-    $resolution = if ($PSBoundParameters.ContainsKey('Candidates')) {
+    $resolution = if ($PSBoundParameters.ContainsKey('Program')) {
+        Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates @($Program)
+    } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates $Candidates
     } else {
-        Get-CapsulenvProgramResolution -Requirement $Requirement
+        Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates @(Get-CapsulenvActiveGenerationProgram -Requirement $Requirement)
     }
     if (-not $resolution.Succeeded) {
         $message = "Browser program '$App' has no compatible trusted realization."
@@ -306,6 +309,7 @@ function Start-CapsulenvPortableBrowser {
         [string[]]$Arguments = @(),
         $Requirement,
         [object[]]$Candidates,
+        $Program,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'required',
         [string]$SessionId
@@ -325,6 +329,7 @@ function Start-CapsulenvPortableBrowser {
     }
     if ($null -ne $Requirement) { $parameters['Requirement'] = $Requirement }
     if ($PSBoundParameters.ContainsKey('Candidates')) { $parameters['Candidates'] = $Candidates }
+    if ($PSBoundParameters.ContainsKey('Program')) { $parameters['Program'] = $Program }
     if (-not [string]::IsNullOrWhiteSpace($SessionId)) { $parameters['SessionId'] = $SessionId }
     $binding = Resolve-CapsulenvBrowserBinding @parameters
     if (-not $binding.Succeeded) {
