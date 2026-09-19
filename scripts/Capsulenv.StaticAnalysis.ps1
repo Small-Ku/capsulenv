@@ -163,7 +163,7 @@ function Get-CapsulenvWorkloadSpecializationViolations {
                 {
                     param($node)
                     $node -is [System.Management.Automation.Language.MemberExpressionAst] -and
-                    [string]$node.Member.Value -match '^(?i:SingBox|Rclone)$'
+                    ([string]$node.Member.Extent.Text).Trim('[]''"') -match '^(?i:SingBox|Rclone)$'
                 },
                 $true
             )
