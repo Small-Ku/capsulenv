@@ -42,20 +42,65 @@ function New-CapsulenvProgramCandidate {
         [string[]]$Capabilities = @(),
         [bool]$Trusted = $true,
         [bool]$OwnsLifecycle = $false,
-        [string]$Provenance
+        [string]$Provenance,
+        [string]$AcquisitionProvider
     )
+
+    $currentProvider = $Provider.ToLowerInvariant()
+    $originProvider = if ([string]::IsNullOrWhiteSpace($AcquisitionProvider)) {
+        $currentProvider
+    } else {
+        $AcquisitionProvider.ToLowerInvariant()
+    }
 
     return [pscustomobject][ordered]@{
         Name = $Name
         Executable = $Executable
         Root = $Root
-        Provider = $Provider.ToLowerInvariant()
+        # Provider is the authority that owns the executable currently being
+        # selected. AcquisitionProvider records where that immutable payload
+        # came from; it must not change the runtime ownership contract.
+        Provider = $currentProvider
+        AcquisitionProvider = $originProvider
         Scope = $Scope
         Version = $Version
         Capabilities = @($Capabilities | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
         Trusted = $Trusted
         OwnsLifecycle = $OwnsLifecycle
         Provenance = if ([string]::IsNullOrWhiteSpace($Provenance)) { $Provider } else { $Provenance }
+    }
+}
+
+function Get-CapsulenvRealizationAuthority {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Manifest)
+
+    $manifestProvider = ([string]$Manifest.Provider).ToLowerInvariant()
+    $acquisitionProvider = if ($null -ne $Manifest.PSObject.Properties['AcquisitionProvider'] -and
+        -not [string]::IsNullOrWhiteSpace([string]$Manifest.AcquisitionProvider)) {
+        ([string]$Manifest.AcquisitionProvider).ToLowerInvariant()
+    } else {
+        $manifestProvider
+    }
+
+    # Schema 1 recorded the acquisition origin in Provider. A materialized
+    # seed or provider payload is nevertheless a host-local immutable
+    # realization at runtime. Normalize every legacy acquisition-tier value
+    # instead of leaking it into the active program authority.
+    $currentProvider = $manifestProvider
+    if ($manifestProvider -in @('seed', 'provider', 'host-scoop') -and
+        ($null -eq $Manifest.PSObject.Properties['AcquisitionProvider'] -or
+        [int]$Manifest.SchemaVersion -lt 2)) {
+        $currentProvider = 'capsulenv-local'
+        $acquisitionProvider = $manifestProvider
+    }
+
+    return [pscustomobject][ordered]@{
+        Provider = $currentProvider
+        AcquisitionProvider = $acquisitionProvider
+        Scope = 'host-local'
+        OwnsLifecycle = ($currentProvider -eq 'capsulenv-local')
+        Provenance = [string]$Manifest.Provenance
     }
 }
 
@@ -351,7 +396,8 @@ function Get-CapsulenvLocalRealizationCandidates {
             if ($null -eq $manifest -or -not (Test-CapsulenvProgramRealization -RealizationRoot $root -ExpectedName ([string]$Requirement.Name))) { continue }
             $payload = Join-Path $root 'payload'
             $executable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payload -ExecutableRelativePath ([string]$manifest.ExecutableRelativePath)
-            $candidates.Add((New-CapsulenvProgramCandidate -Name ([string]$manifest.Name) -Executable $executable -Root $root -Provider ([string]$manifest.Provider) -Scope host-local -Version ([string]$manifest.Version) -Trusted:$true -OwnsLifecycle:([string]$manifest.Provider -eq 'capsulenv-local') -Provenance ([string]$manifest.Provenance)))
+            $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
+            $candidates.Add((New-CapsulenvProgramCandidate -Name ([string]$manifest.Name) -Executable $executable -Root $root -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope $authority.Scope -Version ([string]$manifest.Version) -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance $authority.Provenance))
         }
     } catch { return @() }
     return @($candidates.ToArray())
