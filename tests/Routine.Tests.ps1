@@ -96,12 +96,14 @@ Describe 'Capsulenv lifecycle routine contracts' {
             $script:CapturedChildPlan = $Plan
             [pscustomobject]@{ ProcessId = 9001; ProcessRecord = [pscustomobject]@{ PID = 9001 } }
         } -ModuleName Capsulenv
+        Mock Stop-CapsulenvActiveSessionServices {} -ModuleName Capsulenv
         Mock Invoke-CapsulenvRoutines {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell -Command 'Write-Output ok' }
 
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnEnter' }
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnExit' }
+        Should -Invoke Stop-CapsulenvActiveSessionServices -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Invoke-CapsulenvOwnedProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
         $script:CapturedChildPlan.Executable | Should -Be 'pwsh.exe'
         $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_PROFILE'] | Should -Be '/capsule/profile.ps1'
