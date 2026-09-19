@@ -2,40 +2,19 @@ function Get-CapsulenvOwnedProcesses {
     [CmdletBinding()]
     param()
 
-    $context = Get-CapsulenvContext
-    $root = [System.IO.Path]::GetFullPath($context.Root).TrimEnd([char[]]'\/')
-    $prefix = $root + [System.IO.Path]::DirectorySeparatorChar
     $results = New-Object System.Collections.Generic.List[object]
-
-    foreach ($process in @(Get-Process -ErrorAction SilentlyContinue)) {
-        if ($process.Id -eq $PID) {
-            continue
-        }
+    foreach ($record in @(Get-CapsulenvOwnedProcessRecords)) {
+        $process = Get-Process -Id ([int]$record.PID) -ErrorAction SilentlyContinue
+        if ($null -eq $process) { continue }
         $path = $null
-        try {
-            $path = [string]$process.Path
-        } catch {
-            continue
-        }
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            continue
-        }
-        try {
-            $fullPath = [System.IO.Path]::GetFullPath($path)
-        } catch {
-            continue
-        }
-        if (
-            [System.StringComparer]::OrdinalIgnoreCase.Equals($fullPath.TrimEnd([char[]]'\/'), $root) -or
-            $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
-        ) {
-            $results.Add([pscustomobject]@{
-                Id = $process.Id
-                Name = $process.ProcessName
-                Path = $fullPath
-                Process = $process
-            })
-        }
+        try { $path = [string]$process.Path } catch {}
+        $results.Add([pscustomobject]@{
+            Id = $process.Id
+            Name = $process.ProcessName
+            Path = $path
+            Process = $process
+            ProcessRecord = $record
+        })
     }
     return $results.ToArray()
 }
@@ -44,38 +23,22 @@ function Stop-CapsulenvOwnedProcesses {
     [CmdletBinding()]
     param([switch]$Force)
 
-    $records = @(Get-CapsulenvOwnedProcesses)
+    $records = @(Get-CapsulenvOwnedProcessRecords)
+    $results = New-Object System.Collections.Generic.List[object]
     foreach ($record in $records) {
-        try {
-            [void]$record.Process.CloseMainWindow()
-        } catch {
-            # Console/background processes may not expose a main window.
-        }
+        $result = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record
+        $results.Add([pscustomobject]@{
+            Id = $record.PID
+            Name = $record.Role
+            Path = $record.Provenance
+            Stopped = $result.Stopped
+            Reason = $result.Reason
+        })
     }
-
-    if ($records.Count -gt 0) {
-        Start-Sleep -Milliseconds 500
+    if ($Force) {
+        return $results.ToArray()
     }
-    $remaining = New-Object System.Collections.Generic.List[object]
-    foreach ($record in $records) {
-        if ($null -ne (Get-Process -Id $record.Id -ErrorAction SilentlyContinue)) {
-            $remaining.Add($record)
-        }
-    }
-
-    if ($remaining.Count -gt 0 -and $Force) {
-        foreach ($record in $remaining) {
-            Stop-Process -Id $record.Id -Force -ErrorAction SilentlyContinue
-        }
-        return @($records | Select-Object Id, Name, Path)
-    }
-    if ($remaining.Count -gt 0) {
-        $summary = @($remaining | ForEach-Object { '{0}({1})' -f $_.Name, $_.Id }) -join ', '
-        Write-CapsulenvMessage -Level Warning -Message "Capsule-owned processes are still running: $summary. Re-run eject --force to terminate them."
-    }
-    return @($records | Where-Object {
-        $null -eq (Get-Process -Id $_.Id -ErrorAction SilentlyContinue)
-    } | Select-Object Id, Name, Path)
+    return $results.ToArray()
 }
 
 function Get-CapsulenvWorkspaceRepositoryPaths {
@@ -165,6 +128,7 @@ function Invoke-CapsulenvEject {
 
     [void](Set-CapsulenvSessionEnvironment)
     [void](Invoke-CapsulenvRoutines -Trigger OnEject)
+    $serviceStops = @(Stop-CapsulenvActiveSessionServices)
     $dirtyRepositories = @(Get-CapsulenvDirtyRepositories)
     foreach ($repository in $dirtyRepositories) {
         Write-CapsulenvMessage -Level Warning -Message ("Dirty workspace repository: {0} ({1} change line(s))" -f $repository.Path, $repository.Changes)
@@ -178,6 +142,11 @@ function Invoke-CapsulenvEject {
             throw "Forced eject could not stop all capsule-owned processes: $summary"
         }
         throw "Eject blocked because capsule-owned processes are still running: $summary. Close them or re-run eject --force."
+    }
+    $activeLeases = @(Get-CapsulenvActiveExclusiveStateLeases)
+    if ($activeLeases.Count -gt 0) {
+        $summary = @($activeLeases | ForEach-Object { '{0}:{1}' -f $_.SessionId, $_.StatePath }) -join ', '
+        throw "Eject blocked because active exclusive state leases remain: $summary. Close the owning binding before removing the capsule."
     }
 
     $statePath = Write-CapsulenvEjectState -DirtyRepositories $dirtyRepositories -StoppedProcesses $stopped
@@ -329,168 +298,3 @@ function Get-CapsulenvBucketManifestForApp {
             return [pscustomobject]@{
                 Bucket = $bucketName
                 Version = [string]$manifest.version
-                Path = $path
-            }
-        } catch {
-            continue
-        }
-    }
-    return $null
-}
-
-function Get-CapsulenvVersionDrift {
-    [CmdletBinding()]
-    param()
-
-    $results = New-Object System.Collections.Generic.List[object]
-    foreach ($app in @(Get-CapsulenvInstalledScoopApps)) {
-        $available = Get-CapsulenvBucketManifestForApp -Name $app.Name -PreferredBucket $app.Bucket
-        $status = 'Unknown'
-        $availableVersion = $null
-        $bucket = $app.Bucket
-        if ($null -ne $available) {
-            $availableVersion = $available.Version
-            $bucket = $available.Bucket
-            if (-not [string]::IsNullOrWhiteSpace($app.Version) -and $app.Version -eq $available.Version) {
-                $status = 'Current'
-            } elseif (-not [string]::IsNullOrWhiteSpace($app.Version)) {
-                $status = 'Drift'
-            }
-        }
-        $results.Add([pscustomobject]@{
-            Name = $app.Name
-            Scope = $app.Scope
-            Installed = $app.Version
-            Available = $availableVersion
-            Bucket = $bucket
-            Status = $status
-        })
-    }
-    return $results.ToArray()
-}
-
-function Get-CapsulenvRuntimeVersion {
-    [CmdletBinding()]
-    param()
-
-    $root = (Get-CapsulenvContext).Root
-    foreach ($relativePath in @('.capsulenv-runtime.json', '.capsulenv-install.json')) {
-        $path = Join-Path $root $relativePath
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            continue
-        }
-        try {
-            $metadata = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $versionProperty = $metadata.PSObject.Properties['Version']
-            if ($null -ne $versionProperty -and -not [string]::IsNullOrWhiteSpace([string]$versionProperty.Value)) {
-                return [string]$versionProperty.Value
-            }
-        } catch {
-            # Fall through to the next local metadata source.
-        }
-    }
-
-    $manifestPath = Join-Path $root 'Capsulenv.psd1'
-    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-        try {
-            $manifest = Import-CapsulenvPowerShellDataFile -LiteralPath $manifestPath
-            if ($manifest.ContainsKey('ModuleVersion')) {
-                return [string]$manifest.ModuleVersion
-            }
-        } catch {
-            # A prebuilt runtime normally has no source manifest at its root.
-        }
-    }
-    return 'unknown'
-}
-
-function Get-CapsulenvStatus {
-    [CmdletBinding()]
-    param()
-
-    $context = Get-CapsulenvContext
-    $installedApps = @(Get-CapsulenvInstalledScoopApps)
-    $portableSafePackages = @(Get-CapsulenvInstalledPackageStates)
-    $projectLinks = @(Read-CapsulenvProjectCacheRegistry)
-    $toolWorkspaces = @(Read-CapsulenvToolWorkspaceRegistry)
-    $offline = Get-CapsulenvOfflineReadiness
-    $relocationRequired = Test-CapsulenvScoopRehydrationRequired
-
-    return [pscustomobject]@{
-        Version = Get-CapsulenvRuntimeVersion
-        Root = $context.Root
-        Mode = Get-CapsulenvInstallMode
-        PersistentUserIntegration = ((Get-CapsulenvUserIntegrationMode) -eq 'User')
-        PortableSafePackages = $portableSafePackages.Count
-        ScoopApps = $installedApps.Count
-        Relocation = if ($relocationRequired) { 'Pending' } else { 'Ready' }
-        ProjectLinks = $projectLinks.Count
-        ToolWorkspaces = $toolWorkspaces.Count
-        OfflineRunReady = [bool]$offline.RunReady
-    }
-}
-
-function Get-CapsulenvOfflineReadiness {
-    [CmdletBinding()]
-    param()
-
-    $scoopRoot = Get-CapsulenvScoopRoot
-    $configuration = Get-CapsulenvConfiguration
-    $cacheRoot = Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Cache) -AllowMissing
-    $apps = @(Get-CapsulenvInstalledScoopApps)
-    $missingManifests = @($apps | Where-Object { -not $_.Ready })
-    $cacheFiles = @()
-    if (Test-Path -LiteralPath $cacheRoot -PathType Container) {
-        $cacheFiles = @(Get-ChildItem -LiteralPath $cacheRoot -File -Recurse -ErrorAction SilentlyContinue)
-    }
-    $cacheBytes = [int64]0
-    if ($cacheFiles.Count -gt 0) {
-        $cacheBytes = [int64](($cacheFiles | Measure-Object -Property Length -Sum).Sum)
-    }
-    return [pscustomobject]@{
-        RunReady = (
-            (Test-Path -LiteralPath (Join-Path $scoopRoot 'apps/scoop/current/bin/scoop.ps1') -PathType Leaf) -and
-            (Test-Path -LiteralPath (Join-Path $scoopRoot 'buckets/main') -PathType Container) -and
-            $missingManifests.Count -eq 0
-        )
-        ScoopCore = Test-Path -LiteralPath (Join-Path $scoopRoot 'apps/scoop/current/bin/scoop.ps1') -PathType Leaf
-        MainBucket = Test-Path -LiteralPath (Join-Path $scoopRoot 'buckets/main') -PathType Container
-        InstalledApps = $apps.Count
-        MissingInstalledManifests = $missingManifests.Count
-        CacheRoot = $cacheRoot
-        CacheFiles = $cacheFiles.Count
-        CacheBytes = $cacheBytes
-    }
-}
-
-function Invoke-CapsulenvOfflinePrefetch {
-    [CmdletBinding()]
-    param([string[]]$Apps = @())
-
-    [void](Set-CapsulenvSessionEnvironment)
-    [void](Initialize-CapsulenvScoopBootstrap)
-    $installed = @(Get-CapsulenvInstalledScoopApps)
-    if ($Apps.Count -gt 0) {
-        $requested = @($Apps | Sort-Object -Unique)
-        $installed = @($installed | Where-Object { $requested -contains $_.Name })
-        $missing = @($requested | Where-Object { $_ -notin @($installed | Select-Object -ExpandProperty Name) })
-        if ($missing.Count -gt 0) {
-            throw "Prefetch currently accepts installed Scoop apps only. Not installed: $($missing -join ', ')"
-        }
-    }
-
-    foreach ($app in $installed) {
-        # `scoop download` is cache-scoped rather than install-scope-scoped; it
-        # has no -g switch. Keep the local bucket snapshot stable while warming
-        # the cache, and qualify the bucket when install metadata records one.
-        $appReference = if ([string]::IsNullOrWhiteSpace([string]$app.Bucket)) {
-            [string]$app.Name
-        } else {
-            '{0}/{1}' -f $app.Bucket, $app.Name
-        }
-        [void](Invoke-CapsulenvScoopCommand -Arguments @('download', '--no-update-scoop', $appReference))
-    }
-    return Get-CapsulenvOfflineReadiness
-}
-
-##MOD_EXEC## Export-ModuleMember -Function Invoke-CapsulenvEject, Get-CapsulenvOfflineReadiness, Invoke-CapsulenvOfflinePrefetch, Get-CapsulenvVersionDrift
