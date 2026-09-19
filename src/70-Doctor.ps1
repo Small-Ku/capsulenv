@@ -318,26 +318,64 @@ function Initialize-CapsulenvIntegrations {
     [CmdletBinding()]
     param(
         [ValidateSet('ShellOnly', 'User')]
-        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode),
+        $ActivationSnapshot
     )
 
-    [void](Initialize-CapsulenvScoopBootstrap)
-    Repair-CapsulenvPackageProjections
+    if (-not $PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        $ActivationSnapshot = New-CapsulenvActivationSnapshot
+    }
+    [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
+    $session = Initialize-CapsulenvSession -Role activation -Provenance ('capsulenv:{0}' -f $IntegrationMode)
     $configuration = Get-CapsulenvConfiguration
-    $didRehydrate = $false
-    if (
-        $configuration.Scoop.RehydrateOnRelocation -and
-        (Test-CapsulenvScoopRehydrationRequired)
-    ) {
-        Write-CapsulenvMessage -Level Info -Message 'Capsule root or host changed; rehydrating installed package projections...'
-        Invoke-CapsulenvScoopRehydrate -IntegrationMode $IntegrationMode
-        $didRehydrate = $true
+    if ($configuration.Bitwarden.Enabled) {
+        $endpoint = if ($configuration.Bitwarden.SetSshAuthSock) { '\\.\pipe\openssh-ssh-agent' } else { [Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process') }
+        try {
+            $bitwardenRequirement = (Get-CapsulenvBitwardenProgramRequirement -App ([string]$configuration.Bitwarden.App) -Criticality optional).Requirement
+            $bitwardenProgram = Get-CapsulenvActiveGenerationProgram -Requirement $bitwardenRequirement -ActivationSnapshot $ActivationSnapshot
+            $resolvedBinding = Resolve-CapsulenvBitwardenBinding -App ([string]$configuration.Bitwarden.App) -Requirement $bitwardenRequirement -Program $bitwardenProgram -Criticality optional -SessionId $session.SessionId
+            if ($resolvedBinding.Succeeded) {
+                $agentBinding = [pscustomobject][ordered]@{
+                    Endpoint = $endpoint
+                    ProgramProvenance = [string]$resolvedBinding.Program.Provenance
+                    ProcessId = [int]$resolvedBinding.ProcessRecord.PID
+                }
+                $binding = Invoke-CapsulenvBitwardenSessionIntegration -App ([string]$configuration.Bitwarden.App) -SshAuthSock $endpoint -AgentBinding $agentBinding -ResolvedBinding $resolvedBinding -Criticality optional -SessionId $session.SessionId
+            } else {
+                $binding = $resolvedBinding
+            }
+            if ($binding.Succeeded) {
+                Write-CapsulenvMessage -Level Detail -Message 'Bitwarden activation uses the attach-only binding; foreign process lifecycle remains outside Capsulenv authority.'
+            }
+        } catch {
+            Write-CapsulenvMessage -Level Warning -Message "Optional Bitwarden attach integration was not activated: $($_.Exception.Message)"
+        }
     }
-    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
-    if ($IntegrationMode -eq 'User' -and -not $didRehydrate) {
-        Sync-CapsulenvPackageStartMenuShortcuts
+    $sessionServiceConfigPath = Join-Path (Get-CapsulenvContext).Root 'state/portable/sing-box/config.json'
+    if (Test-Path -LiteralPath $sessionServiceConfigPath -PathType Leaf) {
+        try {
+            $serviceRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed', 'provider')
+            $servicePlacement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
+            $serviceProbes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $sessionServiceConfigPath
+            $serviceDefinition = New-CapsulenvSessionServiceDefinition `
+                -Name 'sing-box' `
+                -Requirement $serviceRequirement `
+                -Criticality optional `
+                -ConfigPath $sessionServiceConfigPath `
+                -RuntimeRoot (Join-Path $servicePlacement.ScratchRoot 'session-service') `
+                -LogRoot (Join-Path $servicePlacement.ScratchRoot 'session-service/logs') `
+                -ReadinessProbe $serviceProbes.ReadinessProbe `
+                -HealthProbe $serviceProbes.HealthProbe
+            $serviceProgram = Get-CapsulenvActiveGenerationProgram -Requirement $serviceRequirement -ActivationSnapshot $ActivationSnapshot
+            $serviceBinding = Start-CapsulenvSessionService -Definition $serviceDefinition -Program $serviceProgram -SessionId $session.SessionId
+            if ($serviceBinding.Succeeded) {
+                Write-CapsulenvMessage -Level Detail -Message 'Configured session service attached through the generic SessionService lifecycle.'
+            }
+        } catch {
+            Write-CapsulenvMessage -Level Warning -Message "Optional configured session service was not activated: $($_.Exception.Message)"
+        }
     }
-    Initialize-CapsulenvBitwarden
+    Write-CapsulenvMessage -Level Detail -Message 'Activation fast path established host placement and session identity; repair and legacy projection reconciliation require explicit commands.'
 }
 
 function Initialize-Capsulenv {
@@ -351,17 +389,17 @@ function Initialize-Capsulenv {
 
     [void](Get-CapsulenvConfiguration -Refresh)
     [void](Set-CapsulenvSessionEnvironment)
-    [void](Initialize-CapsulenvScoopBootstrap)
-    Invoke-CapsulenvScoopRehydrate `
-        -SkipHooks:$SkipHooks `
-        -SkipPersistRepairs:$SkipPersistRepairs `
-        -SkipToolRepairs:$SkipToolRepairs `
-        -StrictToolRepairs:$StrictToolRepairs
-    [void](Repair-CapsulenvProjectCacheLinks -Quiet)
-    Initialize-CapsulenvBitwarden
+    [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
+    $session = Initialize-CapsulenvSession -Role activation -Provenance 'capsulenv:init'
 
     $context = Get-CapsulenvContext
-    Write-CapsulenvMessage -Level Success -Message "capsulenv initialized at $($context.Root)"
+    Write-CapsulenvMessage -Level Success -Message "capsulenv activation initialized at $($context.Root); use explicit deploy, repair, or migrate commands for mutations."
+    return [pscustomobject][ordered]@{
+        Context = $context
+        SessionId = $session.SessionId
+        RepairPerformed = $false
+        LegacyRehydratePerformed = $false
+    }
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Initialize-Capsulenv, Invoke-CapsulenvDoctor
