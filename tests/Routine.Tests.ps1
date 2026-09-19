@@ -62,23 +62,48 @@ Describe 'Capsulenv lifecycle routine contracts' {
         $due | Should -BeFalse
     }
 
-    It 'runs shell lifecycle triggers around the child shell process' {
+    It 'runs shell lifecycle triggers around the resolved binding and carries portable state into the child plan' {
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
-        Mock Get-CapsulenvInteractivePowerShellExecutable { 'pwsh.exe' } -ModuleName Capsulenv
-        Mock Get-CapsulenvPowerShellChildLaunchPlan { [pscustomobject]@{ ExecutionMode='Passthrough' } } -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration { [pscustomobject]@{ Succeeded = $true; Stage = 'existing-active-generation' } } -ModuleName Capsulenv
+        Mock New-CapsulenvActivationSnapshot { [pscustomobject]@{ GenerationId = 'routine-test'; Generation = [pscustomobject]@{ Selections = @() } } } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram { New-CapsulenvProgramCandidate -Name pwsh -Executable 'pwsh.exe' -Provider capsulenv-local -Version '7.6.5' -Capabilities @('interactive') } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvPowerShellBinding {
+            [pscustomobject][ordered]@{
+                Succeeded = $true
+                Program = [pscustomobject]@{ Executable = 'pwsh.exe' }
+                LaunchArguments = @('-NoLogo', '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'bootstrap')
+                BootstrapCommand = 'bootstrap'
+                ProfilePath = '/capsule/profile.ps1'
+                HistoryPath = '/capsule/history.txt'
+                BootstrapPath = '/capsule/bootstrap.ps1'
+                PSModulePath = '/capsule/modules:/host/modules'
+                Environment = [ordered]@{
+                    PSModulePath = '/capsule/modules:/host/modules'
+                    CAPSULENV_POWERSHELL_PROFILE = '/capsule/profile.ps1'
+                    CAPSULENV_POWERSHELL_HISTORY = '/capsule/history.txt'
+                }
+            }
+        } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
-        Mock Invoke-CapsulenvProcessPlan {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvOwnedProcessPlan { $script:CapturedChildPlan = $Plan; [pscustomobject]@{ ProcessId = 4242; ExitCode = 0 } } -ModuleName Capsulenv
+        Mock Stop-CapsulenvActiveSessionServices {} -ModuleName Capsulenv
         Mock Invoke-CapsulenvRoutines {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell -Command 'Write-Output ok' }
 
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnEnter' }
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnExit' }
-        Should -Invoke Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Stop-CapsulenvActiveSessionServices -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Invoke-CapsulenvOwnedProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
+        $script:CapturedChildPlan.Executable | Should -Be 'pwsh.exe'
+        $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_PROFILE'] | Should -Be '/capsule/profile.ps1'
+        $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_HISTORY'] | Should -Be '/capsule/history.txt'
+        $script:CapturedChildPlan.Environment['PSModulePath'] | Should -Be '/capsule/modules:/host/modules'
+        $script:CapturedChildPlan.Arguments[-1] | Should -Match 'Write-Output ok'
     }
 
-    It 'runs the rehydrate lifecycle trigger after projection reconciliation' {
+    It 'does not run a broad rehydrate lifecycle trigger after projection reconciliation' {
         Mock Get-CapsulenvScoopRehydratePlan {
             [pscustomobject]@{ Context=@{}; Plan=[pscustomobject]@{} }
         } -ModuleName Capsulenv
@@ -90,6 +115,6 @@ Describe 'Capsulenv lifecycle routine contracts' {
 
         & $script:Module { Invoke-CapsulenvScoopRehydrate } | Out-Null
 
-        Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnRehydrate' }
+        Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 0 -Exactly -ParameterFilter { $Trigger -eq 'OnRehydrate' }
     }
 }
