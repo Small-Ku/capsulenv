@@ -885,7 +885,10 @@ function Invoke-CapsulenvChildShell {
     )
 
     [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
-    Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode
+    $powerShellRequirement = (Get-CapsulenvInteractivePowerShellRequirement -Criticality required).Requirement
+    [void](Ensure-CapsulenvProgramGeneration -Requirement $powerShellRequirement)
+    $activationSnapshot = New-CapsulenvActivationSnapshot
+    Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode -ActivationSnapshot $activationSnapshot
     if (-not $SkipUserIntegrationSync -and $IntegrationMode -eq 'User') {
         # A normal `capsulenv.cmd` activation must observe persistent User
         # integration config changes too. Previously DefaultBrowser was parsed
@@ -894,18 +897,47 @@ function Invoke-CapsulenvChildShell {
         Sync-CapsulenvConfiguredDefaultBrowser
     }
 
-    $shellPath = Get-CapsulenvInteractivePowerShellExecutable
-    $launchPlan = Get-CapsulenvPowerShellChildLaunchPlan `
-        -ShellPath $shellPath `
-        -IntegrationMode $IntegrationMode `
-        -Command $Command
+    $powerShellProgram = Get-CapsulenvActiveGenerationProgram -Requirement $powerShellRequirement -ActivationSnapshot $activationSnapshot
+    $binding = Resolve-CapsulenvPowerShellBinding -Requirement $powerShellRequirement -Program $powerShellProgram -Criticality required
+    if (-not $binding.Succeeded) {
+        throw 'Required interactive pwsh binding could not be established.'
+    }
+    $launchArguments = [System.Collections.Generic.List[string]]::new()
+    foreach ($argument in @($binding.LaunchArguments)) {
+        if (-not ([string]::IsNullOrWhiteSpace($Command)) -and [string]$argument -eq '-NoExit') {
+            continue
+        }
+        $launchArguments.Add([string]$argument)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Command)) {
+        $commandIndex = $launchArguments.IndexOf('-Command')
+        if ($commandIndex -lt 0 -or $commandIndex -ge ($launchArguments.Count - 1)) {
+            throw 'PowerShell binding did not provide a command launch boundary.'
+        }
+        $launchArguments[$commandIndex + 1] = [string]$binding.BootstrapCommand + '; ' + $Command
+    }
+    $planParameters = @{
+        Executable = [string]$binding.Program.Executable
+        Arguments = $launchArguments.ToArray()
+        WorkingDirectory = (Split-Path -Parent ([string]$binding.Program.Executable))
+        Environment = ([System.Collections.IDictionary]$binding.Environment)
+        Metadata = [ordered]@{
+            IntegrationMode = $IntegrationMode
+            ProfilePath = $binding.ProfilePath
+            HistoryPath = $binding.HistoryPath
+            PSModulePath = $binding.PSModulePath
+            BootstrapPath = $binding.BootstrapPath
+        }
+    }
+    $launchPlan = New-CapsulenvProcessPlan @planParameters
     if ([string]::IsNullOrWhiteSpace($Command)) {
         Write-CapsulenvMessage -Level Success -Message "capsulenv active at $env:CAPSULENV_ROOT"
     }
     [void](Invoke-CapsulenvRoutines -Trigger OnEnter)
     try {
-        Invoke-CapsulenvProcessPlan -Plan $launchPlan
+        Invoke-CapsulenvOwnedProcessPlan -Plan $launchPlan -Role child-shell -Provenance ('capsulenv/child-shell/{0}' -f $IntegrationMode)
     } finally {
+        [void](Stop-CapsulenvActiveSessionServices)
         [void](Invoke-CapsulenvRoutines -Trigger OnExit)
     }
 }
