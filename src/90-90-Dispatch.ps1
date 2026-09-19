@@ -144,6 +144,7 @@ function Invoke-Capsulenv {
             if ($remaining.Count -gt 0) { throw 'Usage: drift' }
             Get-CapsulenvVersionDrift | Format-Table -AutoSize
         }
+        'resolve' { Invoke-CapsulenvResolveCommand -Arguments $remaining }
         'status' {
             if ($remaining.Count -gt 0) { throw 'Usage: status' }
             Get-CapsulenvStatus | Format-List
