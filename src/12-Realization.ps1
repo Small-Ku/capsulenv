@@ -416,7 +416,7 @@ function Publish-CapsulenvGeneration {
                 Root = [string]$program.Root
                 Trusted = [bool]$program.Trusted
                 OwnsLifecycle = [bool]$program.OwnsLifecycle
-                AcquisitionProvider = [string]$program.AcquisitionProvider
+                AcquisitionProvider = if ($null -ne $program.PSObject.Properties['AcquisitionProvider']) { [string]$program.AcquisitionProvider } else { [string]$program.Provider }
             }
             if (-not (Test-CapsulenvHostProgramSelection -Selection $selection)) {
                 throw "Cannot publish an invalid host-program generation selection: $($selection.Name)"
