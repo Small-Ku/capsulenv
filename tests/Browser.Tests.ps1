@@ -209,6 +209,22 @@ Describe 'Capsulenv User default-browser integration' {
             Mock Write-CapsulenvDefaultBrowserState {} -ModuleName Capsulenv
             Mock Set-CapsulenvCurrentUserRegistryStringValue {} -ModuleName Capsulenv
             Mock Send-CapsulenvAssociationChanged {} -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserStateIdentity { 'browser-state' } -ModuleName Capsulenv
+            Mock Get-CapsulenvUserIntegrationBridge {
+                [pscustomobject]@{
+                    Persistent = $true
+                    CapsuleId = '11111111-2222-3333-4444-555555555555'
+                    BrowserStateIdentity = 'browser-state'
+                    BridgePath = $executable
+                }
+            } -ModuleName Capsulenv
+            Mock Resolve-CapsulenvUserIntegrationCapsuleRoot { $temporaryRoot } -ModuleName Capsulenv
+            Mock Get-CapsulenvUserIntegrationBridgeCommand {
+                [pscustomobject]@{
+                    Executable = $executable
+                    Command = $executable + ' -profile ' + $profile + ' -url "%1"'
+                }
+            } -ModuleName Capsulenv
 
             $registration = & $script:Module { Install-CapsulenvDefaultBrowserRegistration -App librewolf }
 
@@ -285,6 +301,22 @@ Describe 'Capsulenv User default-browser integration' {
             Mock Get-CapsulenvDefaultBrowserState { $legacyState } -ModuleName Capsulenv
             Mock Set-CapsulenvCurrentUserRegistryStringValue {} -ModuleName Capsulenv
             Mock Send-CapsulenvAssociationChanged {} -ModuleName Capsulenv
+            Mock Get-CapsulenvBrowserStateIdentity { 'browser-state' } -ModuleName Capsulenv
+            Mock Get-CapsulenvUserIntegrationBridge {
+                [pscustomobject]@{
+                    Persistent = $true
+                    CapsuleId = '11111111-2222-3333-4444-555555555555'
+                    BrowserStateIdentity = 'browser-state'
+                    BridgePath = $executable
+                }
+            } -ModuleName Capsulenv
+            Mock Resolve-CapsulenvUserIntegrationCapsuleRoot { $temporaryRoot } -ModuleName Capsulenv
+            Mock Get-CapsulenvUserIntegrationBridgeCommand {
+                [pscustomobject]@{
+                    Executable = $executable
+                    Command = $executable + ' -profile ' + $profile + ' -url "%1"'
+                }
+            } -ModuleName Capsulenv
 
             $registration = & $script:Module { Install-CapsulenvDefaultBrowserRegistration -App librewolf }
 
@@ -406,6 +438,22 @@ Describe 'Capsulenv User default-browser integration' {
         Mock Get-CapsulenvBrowserDefinition { @{ ProfileArgument = '-profile' } } -ModuleName Capsulenv
         Mock Get-CapsulenvBrowserDefaultExecutable { 'F:\capenv\scoop\apps\librewolf\current\LibreWolf\librewolf.exe' } -ModuleName Capsulenv
         Mock Get-CapsulenvBrowserProfilePath { 'F:\capenv\scoop\apps\librewolf\current\Profiles\Default' } -ModuleName Capsulenv
+        Mock Get-CapsulenvBrowserStateIdentity { 'browser-state' } -ModuleName Capsulenv
+        Mock Get-CapsulenvUserIntegrationBridge {
+            [pscustomobject]@{
+                Persistent = $true
+                CapsuleId = '11111111-2222-3333-4444-555555555555'
+                BrowserStateIdentity = 'browser-state'
+                BridgePath = 'F:\capenv\capsulenv.cmd'
+            }
+        } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvUserIntegrationCapsuleRoot { 'F:\capenv' } -ModuleName Capsulenv
+        Mock Get-CapsulenvUserIntegrationBridgeCommand {
+            [pscustomobject]@{
+                Executable = 'F:\capenv\scoop\apps\librewolf\current\LibreWolf\librewolf.exe'
+                Command = 'F:\capenv\scoop\apps\librewolf\current\LibreWolf\librewolf.exe -profile F:\capenv\scoop\apps\librewolf\current\Profiles\Default -url "%1"'
+            }
+        } -ModuleName Capsulenv
         Mock Get-CapsulenvRegistryStringValue {
             'F:\capenv\scoop\apps\librewolf\current\LibreWolf\librewolf.exe -profile F:\capenv\scoop\persist\librewolf\Profiles\Default -osint -url "%1"'
         } -ModuleName Capsulenv
