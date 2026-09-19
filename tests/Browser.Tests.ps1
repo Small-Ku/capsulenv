@@ -251,7 +251,7 @@ Describe 'Capsulenv User default-browser integration' {
                 $Name -eq '' -and
                 $Value -like ('*' + $executable + '*') -and
                 $Value -like ('*' + $profile + '*') -and
-                $Value -notlike '*-url*'
+                $Value -like '*-url*'
             }
         } finally {
             if (Test-Path -LiteralPath $temporaryRoot) {
@@ -444,7 +444,7 @@ Describe 'Capsulenv User default-browser integration' {
                 Persistent = $true
                 CapsuleId = '11111111-2222-3333-4444-555555555555'
                 BrowserStateIdentity = 'browser-state'
-                BridgePath = 'F:\capenv\capsulenv.cmd'
+                BridgePath = (Join-Path $PSHOME 'pwsh')
             }
         } -ModuleName Capsulenv
         Mock Resolve-CapsulenvUserIntegrationCapsuleRoot { 'F:\capenv' } -ModuleName Capsulenv
