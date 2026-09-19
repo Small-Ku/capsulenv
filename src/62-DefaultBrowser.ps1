@@ -340,7 +340,6 @@ function Resolve-CapsulenvRequiredDefaultBrowserBridge {
         throw "Persistent default-browser registration requires a valid host-local UserIntegration bridge: $($_.Exception.Message)"
     }
 }
-
 function Install-CapsulenvDefaultBrowserRegistration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
@@ -359,7 +358,6 @@ function Install-CapsulenvDefaultBrowserRegistration {
     $profileArgument = ''
     $urlCommand = [string]$handler.Command
     $fileCommand = [string]$handler.Command
-
     $state = Get-CapsulenvDefaultBrowserState
     if ($null -eq $state) {
         foreach ($path in @($registration.ClientPath, $registration.UrlClassPath, $registration.HtmlClassPath)) {

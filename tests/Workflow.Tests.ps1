@@ -182,35 +182,36 @@ Describe 'Capsulenv portable workflow contracts' {
         $doctorSource | Should -Not -Match 'Repair-CapsulenvProjectCacheLinks\s+-Quiet'
     }
 
-    It 'synchronizes configured persistent browser integration on ordinary User shell activation only once' {
+    It 'does not synchronize removable default-browser integration during shell activation' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
         Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
         Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
-        Mock Get-CapsulenvPowerShellChildLaunchPlan {
+        Mock Resolve-CapsulenvPowerShellBinding {
             [pscustomobject][ordered]@{
-                PSTypeName = 'Capsulenv.ProcessPlan'
-                Executable = 'Write-Output'
-                Arguments = @('capsulenv-child')
-                WorkingDirectory = $null
+                Succeeded = $true
+                Program = [pscustomobject]@{ Executable = (Join-Path $PSHOME 'pwsh') }
+                LaunchArguments = @('-NoLogo', '-NoProfile', '-NoExit', '-Command', 'Write-Output capsulenv-child')
+                BootstrapCommand = 'Write-Output capsulenv-child'
+                ProfilePath = $null
+                HistoryPath = $null
+                PSModulePath = $null
                 Environment = [ordered]@{}
-                PathEntries = @()
-                ExecutionMode = 'Passthrough'
-                Metadata = [ordered]@{}
+                BootstrapPath = $null
             }
         } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
 
         & $script:Module { Invoke-CapsulenvChildShell -SkipUserIntegrationSync } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
 
         Mock Get-CapsulenvInstallMode { 'ShellOnly' } -ModuleName Capsulenv
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
     }
 
     It 'blocks eject while capsule-owned processes remain' {

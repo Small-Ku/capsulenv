@@ -366,7 +366,6 @@ function Initialize-CapsulenvIntegrations {
         try {
             $serviceRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed', 'provider')
             $servicePlacement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
-            $serviceProbes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $sessionServiceConfigPath
             $serviceDefinition = New-CapsulenvSessionServiceDefinition `
                 -Name 'sing-box' `
                 -Requirement $serviceRequirement `
