@@ -14,4 +14,44 @@ Describe 'Capsulenv process plans' {
         $plan=& $script:Module { New-CapsulenvProcessPlan -Executable 'tool.exe' -Arguments @('a') -ExecutionMode Detached -Metadata ([ordered]@{Owner='test'}) }
         $plan.PSTypeNames | Should -Contain 'Capsulenv.ProcessPlan'; $plan.Executable|Should -Be 'tool.exe'; $plan.ExecutionMode|Should -Be 'Detached'; $plan.Metadata.Owner|Should -Be 'test'
     }
+    It 'records and completes the exact interactive child instead of the controller process' {
+        $hostExecutable = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $capsuleRoot = Join-Path $TestDrive 'owned-child'
+        $result = & $script:Module {
+            param($Executable, $CapsuleRoot)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $plan = New-CapsulenvProcessPlan -Executable $Executable -Arguments @('-NoLogo', '-NoProfile', '-Command', 'exit 0')
+            $launch = Invoke-CapsulenvOwnedProcessPlan -Plan $plan -Role child-shell -Provenance test
+            [pscustomobject]@{
+                ControllerPid = $PID
+                ChildPid = $launch.ProcessId
+                LedgerPid = $launch.ProcessRecord.PID
+                HasNonce = -not [string]::IsNullOrWhiteSpace([string]$launch.ProcessRecord.ProcessNonce)
+                ChildResidue = @(Get-CapsulenvOwnedProcessRecords | Where-Object { [int]$_.PID -eq [int]$launch.ProcessId }).Count
+            }
+        } $hostExecutable $capsuleRoot
+
+        $result.ChildPid | Should -Not -Be $result.ControllerPid
+        $result.LedgerPid | Should -Be $result.ChildPid
+        $result.HasNonce | Should -BeTrue
+        $result.ChildResidue | Should -Be 0
+    }
+
+    It 'does not kill a reused PID when registration fails after spawn' {
+        InModuleScope Capsulenv {
+            $process = [pscustomobject]@{ Id = 4242 }
+            $identityCall = 0
+            Mock Start-Process { $process }
+            Mock Get-CapsulenvProcessStartIdentity {
+                $identityCall++
+                if ($identityCall -eq 1) { return 'spawned-identity' }
+                return 'reused-identity'
+            }
+            Mock Initialize-CapsulenvOwnedChildSession { throw 'registration failed' }
+            Mock Stop-Process {}
+            $plan = New-CapsulenvProcessPlan -Executable 'tool.exe'
+            { Invoke-CapsulenvOwnedProcessPlan -Plan $plan } | Should -Throw '*registration failed*'
+            Should -Invoke Stop-Process -Times 0 -Exactly
+        }
+    }
 }
