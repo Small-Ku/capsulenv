@@ -227,3 +227,86 @@ function Invoke-CapsulenvProcessPlan {
         }
     }
 }
+
+function Invoke-CapsulenvOwnedProcessPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Plan,
+        [string]$Role = 'child-shell',
+        [string]$Provenance = 'capsulenv/child-shell'
+    )
+
+    $executable = [string]$Plan.Executable
+    if ([string]::IsNullOrWhiteSpace($executable)) {
+        throw 'Owned process launch requires an executable.'
+    }
+    if ([System.IO.Path]::IsPathRooted($executable) -and -not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+        throw "Owned process executable does not exist: $executable"
+    }
+
+    $saved = @{}
+    foreach ($name in $Plan.Environment.Keys) {
+        $exists = Test-Path -LiteralPath ('Env:' + [string]$name)
+        $saved[[string]$name] = [pscustomobject]@{ Exists = $exists; Value = if ($exists) { [Environment]::GetEnvironmentVariable([string]$name, 'Process') } else { $null } }
+    }
+    $savedPathExists = Test-Path -LiteralPath Env:PATH
+    $savedPath = if ($savedPathExists) { [Environment]::GetEnvironmentVariable('PATH', 'Process') } else { $null }
+    $pushed = $false
+    $process = $null
+    $record = $null
+    try {
+        foreach ($name in $Plan.Environment.Keys) {
+            [Environment]::SetEnvironmentVariable([string]$name, [string]$Plan.Environment[$name], 'Process')
+        }
+        if (@($Plan.PathEntries).Count -gt 0) {
+            $env:PATH = Merge-CapsulenvPath -ExistingPath $env:PATH -Prepend @($Plan.PathEntries)
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$Plan.WorkingDirectory)) {
+            Push-Location -LiteralPath ([string]$Plan.WorkingDirectory)
+            $pushed = $true
+        }
+
+        $startParameters = @{
+            FilePath = $executable
+            ArgumentList = @($Plan.Arguments)
+            PassThru = $true
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$Plan.WorkingDirectory)) {
+            $startParameters.WorkingDirectory = [string]$Plan.WorkingDirectory
+        }
+        if (Test-CapsulenvWindows) {
+            $startParameters.NoNewWindow = $true
+        }
+        $process = Start-Process @startParameters
+        $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId ([int]$process.Id)
+        $childSession = Initialize-CapsulenvOwnedChildSession -ProcessId ([int]$process.Id) -ProcessStartIdentity $startIdentity -Role $Role -Provenance $Provenance
+        $record = @($childSession.ProcessRecords)[0]
+
+        Wait-Process -Id ([int]$process.Id) -ErrorAction SilentlyContinue
+        $process.Refresh()
+        $exitCode = [int]$process.ExitCode
+        [void](Complete-CapsulenvOwnedChildSession -ProcessRecord $record)
+        $global:LASTEXITCODE = $exitCode
+        return [pscustomobject][ordered]@{
+            ProcessId = [int]$process.Id
+            ChildSessionId = [string]$childSession.SessionId
+            ProcessRecord = $record
+            ExitCode = $exitCode
+        }
+    } catch {
+        if ($null -ne $record) {
+            try { [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record) } catch {}
+            try { [void](Complete-CapsulenvOwnedChildSession -ProcessRecord $record) } catch {}
+        } elseif ($null -ne $process) {
+            try { Stop-Process -Id ([int]$process.Id) -Force -ErrorAction SilentlyContinue } catch {}
+        }
+        throw
+    } finally {
+        if ($pushed) { Pop-Location }
+        if ($savedPathExists) { [Environment]::SetEnvironmentVariable('PATH', [string]$savedPath, 'Process') } else { Remove-Item -LiteralPath Env:PATH -ErrorAction SilentlyContinue }
+        foreach ($name in $saved.Keys) {
+            $entry = $saved[$name]
+            if ($entry.Exists) { [Environment]::SetEnvironmentVariable([string]$name, [string]$entry.Value, 'Process') } else { Remove-Item -LiteralPath ('Env:' + [string]$name) -ErrorAction SilentlyContinue }
+        }
+    }
+}
