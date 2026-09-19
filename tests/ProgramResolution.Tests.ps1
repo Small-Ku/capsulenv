@@ -165,4 +165,19 @@ Describe 'Capsulenv program requirement and provider resolution' {
         $result.OwnsLifecycle | Should -BeTrue
     }
 
+    It 'normalizes a legacy materialized provider into the host-local authority model' {
+        $result = & $script:Module {
+            Get-CapsulenvRealizationAuthority -Manifest ([pscustomobject][ordered]@{
+                SchemaVersion = 1
+                Provider = 'provider'
+                Provenance = 'provider/cache'
+            })
+        }
+
+        $result.Provider | Should -Be 'capsulenv-local'
+        $result.AcquisitionProvider | Should -Be 'provider'
+        $result.Scope | Should -Be 'host-local'
+        $result.OwnsLifecycle | Should -BeTrue
+    }
+
 }

@@ -84,15 +84,15 @@ function Get-CapsulenvRealizationAuthority {
     }
 
     # Schema 1 recorded the acquisition origin in Provider. A materialized
-    # seed is nevertheless a host-local immutable realization at runtime.
-    # Normalize that legacy representation instead of leaking seed semantics
-    # into the active program authority.
+    # seed or provider payload is nevertheless a host-local immutable
+    # realization at runtime. Normalize every legacy acquisition-tier value
+    # instead of leaking it into the active program authority.
     $currentProvider = $manifestProvider
-    if ($manifestProvider -eq 'seed' -and
+    if ($manifestProvider -in @('seed', 'provider', 'host-scoop') -and
         ($null -eq $Manifest.PSObject.Properties['AcquisitionProvider'] -or
         [int]$Manifest.SchemaVersion -lt 2)) {
         $currentProvider = 'capsulenv-local'
-        $acquisitionProvider = 'seed'
+        $acquisitionProvider = $manifestProvider
     }
 
     return [pscustomobject][ordered]@{
