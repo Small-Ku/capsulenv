@@ -277,6 +277,40 @@ The host placement foundation only resolves and materializes layout. Program
 resolution, immutable generations, activation, and integration ownership remain
 separate boundaries implemented by the downstream architecture issues.
 
+Host identity uses layered evidence. When available, the Windows GDID value at
+`HKCU\\SOFTWARE\\Microsoft\\IdentityCRL\\ExtendedProperties\\LID` is a
+strong host-installation signal; the machine/user tuple remains a fallback and
+co-factor. Capsulenv stores only the derived host digest in placement keys, and
+never copies raw GDID into portable state. GDID presence does not infer home or
+enable persistent retention; explicit enrollment remains authoritative.
+
+Host JSON publication is fail-closed when replacement is unsupported, retaining
+the previous valid record. An invalid or unmarked ephemeral placement is stale
+material and is moved aside before rematerialization; an invalid persistent
+placement reports a diagnostic instead of being silently adopted.
+# Session ledger and portable-state leases
+
+Process ownership is recorded in a host-local session ledger. Each record
+contains the session ID, PID, process-start identity, a nonce, role, provider
+provenance, ownership classification, and held leases. Only an exact live
+record marked owned is actionable; attached and foreign processes are never
+stopped by Capsulenv. A reused PID with a different start identity is stale
+residue.
+
+The exported registration boundary can create only attached or foreign
+records. Owned records are created only by the internal launch-boundary path
+with an already captured process-start identity, so an arbitrary live PID
+cannot be promoted by a general registration call. Ledger mutations use an
+OS-held ledger lock before read-modify-write publication, and a failed lease
+bookkeeping step releases its already acquired OS handle before rethrowing.
+
+Portable mutable state declares one of three policies: exclusive, shared-read,
+or unmanaged. Exclusive and shared-read acquisitions hold an OS file handle
+for the lifetime of the lease, so a crash releases the lock when the process
+dies. The ledger is diagnostic metadata; lock-file existence is never used as
+authority. Gecko profiles and other single-writer state should use exclusive
+leases, while unmanaged state is intentionally outside Capsulenv ownership.
+
 # Program resolution boundary
 
 Program requirements are portable desired-state records; resolved executable,
@@ -304,3 +338,50 @@ version, provenance, trust, and lifecycle ownership. Reusing a trusted host
 Scoop app does not upgrade, rewrite, or take ownership of the host
 installation. The resolve command exposes this decision without performing
 repair or deployment.
+
+# Host-local realization and generation authority
+
+Realization follows Acquire, staging, verify, publish. Acquisition scratch is
+host-local and disposable; the published package realization contains a
+complete immutable manifest and payload, and an incomplete or hash-mismatched
+staging tree cannot be selected.
+
+Generations are small manifests of concrete realization roots and provenance.
+They do not copy the environment tree. The active-generation authority is
+switched only after every selected realization validates. Authority publication
+uses replacement semantics that preserve the previous valid pointer on failure.
+Garbage collection computes reachability from active and explicitly pinned
+generations, rather than introducing a second installed-state index or a
+mandatory persistent BlobStore/CAS.
+
+The realization manifest records the source kind and a verified payload hash.
+Validation recomputes that hash from the published payload, so a mutated file
+cannot remain eligible merely because `Complete` and `Immutable` still claim
+validity. Acquisition verifies the staged bytes after copy and rejects a
+source that changed between the initial read and staging.
+
+Generation selections have an explicit kind: `realization` points to a
+Capsulenv-owned immutable package, while `host-program` records a trusted
+host-Scoop executable, provenance, and non-owned lifecycle without copying it
+into the depot. Reachability follows `PinnedGenerationIds` stored in each
+generation, and host-program selections do not become GC roots.
+
+# Activation fast path and resource criticality
+
+Healthy activation reads the active generation once, resolves each selected
+Program once, constructs process bindings, and then establishes the session.
+Resources and bindings carry explicit required or optional criticality. A
+required missing or incompatible resource fails closed; an optional resource is
+skipped with a diagnostic.
+
+Activation does not rebuild projections, reconcile legacy Scoop trees, rewrite
+current or persist, repair UserIntegration, or invoke broad rehydrate. The
+control-plane PowerShell is never substituted for a missing required
+interactive pwsh. Deploy, activate, repair, and migrate remain separate
+operations.
+
+Every advertised activation resource is evaluated through the same criticality
+contract, including `program`, `binding`, and `session-service`; a required
+non-program resource cannot disappear because it is outside the program loop.
+Program activation also requires case-insensitive agreement between resource,
+requirement, and generation-selection names before constructing a candidate.
