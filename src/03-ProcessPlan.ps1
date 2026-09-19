@@ -254,6 +254,7 @@ function Invoke-CapsulenvOwnedProcessPlan {
     $pushed = $false
     $process = $null
     $record = $null
+    $startIdentity = $null
     try {
         foreach ($name in $Plan.Environment.Keys) {
             [Environment]::SetEnvironmentVariable([string]$name, [string]$Plan.Environment[$name], 'Process')
@@ -297,8 +298,13 @@ function Invoke-CapsulenvOwnedProcessPlan {
         if ($null -ne $record) {
             try { [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record) } catch {}
             try { [void](Complete-CapsulenvOwnedChildSession -ProcessRecord $record) } catch {}
-        } elseif ($null -ne $process) {
-            try { Stop-Process -Id ([int]$process.Id) -Force -ErrorAction SilentlyContinue } catch {}
+        } elseif ($null -ne $process -and -not [string]::IsNullOrWhiteSpace([string]$startIdentity)) {
+            try {
+                $currentIdentity = Get-CapsulenvProcessStartIdentity -ProcessId ([int]$process.Id)
+                if ([string]$currentIdentity -eq [string]$startIdentity) {
+                    Stop-Process -Id ([int]$process.Id) -Force -ErrorAction SilentlyContinue
+                }
+            } catch {}
         }
         throw
     } finally {
