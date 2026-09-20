@@ -370,6 +370,47 @@ function Copy-CapsulenvProgramProviderDownload {
     return $artifact
 }
 
+
+function Expand-CapsulenvProgramProvider7Zip {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Archive,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    if (-not (Test-CapsulenvWindows)) {
+        throw '7z Program provider extraction requires the Windows inbox tar/libarchive implementation.'
+    }
+    $tar = @(Get-Command tar.exe, tar -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)[0]
+    if ($null -eq $tar) {
+        throw 'Windows inbox tar is unavailable for 7z Program provider extraction.'
+    }
+
+    $entries = @(& $tar.Source -tf $Archive 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Windows tar could not list Program provider archive: $Archive"
+    }
+    foreach ($entryValue in $entries) {
+        $entry = ([string]$entryValue).Replace('\', '/').Trim()
+        if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+        $segments = @($entry.Split('/') | Where-Object { $_ -ne '' })
+        if (
+            $entry.StartsWith('/') -or
+            $entry -match '^[A-Za-z]:' -or
+            $segments -contains '..' -or
+            $entry.IndexOf([char]0) -ge 0
+        ) {
+            throw "Program provider 7z entry escapes the extraction root: $entry"
+        }
+    }
+
+    [void](New-Item -ItemType Directory -Path $Destination -Force)
+    $output = @(& $tar.Source -xf $Archive -C $Destination 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Windows tar could not extract Program provider archive: $($output -join [Environment]::NewLine)"
+    }
+}
+
 function Expand-CapsulenvProgramProviderPlan {
     [CmdletBinding()]
     param(
@@ -390,9 +431,15 @@ function Expand-CapsulenvProgramProviderPlan {
         }
         [void](New-Item -ItemType Directory -Path $targetRoot -Force)
 
-        if ([string]$download.ArchiveKind -eq 'Zip') {
+        if ([string]$download.ArchiveKind -eq 'Zip' -or
+            ([string]$download.ArchiveKind -eq 'UnsupportedArchive' -and
+             ([string]$download.FileName).EndsWith('.7z', [System.StringComparison]::OrdinalIgnoreCase))) {
             $archiveRoot = Join-Path $StagingRoot ('archive-{0:D3}' -f [int]$download.Index)
-            Expand-CapsulenvSafeZip -Archive $artifact -Destination $archiveRoot
+            if ([string]$download.ArchiveKind -eq 'Zip') {
+                Expand-CapsulenvSafeZip -Archive $artifact -Destination $archiveRoot
+            } else {
+                Expand-CapsulenvProgramProvider7Zip -Archive $artifact -Destination $archiveRoot
+            }
             $extractDir = Get-CapsulenvPackageIndexedValue -Values @($Plan.ExtractDir) -Index ([int]$download.Index)
             $sourceRoot = if ([string]::IsNullOrWhiteSpace($extractDir)) {
                 $archiveRoot
@@ -441,8 +488,14 @@ function Test-CapsulenvProgramProviderPayloadPlan {
         $reasons.Add('provider-manifest-has-no-downloads')
     }
     foreach ($download in @($Plan.Downloads)) {
-        if ([string]$download.ArchiveKind -notin @('Zip', 'File')) {
-            $reasons.Add(('unsupported-provider-payload:{0}' -f [string]$download.ArchiveKind))
+        $archiveKind = [string]$download.ArchiveKind
+        $isWindows7Zip = (
+            $archiveKind -eq 'UnsupportedArchive' -and
+            ([string]$download.FileName).EndsWith('.7z', [System.StringComparison]::OrdinalIgnoreCase) -and
+            (Test-CapsulenvWindows)
+        )
+        if ($archiveKind -notin @('Zip', 'File') -and -not $isWindows7Zip) {
+            $reasons.Add(('unsupported-provider-payload:{0}' -f $archiveKind))
         }
         if ([string]::IsNullOrWhiteSpace([string]$download.Hash)) {
             $reasons.Add('provider-payload-hash-missing')
