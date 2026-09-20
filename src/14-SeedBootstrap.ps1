@@ -417,6 +417,18 @@ function Expand-CapsulenvProgramProviderPlan {
 }
 
 
+
+function Get-CapsulenvProgramProviderCapabilities {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    switch ($Name.ToLowerInvariant()) {
+        'pwsh' { return @('interactive') }
+        'sing-box' { return @('proxy') }
+        default { return @() }
+    }
+}
+
 function Test-CapsulenvProgramProviderPayloadPlan {
     [CmdletBinding()]
     param(
@@ -494,7 +506,7 @@ function Get-CapsulenvProgramProviderCandidates {
             AcquisitionProvider = 'provider'
             Scope = 'acquisition'
             Version = [string]$plan.Version
-            Capabilities = @($Requirement.RequiredCapabilities)
+            Capabilities = @(Get-CapsulenvProgramProviderCapabilities -Name ([string]$Requirement.Name))
             Trusted = $true
             OwnsLifecycle = $false
             Provenance = ('provider/scoop-manifest/{0}@{1}' -f [string]$plan.Reference, [string]$plan.Version)
