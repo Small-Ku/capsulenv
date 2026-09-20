@@ -279,6 +279,8 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
     It 'materializes the production provider adapter and publishes an active generation without injected candidates' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-production-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        [void](New-Item -ItemType Directory -Path (Join-Path $capsuleRoot 'config') -Force)
+        Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $capsuleRoot 'config/capsulenv.psd1')
         $providerRoot = Join-Path $temporaryRoot 'provider-source'
         [void](New-Item -ItemType Directory -Path $providerRoot -Force)
         $providerExecutable = Join-Path $providerRoot 'demo.exe'
