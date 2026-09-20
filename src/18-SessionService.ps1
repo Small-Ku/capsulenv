@@ -68,9 +68,39 @@ function Get-CapsulenvSessionServiceTcpEndpoint {
             $address = [string]$inbound.listen
             if ($address -in @('0.0.0.0', '::', '[::]')) { $address = '127.0.0.1' }
         }
-        return [pscustomobject][ordered]@{ Address = $address; Port = $port }
+        $type = if ($null -ne $inbound.PSObject.Properties['type']) { [string]$inbound.type } else { '' }
+        return [pscustomobject][ordered]@{ Address = $address; Port = $port; Type = $type }
     }
     throw "SessionService config has no TCP inbound endpoint: $ConfigPath"
+}
+
+
+function Get-CapsulenvSessionServiceProxyEnvironment {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Endpoint)
+
+    $address = [string]$Endpoint.Address
+    $host = if ($address.Contains(':') -and -not $address.StartsWith('[')) { '[' + $address + ']' } else { $address }
+    $port = [int]$Endpoint.Port
+    switch (([string]$Endpoint.Type).ToLowerInvariant()) {
+        'mixed' {
+            $uri = 'http://{0}:{1}' -f $host, $port
+            return @{ HTTP_PROXY = $uri; HTTPS_PROXY = $uri }
+        }
+        'http' {
+            $uri = 'http://{0}:{1}' -f $host, $port
+            return @{ HTTP_PROXY = $uri; HTTPS_PROXY = $uri }
+        }
+        'socks' {
+            return @{ ALL_PROXY = ('socks5://{0}:{1}' -f $host, $port) }
+        }
+        'socks5' {
+            return @{ ALL_PROXY = ('socks5://{0}:{1}' -f $host, $port) }
+        }
+        default {
+            throw "SessionService endpoint type '$($Endpoint.Type)' cannot provide bootstrap proxy transport."
+        }
+    }
 }
 
 function New-CapsulenvSessionServiceTcpProbes {
@@ -407,6 +437,62 @@ function Stop-CapsulenvActiveSessionServices {
         try { $results.Add((Stop-CapsulenvSessionService -Binding $binding)) } catch { $results.Add([pscustomobject]@{ Stopped = $false; Error = $_.Exception.Message }) }
     }
     return @($results.ToArray())
+}
+
+
+function Invoke-CapsulenvProviderBootstrapNetworkScope {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Requirement,
+        [Parameter(Mandatory = $true)][scriptblock]$Operation
+    )
+
+    $configPath = Join-Path (Get-CapsulenvContext).Root 'state/portable/sing-box/config.json'
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+        throw 'Provider acquisition needs bootstrap networking, but no portable bootstrap proxy config is available.'
+    }
+
+    $bootstrapRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed')
+    $bootstrap = Resolve-CapsulenvProgramWithAcquisition -Requirement $bootstrapRequirement -ProviderCandidates @()
+    if (-not $bootstrap.Succeeded -or $null -eq $bootstrap.Selected) {
+        throw 'Provider acquisition needs bootstrap networking, but no trusted host/local/seed bootstrap Program is available.'
+    }
+
+    $placement = Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
+    $endpoint = Get-CapsulenvSessionServiceTcpEndpoint -ConfigPath $configPath
+    $proxyEnvironment = Get-CapsulenvSessionServiceProxyEnvironment -Endpoint $endpoint
+    $probes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $configPath
+    $definitionParameters = @{
+        Name = 'provider-bootstrap-network'
+        Requirement = $bootstrapRequirement
+        Criticality = 'required'
+        ConfigPath = $configPath
+        RuntimeRoot = (Join-Path $placement.ScratchRoot 'bootstrap-network')
+        LogRoot = (Join-Path $placement.ScratchRoot 'bootstrap-network/logs')
+        ReadinessProbe = $probes.ReadinessProbe
+        HealthProbe = $probes.HealthProbe
+        ProxyEnvironment = $proxyEnvironment
+    }
+    $definition = New-CapsulenvSessionServiceDefinition @definitionParameters
+    $binding = $null
+    try {
+        $binding = Start-CapsulenvSessionService -Definition $definition -Program $bootstrap.Selected
+        if (-not $binding.Succeeded) {
+            throw 'Bootstrap network SessionService did not reach readiness.'
+        }
+        return & $Operation
+    } finally {
+        if ($null -ne $binding -and $binding.Succeeded) {
+            [void](Stop-CapsulenvSessionService -Binding $binding)
+        }
+    }
+}
+
+if ($null -ne (Get-Command Set-CapsulenvBootstrapNetworkInvoker -ErrorAction SilentlyContinue)) {
+    Set-CapsulenvBootstrapNetworkInvoker -Invoker {
+        param($Requirement, $Operation)
+        Invoke-CapsulenvProviderBootstrapNetworkScope -Requirement $Requirement -Operation $Operation
+    }
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function New-CapsulenvSessionServiceDefinition, Resolve-CapsulenvSessionService, Start-CapsulenvSessionService, New-CapsulenvAttachedSessionServiceBinding, Stop-CapsulenvSessionService
