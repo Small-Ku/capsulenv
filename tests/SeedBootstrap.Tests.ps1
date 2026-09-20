@@ -275,5 +275,120 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         }
     }
 
+
+    It 'materializes the production provider adapter and publishes an active generation without injected candidates' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-production-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $providerRoot = Join-Path $temporaryRoot 'provider-source'
+        [void](New-Item -ItemType Directory -Path $providerRoot -Force)
+        $providerExecutable = Join-Path $providerRoot 'demo.exe'
+        $providerSidecar = Join-Path $providerRoot 'helper.dll'
+        'provider-demo' | Set-Content -LiteralPath $providerExecutable -Encoding UTF8 -NoNewline
+        'provider-sidecar' | Set-Content -LiteralPath $providerSidecar -Encoding UTF8 -NoNewline
+        $executableHash = (Get-FileHash -LiteralPath $providerExecutable -Algorithm SHA256).Hash.ToLowerInvariant()
+        $sidecarHash = (Get-FileHash -LiteralPath $providerSidecar -Algorithm SHA256).Hash.ToLowerInvariant()
+
+        Mock Initialize-CapsulenvScoopBootstrap { [pscustomobject]@{ Enabled = $true } } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            param($CapsuleRoot, $ProviderExecutable, $ProviderSidecar, $ExecutableHash, $SidecarHash)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $bucketRoot = Join-Path (Join-Path (Join-Path (Get-CapsulenvScoopRoot) 'buckets') 'main') 'bucket'
+            [void](New-Item -ItemType Directory -Path $bucketRoot -Force)
+            $manifest = [ordered]@{
+                version = '1.2.3'
+                url = @(
+                    ([Uri]::new([System.IO.Path]::GetFullPath($ProviderExecutable), [UriKind]::Absolute).AbsoluteUri),
+                    ([Uri]::new([System.IO.Path]::GetFullPath($ProviderSidecar), [UriKind]::Absolute).AbsoluteUri)
+                )
+                hash = @($ExecutableHash, $SidecarHash)
+                bin = 'demo.exe'
+            }
+            $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $bucketRoot 'demo.json') -Encoding UTF8
+
+            $requirement = New-CapsulenvProgramRequirement -Name demo -ExactVersion 1.2.3
+            $ensured = Ensure-CapsulenvProgramGeneration -Requirement $requirement
+            $active = Get-CapsulenvActiveGeneration
+            $selection = @($active.Generation.Selections | Where-Object Name -eq 'demo')[0]
+            $payloadRoot = Join-Path ([string]$selection.RealizationRoot) 'payload'
+            $placement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
+            $providerScratch = Join-Path $placement.ScratchRoot 'provider-acquisition'
+            [pscustomobject]@{
+                Stage = $ensured.Stage
+                Provider = $ensured.Selected.Provider
+                AcquisitionProvider = $ensured.Selected.AcquisitionProvider
+                ActiveGenerationId = [string]$active.Generation.GenerationId
+                ActiveSelection = [string]$selection.Name
+                ExecutableExists = Test-Path -LiteralPath (Join-Path $payloadRoot 'demo.exe') -PathType Leaf
+                SidecarExists = Test-Path -LiteralPath (Join-Path $payloadRoot 'helper.dll') -PathType Leaf
+                StagingResidue = if (Test-Path -LiteralPath $providerScratch -PathType Container) {
+                    @(Get-ChildItem -LiteralPath $providerScratch -Force -ErrorAction SilentlyContinue).Count
+                } else {
+                    0
+                }
+            }
+        } $capsuleRoot $providerExecutable $providerSidecar $executableHash $sidecarHash
+
+        $result.Stage | Should -Be 'materialized-normal-provider'
+        $result.Provider | Should -Be 'capsulenv-local'
+        $result.AcquisitionProvider | Should -Be 'provider'
+        $result.ActiveGenerationId | Should -Not -BeNullOrEmpty
+        $result.ActiveSelection | Should -Be 'demo'
+        $result.ExecutableExists | Should -BeTrue
+        $result.SidecarExists | Should -BeTrue
+        $result.StagingResidue | Should -Be 0
+    }
+
+    It 'uses the narrow bootstrap network invoker only after direct provider transport fails' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-bootstrap-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $providerRoot = Join-Path $temporaryRoot 'provider-source'
+        [void](New-Item -ItemType Directory -Path $providerRoot -Force)
+        'provider-demo' | Set-Content -LiteralPath (Join-Path $providerRoot 'demo.exe') -Encoding UTF8 -NoNewline
+
+        & $script:Module {
+            param($CapsuleRoot, $ProviderRoot)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $script:ProviderRetryRoot = $ProviderRoot
+            $script:ProviderRetryAttempts = 0
+            $script:ProviderBootstrapInvocations = 0
+            Set-CapsulenvBootstrapNetworkInvoker -Invoker {
+                param($Requirement, $Operation)
+                $script:ProviderBootstrapInvocations++
+                & $Operation
+            }
+        } $capsuleRoot $providerRoot
+
+        Mock Get-CapsulenvProgramProviderCandidates {
+            $script:ProviderRetryAttempts++
+            if ($script:ProviderRetryAttempts -eq 1) {
+                throw 'simulated provider transport failure'
+            }
+            $candidate = New-CapsulenvProgramCandidate -Name demo -Executable (Join-Path $script:ProviderRetryRoot 'demo.exe') -Root $script:ProviderRetryRoot -Provider provider -AcquisitionProvider provider -Scope acquisition -Version 1.2.3 -Trusted:$true -Provenance 'provider/test'
+            return @($candidate)
+        } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name demo -ExactVersion 1.2.3
+            $blocked = Resolve-CapsulenvProgramWithAcquisition -Requirement $requirement -HostCandidates @() -SeedCandidates @() -ProviderCandidates @()
+            $resolved = Resolve-CapsulenvProgramWithAcquisition -Requirement $requirement -HostCandidates @() -SeedCandidates @()
+            [pscustomobject]@{
+                ExplicitEmptySucceeded = $blocked.Succeeded
+                Stage = $resolved.Stage
+                Provider = $resolved.Selected.Provider
+                AcquisitionProvider = $resolved.Selected.AcquisitionProvider
+                ProviderAttempts = $script:ProviderRetryAttempts
+                BootstrapInvocations = $script:ProviderBootstrapInvocations
+            }
+        }
+
+        $result.ExplicitEmptySucceeded | Should -BeFalse
+        $result.Stage | Should -Be 'materialized-normal-provider'
+        $result.Provider | Should -Be 'capsulenv-local'
+        $result.AcquisitionProvider | Should -Be 'provider'
+        $result.ProviderAttempts | Should -Be 2
+        $result.BootstrapInvocations | Should -Be 1
+    }
+
 }
 
