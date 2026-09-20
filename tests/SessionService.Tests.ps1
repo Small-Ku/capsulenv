@@ -181,5 +181,77 @@ sleep 30
             Get-Process -Id $spawnedPid -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
         }
     }
+
+    It 'derives bootstrap proxy environment from the configured inbound type' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-proxy-map-' + [Guid]::NewGuid().ToString('N'))
+        $config = Join-Path $temporaryRoot 'config.json'
+        [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
+        [ordered]@{
+            inbounds = @(
+                [ordered]@{ type = 'mixed'; listen = '127.0.0.1'; listen_port = 47891 }
+            )
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $config -Encoding UTF8
+
+        $result = & $script:Module {
+            param($ConfigPath)
+            $endpoint = Get-CapsulenvSessionServiceTcpEndpoint -ConfigPath $ConfigPath
+            $environment = Get-CapsulenvSessionServiceProxyEnvironment -Endpoint $endpoint
+            [pscustomobject]@{
+                Type = $endpoint.Type
+                Http = $environment.HTTP_PROXY
+                Https = $environment.HTTPS_PROXY
+                HasAllProxy = $environment.ContainsKey('ALL_PROXY')
+            }
+        } $config
+
+        $result.Type | Should -Be 'mixed'
+        $result.Http | Should -Be 'http://127.0.0.1:47891'
+        $result.Https | Should -Be 'http://127.0.0.1:47891'
+        $result.HasAllProxy | Should -BeFalse
+    }
+
+    It 'runs provider acquisition inside a non-recursive bootstrap service scope and always stops it' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-bootstrap-scope-' + [Guid]::NewGuid().ToString('N'))
+        $config = Join-Path $temporaryRoot 'state/portable/sing-box/config.json'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $config) -Force)
+        [ordered]@{
+            inbounds = @(
+                [ordered]@{ type = 'mixed'; listen = '127.0.0.1'; listen_port = 47892 }
+            )
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $config -Encoding UTF8
+
+        Mock Resolve-CapsulenvProgramWithAcquisition {
+            $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable '/bin/true' -Provider capsulenv-local -AcquisitionProvider seed -Scope host-local -Version 1.0.0 -Capabilities @('proxy') -Trusted:$true -OwnsLifecycle:$true -Provenance 'bootstrap/test'
+            [pscustomobject]@{ Succeeded = $true; Selected = $candidate }
+        } -ModuleName Capsulenv -ParameterFilter { $PSBoundParameters.ContainsKey('ProviderCandidates') -and @($ProviderCandidates).Count -eq 0 }
+
+        Mock Start-CapsulenvSessionService {
+            [pscustomobject]@{
+                Succeeded = $true
+                Attached = $false
+                ProcessRecord = [pscustomobject]@{ Ownership = 'owned' }
+                StateLease = $null
+                SessionId = 'bootstrap-test'
+            }
+        } -ModuleName Capsulenv
+
+        Mock Stop-CapsulenvSessionService {
+            [pscustomobject]@{ Stopped = $true }
+        } -ModuleName Capsulenv
+
+        {
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $requirement = New-CapsulenvProgramRequirement -Name pwsh
+                Invoke-CapsulenvProviderBootstrapNetworkScope -Requirement $requirement -Operation { throw 'provider operation failed' }
+            } $temporaryRoot
+        } | Should -Throw '*provider operation failed*'
+
+        Should -Invoke Resolve-CapsulenvProgramWithAcquisition -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $PSBoundParameters.ContainsKey('ProviderCandidates') -and @($ProviderCandidates).Count -eq 0 }
+        Should -Invoke Start-CapsulenvSessionService -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Stop-CapsulenvSessionService -ModuleName Capsulenv -Times 1 -Exactly
+    }
+
 }
 
