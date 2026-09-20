@@ -303,6 +303,9 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
                 )
                 hash = @($ExecutableHash, $SidecarHash)
                 bin = 'demo.exe'
+                # Provider acquisition must ignore Scoop lifecycle scripts rather
+                # than execute them as runtime authority.
+                pre_install = @("'ignored provider lifecycle hook'")
             }
             $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $bucketRoot 'demo.json') -Encoding UTF8
 
