@@ -591,7 +591,14 @@ function Get-CapsulenvProgramProviderCandidatesWithBootstrap {
         if ($null -eq $script:CapsulenvBootstrapNetworkInvoker) {
             throw
         }
-        $operation = { @(Get-CapsulenvProgramProviderCandidates -Requirement $Requirement) }.GetNewClosure()
+        $providerModule = $ExecutionContext.SessionState.Module
+        $providerRequirement = $Requirement
+        $operation = {
+            & $providerModule {
+                param($InnerRequirement)
+                @(Get-CapsulenvProgramProviderCandidates -Requirement $InnerRequirement)
+            } $providerRequirement
+        }.GetNewClosure()
         try {
             return @(& $script:CapsulenvBootstrapNetworkInvoker $Requirement $operation)
         } catch {
