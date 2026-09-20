@@ -104,3 +104,4 @@ function Invoke-CapsulenvExternalCommand {
     $plan = New-CapsulenvProcessPlan -Executable $Command -Arguments $Arguments
     Invoke-CapsulenvProcessPlan -Plan $plan
 }
+

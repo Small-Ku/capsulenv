@@ -86,6 +86,7 @@ Describe 'Capsulenv portable workflow contracts' {
             '{"version":"2.0.0"}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/buckets/main/bucket/git.json') -Encoding UTF8
             'cache' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'cache/scoop/test.cache') -Encoding UTF8
 
+            Mock Test-CapsulenvCurrentUserIntegrationOwnership { $true } -ModuleName Capsulenv
             & $script:Module {
                 param($CapsuleRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
@@ -186,6 +187,11 @@ Describe 'Capsulenv portable workflow contracts' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration { [pscustomobject]@{ Succeeded = $true } } -ModuleName Capsulenv
+        Mock New-CapsulenvActivationSnapshot { [pscustomobject]@{} } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram {
+            New-CapsulenvProgramCandidate -Name pwsh -Executable (Join-Path $PSHOME 'pwsh') -Provider capsulenv-local -Version 7.6.5 -Capabilities @('interactive')
+        } -ModuleName Capsulenv
         Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
         Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
         Mock Resolve-CapsulenvPowerShellBinding {
@@ -202,6 +208,8 @@ Describe 'Capsulenv portable workflow contracts' {
             }
         } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvOwnedProcessPlan {} -ModuleName Capsulenv
+        Mock Stop-CapsulenvActiveSessionServices {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
         Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly

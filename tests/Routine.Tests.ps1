@@ -129,3 +129,4 @@ Describe 'Capsulenv lifecycle routine contracts' {
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 0 -Exactly -ParameterFilter { $Trigger -eq 'OnRehydrate' }
     }
 }
+

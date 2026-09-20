@@ -10,8 +10,8 @@ Describe 'Capsulenv final composition authority gates' {
 
     It 'stops session-scoped services when the child shell exits normally' {
         $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        $environmentSource = Get-Content -LiteralPath (Join-Path $root 'src/30-Environment.ps1') -Raw
-        if ($environmentSource -notmatch 'finally\s*\{[\s\S]*Stop-CapsulenvActiveSessionServices') { throw 'Child-shell finally block does not stop active session services.' }
+        $sessionShellSource = Get-Content -LiteralPath (Join-Path $root 'src/30-50-SessionShell.ps1') -Raw
+        if ($sessionShellSource -notmatch 'finally\s*\{[\s\S]*Stop-CapsulenvActiveSessionServices') { throw 'Child-shell finally block does not stop active session services.' }
     }
 
     It 'keeps discovered Scoop trust decisions explicit' {
