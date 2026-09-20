@@ -416,6 +416,50 @@ function Expand-CapsulenvProgramProviderPlan {
     return $payloadRoot
 }
 
+
+function Test-CapsulenvProgramProviderPayloadPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Requirement,
+        [Parameter(Mandatory = $true)]$Plan
+    )
+
+    $reasons = New-Object System.Collections.Generic.List[string]
+    if (@($Plan.Downloads).Count -eq 0) {
+        $reasons.Add('provider-manifest-has-no-downloads')
+    }
+    foreach ($download in @($Plan.Downloads)) {
+        if ([string]$download.ArchiveKind -notin @('Zip', 'File')) {
+            $reasons.Add(('unsupported-provider-payload:{0}' -f [string]$download.ArchiveKind))
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$download.Hash)) {
+            $reasons.Add('provider-payload-hash-missing')
+        }
+    }
+    if ($null -eq $Plan.Bin -or @($Plan.Bin).Count -eq 0) {
+        $reasons.Add('provider-manifest-has-no-program-bin')
+    }
+    if (@($Plan.Dependencies).Count -gt 0) {
+        $reasons.Add('provider-payload-dependencies-require-explicit-acquisition')
+    }
+    try {
+        if ($reasons.Count -eq 0) {
+            [void](Get-CapsulenvProgramProviderExecutableRelativePath -Requirement $Requirement -Plan $Plan)
+        }
+    } catch {
+        $reasons.Add($_.Exception.Message)
+    }
+
+    return [pscustomobject][ordered]@{
+        Compatible = ($reasons.Count -eq 0)
+        Reasons = @($reasons.ToArray())
+        # Scoop lifecycle classification is deliberately diagnostic only here.
+        # Program acquisition consumes immutable payload metadata and never runs
+        # pre/post-install, persist, shortcut, registry, or uninstaller scripts.
+        SourceClassification = [string]$Plan.Classification
+    }
+}
+
 function Get-CapsulenvProgramProviderCandidates {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Requirement)
@@ -426,8 +470,9 @@ function Get-CapsulenvProgramProviderCandidates {
 
     [void](Initialize-CapsulenvScoopBootstrap)
     $plan = Get-CapsulenvPackageManifestPlan -Reference ([string]$Requirement.Name)
-    if ([string]$plan.Classification -ne 'PortableSafe') {
-        throw "Program provider '$($plan.Reference)' requires unsupported/trusted lifecycle semantics: $($plan.Classification)"
+    $payloadCompatibility = Test-CapsulenvProgramProviderPayloadPlan -Requirement $Requirement -Plan $plan
+    if (-not $payloadCompatibility.Compatible) {
+        throw "Program provider '$($plan.Reference)' has no safe payload-only acquisition path: $($payloadCompatibility.Reasons -join ', ')"
     }
     $relativeExecutable = Get-CapsulenvProgramProviderExecutableRelativePath -Requirement $Requirement -Plan $plan
 
