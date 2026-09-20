@@ -73,6 +73,7 @@ function Get-CapsulenvRuntimeContext {
             CacheRoot = Resolve-CapsulenvPath -Path 'cache' -AllowMissing
             ProjectCacheRoot = Resolve-CapsulenvPath -Path 'project-cache' -AllowMissing
             ScratchRoot = Get-CapsulenvScratchPath
+            HostPlacement = Get-CapsulenvHostPlacement
         }
         Runtime = [pscustomobject][ordered]@{
             Launcher = Get-CapsulenvControlLauncherPath
