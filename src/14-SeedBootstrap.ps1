@@ -722,7 +722,13 @@ function Invoke-CapsulenvBootstrapAcquisition {
     $acquisitionParameters = @{ Requirement = $Requirement }
     if ($PSBoundParameters.ContainsKey('HostCandidates')) { $acquisitionParameters['HostCandidates'] = $HostCandidates }
     if ($PSBoundParameters.ContainsKey('SeedCandidates')) { $acquisitionParameters['SeedCandidates'] = $SeedCandidates }
-    if ($PSBoundParameters.ContainsKey('ProviderCandidates')) { $acquisitionParameters['ProviderCandidates'] = $ProviderCandidates }
+    if ($PSBoundParameters.ContainsKey('ProviderCandidates')) {
+        $acquisitionParameters['ProviderCandidates'] = $ProviderCandidates
+    } elseif ($RequireBootstrapNetwork -and -not $BootstrapNetworkReady) {
+        # Fail closed on host/local + seed only. Do not enter a network-backed
+        # provider while this helper is being used to break that dependency.
+        $acquisitionParameters['ProviderCandidates'] = @()
+    }
     $resolved = Resolve-CapsulenvProgramWithAcquisition @acquisitionParameters
     if ($resolved.Succeeded) { return $resolved }
     if ($RequireBootstrapNetwork -and -not $BootstrapNetworkReady) {
