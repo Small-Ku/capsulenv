@@ -45,6 +45,72 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         }
     }
 
+    It 'ensures an acquisition-backed generation before direct launch and quotes a spaced profile path' {
+        $temporaryRoot = Join-Path $TestDrive 'capsulenv browser acquisition with spaces'
+        $profilePath = Join-Path $temporaryRoot 'portable profile'
+        $executable = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $requirement = & $script:Module { New-CapsulenvProgramRequirement -Name firefox }
+        $candidate = & $script:Module {
+            param($Executable)
+            New-CapsulenvProgramCandidate `
+                -Name firefox `
+                -Executable $Executable `
+                -Provider capsulenv-local `
+                -Version 1.0.0 `
+                -Provenance 'provider/firefox'
+        } $executable
+        $snapshot = [pscustomobject]@{
+            GenerationId = 'acquired-generation'
+            Generation = [pscustomobject]@{ GenerationId = 'acquired-generation'; Selections = @() }
+            Programs = [ordered]@{ firefox = $candidate }
+        }
+        $binding = [pscustomobject]@{
+            Succeeded = $true
+            Program = $candidate
+            ProfilePath = $profilePath
+            Lease = [pscustomobject]@{ LeaseId = 'browser-lease' }
+        }
+        $script:browserEnsureResult = [pscustomobject]@{
+            Succeeded = $true
+            Selected = $candidate
+            ActivationSnapshot = $snapshot
+        }
+        $script:browserBindingResult = $binding
+        Mock Ensure-CapsulenvProgramGeneration { $script:browserEnsureResult } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvBrowserBinding { $script:browserBindingResult } -ModuleName Capsulenv
+        Mock Start-CapsulenvOwnedProcess {
+            [pscustomobject]@{
+                Process = [pscustomobject]@{ Id = 9001 }
+                ProcessStartIdentity = 'browser-identity'
+                ProcessRecord = [pscustomobject]@{ PID = 9001; Role = 'browser' }
+            }
+        } -ModuleName Capsulenv
+        Mock Register-CapsulenvBrowserLeaseWatcher { [pscustomobject]@{ Registered = $true } } -ModuleName Capsulenv
+
+        try {
+            $result = & $script:Module {
+                param($CapsuleRoot, $Requirement)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                Start-CapsulenvPortableBrowser -App firefox -Requirement $Requirement
+            } $temporaryRoot $requirement
+
+            $result.Succeeded | Should -BeTrue
+            Should -Invoke Ensure-CapsulenvProgramGeneration -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+                $Requirement.Name -eq 'firefox'
+            }
+            Should -Invoke Resolve-CapsulenvBrowserBinding -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+                $null -ne $ActivationSnapshot -and $ActivationSnapshot.GenerationId -eq 'acquired-generation'
+            }
+            Should -Invoke Start-CapsulenvOwnedProcess -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+                @($ArgumentList).Count -eq 2 -and
+                $ArgumentList[0] -eq '-profile' -and
+                $ArgumentList[1] -eq ('"{0}"' -f [IO.Path]::GetFullPath($profilePath))
+            }
+        } finally {
+            Remove-Variable browserEnsureResult, browserBindingResult -Scope Script -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'rejects a second writer and never falls back to an unrelated host profile' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-conflict-' + [Guid]::NewGuid().ToString('N'))
         $executable = Join-Path $temporaryRoot 'host/firefox.exe'
@@ -230,4 +296,3 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         }
     }
 }
-
