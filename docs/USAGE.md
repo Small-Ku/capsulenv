@@ -206,7 +206,7 @@ To run external workflows on capsule lifecycle events, configure `Routines`:
 ```powershell
 Routines = @{
     Network = @{
-        Trigger = @('OnEnter', 'OnRehydrate')
+        Trigger = @('OnEnter')
         Command = 'powershell.exe'
         Arguments = @('-NoLogo', '-NoProfile', '-Command', "Import-Module NyaModule -Force; Invoke-NyaJob -Name 'portable-network'")
         MinimumIntervalSeconds = 60
@@ -215,7 +215,7 @@ Routines = @{
 }
 ```
 
-Available trigger events are `OnEnter`, `OnExit`, `OnRehydrate`, and `OnEject`. Routines can also specify installed apps via `App` and `BinName`.
+Available normal trigger events are `OnEnter`, `OnExit`, and `OnEject`. `OnRehydrate` is reserved for an explicitly requested legacy migration/repair run. Routines can also specify installed apps via `App` and `BinName`.
 
 List routines or trigger an event manually:
 
@@ -250,7 +250,7 @@ Restore the original project directory:
 capsulenv cache unlink cargo-target D:\src\project --restore
 ```
 
-Only explicitly registered uv and Pixi workspaces undergo automatic relocation repair. uv requires `pyproject.toml` and `uv.lock`. Pixi requires `pixi.lock` and project manifests.
+Only explicitly registered uv and Pixi workspaces undergo tool-specific relocation repair when you request the repair command. uv requires `pyproject.toml` and `uv.lock`. Pixi requires `pixi.lock` and project manifests.
 
 ```powershell
 capsulenv tools register uv D:\Portable\capsulenv\workspace\python-app
@@ -300,7 +300,7 @@ To rerun full relocation repair explicitly, run `capsulenv rehydrate`.
 | uv or Pixi relocation repair failed | Preview via `capsulenv tools repair all --last --dry-run` |
 | Retry tool relocation repair | `capsulenv tools repair all --last --strict` |
 
-`capsulenv reset` repairs projections only. If diagnostics show ambiguous active versions or diverged data, inspect versions and files first. Repair via upstream Scoop or reinstall as guided by `doctor`. Do not delete `.capsulenv/` to clear warnings. For projection repair rules, see [ARCHITECTURE](ARCHITECTURE.md#relocation-projection-repair).
+`capsulenv reset` repairs projections only. If diagnostics show ambiguous active versions or diverged data, inspect versions and files first. Repair via upstream Scoop or reinstall as guided by `doctor`. Do not delete `.capsulenv/` to clear warnings. For projection repair rules, see [ARCHITECTURE](ARCHITECTURE.md#relocation-and-explicit-projection-repair).
 
 Pixi global sync may re-resolve version ranges. Run `tools repair pixi --last --include-global` only when you accept re-resolution. For failure and retry rules, see [TOOLS](TOOLS.md#failure-and-retry).
 

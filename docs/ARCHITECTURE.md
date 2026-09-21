@@ -11,7 +11,7 @@ This page defines runtime ownership, trust levels, and relocation repair rules. 
 | ownership | Proven authorization to modify and revert state based on verifiable evidence |
 | provider | Installed package source and runtime owner: Capsulenv or upstream Scoop |
 | projection | Derived links, shims, or environment variables constructed from installed state |
-| rehydrate | Reconstructing runtime projections after relocation based on installed evidence |
+| rehydrate | Explicitly requested reconstruction of runtime projections after relocation based on installed evidence |
 | fail closed | Halting mutation when an operation cannot be proven compliant with invariants |
 | DAG | Directed Acyclic Graph |
 
@@ -67,7 +67,7 @@ Trust levels operate independently of ShellOnly and User session modes. User mod
 | `scoop/` | Upstream Scoop core, buckets, packages, and persist storage |
 | `scoop-global/` | Optional capsule-local Scoop `-g` root |
 | `PowerShell/Modules/` | User private PowerShell modules |
-| `tool-data/`, `cache/`, `project-cache/` | Classified storage; rules defined in [TOOLS](TOOLS.md#storage-classes) |
+| `tool-data/`, `cache/`, `project-cache/` | Explicit tool State and cache scopes; rules defined in [TOOLS](TOOLS.md#storage-classes) |
 | `workspace/` | User source repositories and working files |
 | `.capsulenv/` | Identity, package states, link registries, and integration backups |
 
@@ -153,8 +153,8 @@ Callbacks reading `Context.Outputs['producer']` must declare an explicit `Depend
 | API or execution path | Diagnostic behavior |
 |---|---|
 | `Get-CapsulenvDesiredStatePlan` | Omitted by default; enable via `-IncludeDiagnostics` |
-| Public `Get-CapsulenvScoopRehydratePlan` | Included by default for plan inspection |
-| `Invoke-*` in activation, rehydrate, and package install | Diagnostics disabled |
+| Public `Get-CapsulenvScoopRehydratePlan` | Included for explicit repair-plan inspection |
+| `Invoke-*` in activation, explicit rehydrate, and package install | Diagnostics disabled |
 
 Static analysis enforces that conflict matrices and wave constructions reside within diagnostic guards. Changing diagnostic presentation must not affect scheduling correctness or concurrency.
 
@@ -196,7 +196,7 @@ Windows shortcuts record absolute launcher paths. Therefore, User synchronizatio
 
 Capsulenv never modifies Scoop's `shortcut_folder` or foreign `Programs\Scoop Apps`. Shortcuts created by upstream Scoop remain managed by upstream Scoop.
 
-## Relocation projection repair
+## Relocation and explicit projection repair
 
 PortableSafe repair reconstructs `current` links, persist projections, shims, and User mode launcher shortcuts.
 
@@ -212,13 +212,13 @@ The legacy Scoop adapter reads installed metadata only. It never loads Scoop imp
 | External target, reparse version, multiple candidate versions, normal `current` folder | Halts modification |
 | Persisted file contents diverge | Halts modification |
 
-When automatic rehydration encounters ambiguous legacy ownership, it preserves the application, records stable diagnostic IDs and remediation guidance, and continues remaining projections and activation.
+When an explicit rehydrate encounters ambiguous legacy ownership, it preserves the application, records stable diagnostic IDs and remediation guidance, and continues remaining projections and activation.
 
 Locked applications postpone repair and retry on subsequent activation. Ambiguous ownership requires explicit intervention via `doctor`.
 
 Corrupted Capsulenv package projections fail immediately. Explicit `capsulenv reset` invocations maintain identical fail-closed invariants.
 
-### Rehydration readiness
+### Explicit rehydration readiness
 
 Generation fingerprints bind capsule identity, root paths, Scoop roots, host, and user. Each generation provides `.ready` and `.pending` markers:
 

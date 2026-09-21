@@ -23,6 +23,37 @@ Describe 'Capsulenv explicit migration and legacy isolation' {
         $audit.RemovableUserIntegration | Should -BeFalse
     }
 
+    It 'keeps production documentation and default configuration on explicit state authority' {
+        $architecture = Get-Content -LiteralPath (Join-Path $script:Root 'docs/ARCHITECTURE.md') -Raw
+        $usage = Get-Content -LiteralPath (Join-Path $script:Root 'docs/USAGE.md') -Raw
+        $readme = Get-Content -LiteralPath (Join-Path $script:Root 'README.md') -Raw
+        $configuration = Get-Content -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Raw
+
+        ($architecture + $usage + $readme) | Should -Not -Match '(?i)automatic rehydration'
+        $configuration | Should -Match 'RehydrateOnRelocation\s*=\s*\$false'
+        $configuration | Should -Match 'Explicit tool State scopes'
+        $usage | Should -Match 'OnRehydrate.*explicitly requested'
+    }
+
+    It 'covers every detectable legacy kind with a handler or explicit remediation' {
+        $coverage = & $script:Module {
+            $inventory = [pscustomobject]@{
+                LegacyBrowserProfilePresent = $true
+                LegacyPowerShellProfilePresent = $true
+                LegacyPowerShellHistoryPresent = $true
+                LegacyScoopProjection = $true
+                LegacyScoopPersist = $true
+                LegacyToolStorage = $true
+            }
+            Get-CapsulenvMigrationCoverage -Inventory $inventory
+        }
+
+        @($coverage).Count | Should -BeGreaterThan 4
+        @($coverage | Where-Object { $_.Detected -and [string]::IsNullOrWhiteSpace([string]$_.Handler) }).Count | Should -Be 0
+        @($coverage | Where-Object { $_.Detected -and -not $_.Supported -and @($_.Remediation).Count -eq 0 }).Count | Should -Be 0
+        @($coverage | Where-Object { $_.LegacyKind -eq 'LegacyScoopProjection' }).Handler | Should -Be 'Invoke-CapsulenvUnsupportedLegacyMigration'
+    }
+
     It 'migrates an explicitly selected PowerShell profile into portable State' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-migration-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
@@ -40,6 +71,11 @@ Describe 'Capsulenv explicit migration and legacy isolation' {
             $result.Results[0].Status | Should -Be 'Migrated'
             $portable = & $script:Module { (Get-CapsulenvPowerShellStatePaths).ProfilePath }
             (Get-Content -LiteralPath $portable -Raw) | Should -Match 'migrated'
+            $second = & $script:Module {
+                param($LegacyProfile)
+                Invoke-CapsulenvLegacyMigration -LegacyPowerShellProfilePath $LegacyProfile -MigratePowerShellProfile
+            } $legacyProfile
+            @($second.Results.Status) | Should -Contain 'Skipped'
         } finally {
             if ($null -eq $oldStateRoot) {
                 Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
@@ -95,6 +131,76 @@ Describe 'Capsulenv explicit migration and legacy isolation' {
         } $source $destination
         $result.Threw | Should -BeTrue
         $result.Marker | Should -Be 'old-valid-state'
+    }
+
+    It 'recovers the previous directory authority after an injected swap fault' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-directory-transaction-' + [Guid]::NewGuid().ToString('N'))
+        $destination = Join-Path $temporaryRoot 'state'
+        $staged = Join-Path $temporaryRoot 'staged'
+        [void](New-Item -ItemType Directory -Path $destination -Force)
+        [void](New-Item -ItemType Directory -Path $staged -Force)
+        'old-valid-state' | Set-Content -LiteralPath (Join-Path $destination 'marker.txt') -Encoding UTF8
+        'new-state' | Set-Content -LiteralPath (Join-Path $staged 'marker.txt') -Encoding UTF8
+
+        $result = & $script:Module {
+            param($Destination, $Staged)
+            $threw = $false
+            try {
+                Publish-CapsulenvDirectoryAuthorityTransactionally `
+                    -Path $Destination `
+                    -StagedPath $Staged `
+                    -FaultInjector { param($Phase) if ($Phase -eq 'AfterBackup') { throw 'injected directory publication fault' } }
+            } catch {
+                $threw = $true
+            }
+            [pscustomobject]@{
+                Threw = $threw
+                Marker = (Get-Content -LiteralPath (Join-Path $Destination 'marker.txt') -Raw).Trim()
+                JournalExists = Test-Path -LiteralPath (Get-CapsulenvDirectoryAuthorityJournalPath -Path $Destination) -PathType Leaf
+            }
+        } $destination $staged
+
+        $result.Threw | Should -BeTrue
+        $result.Marker | Should -Be 'old-valid-state'
+        $result.JournalExists | Should -BeFalse
+    }
+
+    It 'cleans a prepared transaction when no previous directory existed' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-directory-transaction-empty-' + [Guid]::NewGuid().ToString('N'))
+        $destination = Join-Path $temporaryRoot 'state'
+        $staged = Join-Path $temporaryRoot 'staged'
+        [void](New-Item -ItemType Directory -Path $staged -Force)
+        'new-state' | Set-Content -LiteralPath (Join-Path $staged 'marker.txt') -Encoding UTF8
+
+        $result = & $script:Module {
+            param($Destination, $Staged)
+            $threw = $false
+            try {
+                Publish-CapsulenvDirectoryAuthorityTransactionally `
+                    -Path $Destination `
+                    -StagedPath $Staged `
+                    -FaultInjector { param($Phase) if ($Phase -eq 'AfterBackup') { throw 'injected prepared fault' } }
+            } catch {
+                $threw = $true
+            }
+            $journalPath = Get-CapsulenvDirectoryAuthorityJournalPath -Path $Destination
+            [pscustomobject]@{
+                Threw = $threw
+                DestinationExists = Test-Path -LiteralPath $Destination
+                JournalExists = Test-Path -LiteralPath $journalPath -PathType Leaf
+            }
+        } $destination $staged
+
+        $result.Threw | Should -BeTrue
+        $result.DestinationExists | Should -BeFalse
+        $result.JournalExists | Should -BeTrue
+
+        $recovered = & $script:Module {
+            param($Destination)
+            Recover-CapsulenvDirectoryAuthorityTransaction -Path $Destination
+        } $destination
+        $recovered | Should -BeTrue
+        (Test-Path -LiteralPath (Join-Path $temporaryRoot '.state.transaction.json') -PathType Leaf) | Should -BeFalse
     }
 
 

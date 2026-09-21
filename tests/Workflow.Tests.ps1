@@ -171,6 +171,7 @@ Describe 'Capsulenv portable workflow contracts' {
     It 'keeps lifecycle cleanup and desired-state repair authority bounded' {
         $lifecycleSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/72-Lifecycle.ps1') -Raw
         $doctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
+        $integrationSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/40-Scoop.ps1') -Raw
 
         $lifecycleSource | Should -Match 'Get-CapsulenvDirtyRepositories'
         $lifecycleSource | Should -Match 'Stop-CapsulenvOwnedProcesses'
@@ -178,7 +179,7 @@ Describe 'Capsulenv portable workflow contracts' {
         $lifecycleSource | Should -Match "'download', '--no-update-scoop'"
         $lifecycleSource | Should -Not -Match "arguments \+= '-g'"
         $lifecycleSource | Should -Not -Match 'Restore-CapsulenvUserEnvironment\s*(-|\()'
-        $doctorSource | Should -Match 'Invoke-CapsulenvIntegrationDesiredState'
+        $integrationSource | Should -Match 'Invoke-CapsulenvIntegrationDesiredState'
         $doctorSource | Should -Not -Match 'Repair-CapsulenvPackageProjections\s*(?:$|\r?\n)'
         $doctorSource | Should -Not -Match 'Repair-CapsulenvProjectCacheLinks\s+-Quiet'
     }
@@ -187,7 +188,7 @@ Describe 'Capsulenv portable workflow contracts' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
-        Mock Ensure-CapsulenvProgramGeneration { [pscustomobject]@{ Succeeded = $true } } -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration { [pscustomobject]@{ Succeeded = $true; ActivationSnapshot = [pscustomobject]@{} } } -ModuleName Capsulenv
         Mock New-CapsulenvActivationSnapshot { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Get-CapsulenvActiveGenerationProgram {
             New-CapsulenvProgramCandidate -Name pwsh -Executable (Join-Path $PSHOME 'pwsh') -Provider capsulenv-local -Version 7.6.5 -Capabilities @('interactive')

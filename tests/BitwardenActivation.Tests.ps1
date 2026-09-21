@@ -32,6 +32,7 @@ Describe 'Capsulenv Bitwarden activation contracts' {
 
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Get-CapsulenvIdentity { '11111111-2222-3333-4444-555555555555' } -ModuleName Capsulenv
+        Mock Get-CapsulenvContext { [pscustomobject]@{ Root = [System.IO.Path]::GetTempPath() } } -ModuleName Capsulenv
         Mock Initialize-CapsulenvHostPlacement {} -ModuleName Capsulenv
         Mock Initialize-CapsulenvSession { [pscustomobject]@{ SessionId = 'activation-session' } } -ModuleName Capsulenv
         Mock Get-CapsulenvConfiguration {

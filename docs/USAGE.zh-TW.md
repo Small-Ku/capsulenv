@@ -300,7 +300,7 @@ capsulenv doctor
 | uv/Pixi 搬移修復失敗 | 先用 `capsulenv tools repair all --last --dry-run` 檢查 |
 | 確認可重試工具修復 | `capsulenv tools repair all --last --strict` |
 
-`capsulenv reset` 只修復 projection。若診斷表示 Scoop active version 不明確或資料已分歧，先確認要保留的版本與資料。再依診斷明確使用 upstream Scoop 修復或重新安裝。不要刪除 `.capsulenv/` 來消除警告。修復與所有權界限見 [ARCHITECTURE](ARCHITECTURE.md#relocation-projection-repair)。
+`capsulenv reset` 只修復 projection。若診斷表示 Scoop active version 不明確或資料已分歧，先確認要保留的版本與資料。再依診斷明確使用 upstream Scoop 修復或重新安裝。不要刪除 `.capsulenv/` 來消除警告。明確 relocation 修復與所有權界限見 [ARCHITECTURE](ARCHITECTURE.md#relocation-and-explicit-projection-repair)。
 
 Pixi global sync 可能重新解析版本。只有接受這個變更時，才使用 `tools repair pixi --last --include-global`。失敗、略過與重試規則見 [TOOLS](TOOLS.md#failure-and-retry)。
 

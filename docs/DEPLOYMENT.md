@@ -1,6 +1,6 @@
 # Build and deployment
 
-This page defines release bundle creation and installer mechanics. For standard installation, updates, and removal, see [README](../README.md#installation-and-first-launch). For runtime relocation repair, see [ARCHITECTURE](ARCHITECTURE.md#relocation-projection-repair).
+This page defines release bundle creation and installer mechanics. For standard installation, updates, and removal, see [README](../README.md#installation-and-first-launch). For explicit runtime relocation repair, see [ARCHITECTURE](ARCHITECTURE.md#relocation-and-explicit-projection-repair).
 
 ## Deployment boundary
 

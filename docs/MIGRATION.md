@@ -19,7 +19,7 @@ capsulenv.cmd restore-user
 
 `enable-user` remains a compatibility alias, but new scripts and documentation should use `install-user`.
 
-Do not assume scripts will run `scoop reset *` or replay `pre_install`/`post_install` during relocation. Starting in v0.17, Capsulenv no longer executes manifest lifecycle replays; PortableSafe relocation repairs only Capsulenv-owned projections, and legacy Scoop state receives only bounded `current`/`persist` repair. When you need arbitrary lifecycle execution, run upstream Scoop explicitly. See [ARCHITECTURE](ARCHITECTURE.md#relocation-projection-repair).
+Do not assume scripts will run `scoop reset *` or replay `pre_install`/`post_install` during relocation. Starting in v0.17, Capsulenv no longer executes manifest lifecycle replays; explicit PortableSafe relocation repair only touches Capsulenv-owned projections, and legacy Scoop state receives only bounded `current`/`persist` repair. When you need arbitrary lifecycle execution, run upstream Scoop explicitly. See [ARCHITECTURE](ARCHITECTURE.md#relocation-and-explicit-projection-repair).
 
 ## Migrating from the v0.1.x parallel `data/` model
 
@@ -225,7 +225,7 @@ v0.17.0 removed the Scoop gateway, policy injection, and reset adapter architect
 - Obsolete `capsulenv hooks` and `Scoop.ReplayHooks` have been removed.
 - User mode synchronization rebuilds the `Programs\Capsulenv Apps\<capsule-id>\PortableSafe` namespace with targets pointing to `capsulenv.cmd app run capsule/<app>`.
 
-Upgrades do not require deleting `scoop/` or reinstalling packages. Activation automatically migrates rehydration metadata to the new schema. Remove obsolete `Scoop.ReplayHooks` from local configuration. For the package trust model, see [ARCHITECTURE](ARCHITECTURE.md#package-planner-and-portablesafe-subset).
+Upgrades do not require deleting `scoop/` or reinstalling packages. Review migration inventory and request `rehydrate` explicitly when relocation evidence requires projection repair. Remove obsolete `Scoop.ReplayHooks` from local configuration. For the package trust model, see [ARCHITECTURE](ARCHITECTURE.md#package-planner-and-portablesafe-subset).
 
 ## Verification after upgrade
 
