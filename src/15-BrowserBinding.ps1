@@ -247,6 +247,7 @@ function Resolve-CapsulenvBrowserBinding {
         $Requirement,
         [object[]]$Candidates,
         $Program,
+        $ActivationSnapshot,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'required',
         [string]$SessionId
@@ -259,6 +260,10 @@ function Resolve-CapsulenvBrowserBinding {
         Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates @($Program)
     } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates $Candidates
+    } elseif ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates @(
+            Get-CapsulenvActiveGenerationProgram -Requirement $Requirement -ActivationSnapshot $ActivationSnapshot
+        )
     } else {
         Get-CapsulenvProgramResolution -Requirement $Requirement -Candidates @(Get-CapsulenvActiveGenerationProgram -Requirement $Requirement)
     }
@@ -310,6 +315,7 @@ function Start-CapsulenvPortableBrowser {
         $Requirement,
         [object[]]$Candidates,
         $Program,
+        $ActivationSnapshot,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'required',
         [string]$SessionId
@@ -317,6 +323,16 @@ function Start-CapsulenvPortableBrowser {
 
     if (Test-CapsulenvBrowserProfileArgument -Arguments $Arguments) {
         throw 'Portable browser launch owns the profile argument; do not supply an unrelated profile path.'
+    }
+    if ($null -eq $Requirement) {
+        $Requirement = Get-CapsulenvBrowserProgramRequirement -App $App
+    }
+    if (-not $PSBoundParameters.ContainsKey('Program') -and -not $PSBoundParameters.ContainsKey('Candidates') -and -not $PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        $ensure = Ensure-CapsulenvProgramGeneration -Requirement $Requirement
+        if (-not $ensure.Succeeded -or $null -eq $ensure.Selected) {
+            throw "Browser program '$App' could not be acquired for activation."
+        }
+        $ActivationSnapshot = $ensure.ActivationSnapshot
     }
     $effectiveSessionId = $SessionId
     if ([string]::IsNullOrWhiteSpace($effectiveSessionId)) {
@@ -330,17 +346,29 @@ function Start-CapsulenvPortableBrowser {
     if ($null -ne $Requirement) { $parameters['Requirement'] = $Requirement }
     if ($PSBoundParameters.ContainsKey('Candidates')) { $parameters['Candidates'] = $Candidates }
     if ($PSBoundParameters.ContainsKey('Program')) { $parameters['Program'] = $Program }
+    if ($null -ne $ActivationSnapshot) { $parameters['ActivationSnapshot'] = $ActivationSnapshot }
     if (-not [string]::IsNullOrWhiteSpace($SessionId)) { $parameters['SessionId'] = $SessionId }
     $binding = Resolve-CapsulenvBrowserBinding @parameters
     if (-not $binding.Succeeded) {
         return $binding
     }
-    $launchArguments = @('-profile', $binding.ProfilePath) + @($Arguments | ForEach-Object { ConvertTo-CapsulenvProcessArgument -Argument $_ })
+    $launchArguments = @('-profile', (ConvertTo-CapsulenvProcessArgument -Argument $binding.ProfilePath)) + @($Arguments | ForEach-Object { ConvertTo-CapsulenvProcessArgument -Argument $_ })
+    $process = $null
+    $startIdentity = $null
+    $record = $null
     try {
-        $process = Start-Process -FilePath $binding.Program.Executable -WorkingDirectory (Split-Path -Parent $binding.Program.Executable) -ArgumentList $launchArguments -PassThru
+        $launch = Start-CapsulenvOwnedProcess `
+            -FilePath ([string]$binding.Program.Executable) `
+            -ArgumentList $launchArguments `
+            -WorkingDirectory (Split-Path -Parent ([string]$binding.Program.Executable)) `
+            -SessionId $effectiveSessionId `
+            -Role browser `
+            -Provenance ([string]$binding.Program.Provenance) `
+            -HeldLeases @($binding.Lease.LeaseId)
+        $process = $launch.Process
+        $startIdentity = $launch.ProcessStartIdentity
+        $record = $launch.ProcessRecord
         $binding | Add-Member -NotePropertyName Process -NotePropertyValue $process -Force
-        $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $process.Id
-        $record = Register-CapsulenvOwnedProcessRecord -SessionId $effectiveSessionId -ProcessId $process.Id -Role browser -ProcessStartIdentity $startIdentity -Provenance ([string]$binding.Program.Provenance) -HeldLeases @($binding.Lease.LeaseId)
         $watcher = Register-CapsulenvBrowserLeaseWatcher -Process $process -Lease $binding.Lease -SessionId $effectiveSessionId
         return [pscustomobject][ordered]@{
             Succeeded = $true
@@ -351,9 +379,8 @@ function Start-CapsulenvPortableBrowser {
         }
     } catch {
         try {
-            if ($null -ne $process -and $null -ne $process.Id -and
-                (Get-CapsulenvProcessStartIdentity -ProcessId ([int]$process.Id) -ErrorAction SilentlyContinue) -eq $startIdentity) {
-                Stop-Process -Id ([int]$process.Id) -Force -ErrorAction SilentlyContinue
+            if ($null -ne $record) {
+                [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record)
             }
         } finally {
             [void](Release-CapsulenvStateLease -Lease $binding.Lease)

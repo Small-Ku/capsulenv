@@ -841,12 +841,14 @@ function Ensure-CapsulenvProgramGeneration {
     $active = Get-CapsulenvActiveGeneration
     if ($null -ne $active) {
         try {
-            $selected = Get-CapsulenvActiveGenerationProgram -Requirement $Requirement -ActivationSnapshot (New-CapsulenvActivationSnapshot -ActiveGeneration $active)
+            $snapshot = New-CapsulenvActivationSnapshot -ActiveGeneration $active
+            $selected = Get-CapsulenvActiveGenerationProgram -Requirement $Requirement -ActivationSnapshot $snapshot
             return [pscustomobject][ordered]@{
                 Succeeded = $true
                 Stage = 'existing-active-generation'
                 Selected = $selected
                 Generation = $active.Generation
+                ActivationSnapshot = $snapshot
             }
         } catch {}
     }
@@ -884,11 +886,13 @@ function Ensure-CapsulenvProgramGeneration {
     }
     $generation = Publish-CapsulenvGeneration -Realizations $realizations.ToArray()
     [void](Set-CapsulenvActiveGenerationAuthority -GenerationId ([string]$generation.GenerationId))
+    $snapshot = New-CapsulenvActivationSnapshot -ActiveGeneration (Get-CapsulenvActiveGeneration)
     return [pscustomobject][ordered]@{
         Succeeded = $true
         Stage = $resolved.Stage
-        Selected = $resolved.Selected
+        Selected = Get-CapsulenvActiveGenerationProgram -Requirement $Requirement -ActivationSnapshot $snapshot
         Generation = $generation
+        ActivationSnapshot = $snapshot
     }
 }
 
