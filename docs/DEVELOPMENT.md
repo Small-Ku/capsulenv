@@ -106,7 +106,7 @@ Do not mutate real host Git configs, Windows services, browser profiles, or Scoo
 
 Update the dispatcher, `Show-CapsulenvHelp`, and focused action help together. Add regression coverage through the launcher argument path. For formatting rules, see [CLI-UX](CLI-UX.md).
 
-Runtime commands must resolve applications using installed app resolvers. For resolver rules, see [ARCHITECTURE](ARCHITECTURE.md#provisioning-and-runtime-separation). Before introducing persistent host changes, define ownership evidence and rollback methods.
+Runtime commands must resolve applications using installed app resolvers. For resolver rules, see [ARCHITECTURE](ARCHITECTURE.md#installed-selector-and-runtime-separation). Before introducing persistent host changes, define ownership evidence and rollback methods.
 
 ## Configuration changes
 

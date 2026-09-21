@@ -125,6 +125,8 @@ Run `capsulenv app list` to inspect installed apps and shortcuts.
 
 When you omit a prefix, the resolver prefers Capsulenv packages. When identical package names exist in both Scoop roots, specify the Scoop scope.
 
+An installed selector is the runtime identity used by app, browser, tool, and integration commands. Do not use a physical `current` path, a bucket path, or a projection path as a substitute for an installed selector.
+
 Launch an app or a named shortcut:
 
 ```powershell
@@ -138,7 +140,7 @@ Execute a manifest binary with arguments:
 capsulenv app exec capsule/<app> <bin> -- <arguments>
 ```
 
-For general external commands, run `capsulenv run <command> <arguments>`. For selector resolution rules, see [ARCHITECTURE](ARCHITECTURE.md#provisioning-and-runtime-separation).
+For general external commands, run `capsulenv run <command> <arguments>`. For selector resolution rules, see [ARCHITECTURE](ARCHITECTURE.md#installed-selector-and-runtime-separation).
 
 ## Configuration
 
@@ -167,7 +169,11 @@ capsulenv browser capsule/librewolf
 capsulenv browser scoop/firefox
 ```
 
-Add `--host` only when you need to borrow the host executable of the same product. The browser still uses the capsule profile.
+Use the installed selector for the browser you intend to run. Host executable
+discovery, when supported by the selected provider, follows the same normal
+program-resolution contract; do not add a separate host path or rely on a
+legacy host-executable override. The browser profile remains the profile
+owned by the selected application binding.
 
 To register a capsule browser as a candidate default browser in Windows, configure:
 
@@ -226,7 +232,7 @@ capsulenv routine run OnEnter Network
 
 Add `--force` only when you need to bypass the minimum execution interval. Child processes inherit `CAPSULENV_ROOT` and `CAPSULENV_LAUNCHER`. External orchestrators manage schedules and retry policies.
 
-## Tool storage
+## Tool state and project cache
 
 Initialize and inspect tool storage paths:
 
@@ -236,6 +242,11 @@ capsulenv cache paths
 ```
 
 Preserve `tool-data/` across backups; it contains toolchains, global state, and credentials. Before cleaning `cache/`, verify that tools do not treat it as an active dependency store. For path classifications, see [TOOLS](TOOLS.md#storage-classes).
+
+`ToolStorage` in the default configuration is a compatibility adapter for
+mapping tool-native state and cache variables. It does not select installed
+program providers or replace the runtime authority of installed selectors,
+generations, and sessions.
 
 Link a Rust project's `target/` directory to registered cache storage:
 
@@ -300,7 +311,7 @@ To rerun full relocation repair explicitly, run `capsulenv rehydrate`.
 | uv or Pixi relocation repair failed | Preview via `capsulenv tools repair all --last --dry-run` |
 | Retry tool relocation repair | `capsulenv tools repair all --last --strict` |
 
-`capsulenv reset` repairs projections only. If diagnostics show ambiguous active versions or diverged data, inspect versions and files first. Repair via upstream Scoop or reinstall as guided by `doctor`. Do not delete `.capsulenv/` to clear warnings. For projection repair rules, see [ARCHITECTURE](ARCHITECTURE.md#relocation-and-explicit-projection-repair).
+`capsulenv reset` repairs projections only. If diagnostics show ambiguous active versions or diverged data, inspect versions and files first. Repair via upstream Scoop or reinstall as guided by `doctor`. Do not delete `.capsulenv/` to clear warnings. For projection repair rules, see [ARCHITECTURE](ARCHITECTURE.md#bounded-legacy-projection-adapter).
 
 Pixi global sync may re-resolve version ranges. Run `tools repair pixi --last --include-global` only when you accept re-resolution. For failure and retry rules, see [TOOLS](TOOLS.md#failure-and-retry).
 

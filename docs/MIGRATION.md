@@ -19,7 +19,7 @@ capsulenv.cmd restore-user
 
 `enable-user` remains a compatibility alias, but new scripts and documentation should use `install-user`.
 
-Do not assume scripts will run `scoop reset *` or replay `pre_install`/`post_install` during relocation. Starting in v0.17, Capsulenv no longer executes manifest lifecycle replays; explicit PortableSafe relocation repair only touches Capsulenv-owned projections, and legacy Scoop state receives only bounded `current`/`persist` repair. When you need arbitrary lifecycle execution, run upstream Scoop explicitly. See [ARCHITECTURE](ARCHITECTURE.md#relocation-and-explicit-projection-repair).
+Do not assume scripts will run `scoop reset *` or replay `pre_install`/`post_install` during relocation. Starting in v0.17, Capsulenv no longer executes manifest lifecycle replays; explicit PortableSafe relocation repair only touches Capsulenv-owned projections, and legacy Scoop state receives only bounded `current`/`persist` repair. When you need arbitrary lifecycle execution, run upstream Scoop explicitly. See [ARCHITECTURE](ARCHITECTURE.md#bounded-legacy-projection-adapter).
 
 ## Migrating from the v0.1.x parallel `data/` model
 
@@ -259,4 +259,4 @@ Capsulenv separates package providers from Scoop's provider-local root scopes:
 - Existing `user/<app>` and `global/<app>` references remain accepted as compatibility aliases.
 - When identical app names exist in both Scoop roots, use `scoop:user/<app>` or `scoop:global/<app>` for disambiguation.
 
-For selector resolution rules, see [ARCHITECTURE](ARCHITECTURE.md#provisioning-and-runtime-separation). For usage syntax, see [USAGE](USAGE.md#installed-apps).
+For selector resolution rules, see [ARCHITECTURE](ARCHITECTURE.md#installed-selector-and-runtime-separation). For usage syntax, see [USAGE](USAGE.md#installed-apps).

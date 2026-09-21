@@ -90,9 +90,12 @@
     }
 
 
-    # Explicit tool State scopes. The historical section name is retained for
-    # configuration compatibility; tool receipts, project registries, and
-    # repair commands remain the authority for each state class.
+    # Explicit tool State scopes: this section is a narrow compatibility
+    # adapter for tool State and cache scopes.
+    # The historical section name is retained for configuration compatibility;
+    # this section is not authority for providers, installed selectors,
+    # generations, sessions, or host integration. Tool receipts, project
+    # registries, and repair commands remain authoritative for each state class.
     ToolStorage = @{
         Enabled = $true
         CreateDirectories = $true

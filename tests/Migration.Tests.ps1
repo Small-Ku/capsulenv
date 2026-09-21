@@ -35,6 +35,29 @@ Describe 'Capsulenv explicit migration and legacy isolation' {
         $usage | Should -Match 'OnRehydrate.*explicitly requested'
     }
 
+    It 'enforces the normative selector and state architecture over derived projections' {
+        $architecture = Get-Content -LiteralPath (Join-Path $script:Root 'docs/ARCHITECTURE.md') -Raw
+        $usage = Get-Content -LiteralPath (Join-Path $script:Root 'docs/USAGE.md') -Raw
+        $configuration = Get-Content -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Raw
+
+        $contractMatch = [regex]::Match($architecture, '(?ms)<!--\s*CAPSULENV-AUTHORITY-CONTRACT(?<body>.*?)-->')
+        $contractMatch.Success | Should -BeTrue
+        $contract = $contractMatch.Groups['body'].Value
+        $contract | Should -Match '(?i)primary:.*provider-neutral-selector.*installed-state.*generation.*session.*host-integration'
+        $contract | Should -Match '(?i)derived:.*package-projection.*shortcut-projection.*legacy-relocation-repair'
+
+        $headings = @([regex]::Matches($architecture, '(?m)^##\s+(.+?)\s*$') | ForEach-Object { $_.Groups[1].Value })
+        $headings[0] | Should -Be 'Normative runtime authority'
+        $authorityIndex = [Array]::IndexOf($headings, 'Normative runtime authority')
+        $legacyIndex = [Array]::IndexOf($headings, 'Bounded legacy projection adapter')
+        $legacyIndex | Should -BeGreaterThan $authorityIndex
+        $architecture | Should -Match '(?i)generation\s*->\s*session\s*->\s*process plan'
+        $architecture | Should -Match '(?i)removable launcher is never persisted as the.*TargetPath'
+        $usage | Should -Match '(?i)installed selector.*runtime identity'
+        $usage | Should -Not -Match '(?i)Add `--host` only'
+        $configuration | Should -Match '(?i)adapter.*tool State.*cache scopes'
+    }
+
     It 'covers every detectable legacy kind with a handler or explicit remediation' {
         $coverage = & $script:Module {
             $inventory = [pscustomobject]@{
