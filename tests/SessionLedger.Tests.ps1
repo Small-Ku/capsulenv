@@ -22,19 +22,19 @@ Describe 'Capsulenv session ledger and state leases' {
                 param($CapsuleRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 $session = Initialize-CapsulenvSession -Role test -Provenance test
+                $initialRecords = @($session.ProcessRecords)
                 [void](Register-CapsulenvProcessRecord -SessionId $session.SessionId -ProcessId $PID -Role attached -Ownership attached -Provenance foreign)
                 [void](Register-CapsulenvProcessRecord -SessionId $session.SessionId -ProcessId $PID -Role foreign -Ownership foreign -Provenance foreign)
                 $owned = @(Get-CapsulenvOwnedProcessRecords -SessionId $session.SessionId)
                 [pscustomobject]@{
                     SessionId = $session.SessionId
+                    InitialRecordCount = $initialRecords.Count
                     OwnedCount = $owned.Count
-                    OwnedIdentity = $owned[0].ProcessStartIdentity
-                    CurrentIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $PID
                 }
             } $temporaryRoot
 
-            $result.OwnedCount | Should -Be 1
-            $result.OwnedIdentity | Should -Be $result.CurrentIdentity
+            $result.InitialRecordCount | Should -Be 0
+            $result.OwnedCount | Should -Be 0
         } finally {
             if ($null -eq $oldStateRoot) {
                 Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
@@ -293,7 +293,14 @@ Describe 'Capsulenv session ledger and state leases' {
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 Initialize-CapsulenvSession -Role test -Provenance test
             } $temporaryRoot
-            $canonical = @($session.ProcessRecords)[0]
+            $childExecutable = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+            $childProcess = Start-Process -FilePath $childExecutable -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 30') -PassThru
+            try {
+                $childSession = & $script:Module {
+                    param($ProcessId, $ProcessStartIdentity)
+                    Initialize-CapsulenvOwnedChildSession -ProcessId $ProcessId -ProcessStartIdentity $ProcessStartIdentity -Role test-child -Provenance test
+                } ([int]$childProcess.Id) (& $script:Module { param($ProcessId) Get-CapsulenvProcessStartIdentity -ProcessId $ProcessId } ([int]$childProcess.Id))
+                $canonical = @($childSession.ProcessRecords)[0]
             $forged = [pscustomobject]@{
                 SessionId = $canonical.SessionId
                 ProcessNonce = 'forged-process-nonce'
@@ -302,14 +309,18 @@ Describe 'Capsulenv session ledger and state leases' {
                 ProcessStartIdentity = $canonical.ProcessStartIdentity
             }
 
-            Mock Stop-Process {} -ModuleName Capsulenv
-            $rejected = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $forged
-            $rejected.Stopped | Should -BeFalse
-            Should -Invoke Stop-Process -ModuleName Capsulenv -Times 0
+                Mock Stop-Process {} -ModuleName Capsulenv
+                $rejected = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $forged
+                $rejected.Stopped | Should -BeFalse
+                Should -Invoke Stop-Process -ModuleName Capsulenv -Times 0
 
-            $accepted = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $canonical
-            $accepted.Stopped | Should -BeTrue
-            Should -Invoke Stop-Process -ModuleName Capsulenv -Times 1
+                $accepted = Stop-CapsulenvOwnedProcessRecord -ProcessRecord $canonical
+                $accepted.Stopped | Should -BeTrue
+                Should -Invoke Stop-Process -ModuleName Capsulenv -Times 1
+            } finally {
+                Stop-Process -Id ([int]$childProcess.Id) -Force -ErrorAction SilentlyContinue
+                $childProcess.Dispose()
+            }
         } finally {
             if ($null -eq $oldStateRoot) {
                 Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
