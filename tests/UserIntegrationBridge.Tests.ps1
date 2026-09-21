@@ -205,3 +205,4 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
         }
     }
 }
+

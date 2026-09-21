@@ -87,6 +87,7 @@ function Invoke-CapsulenvDoctor {
         -Detail $scratchPath))
 
     $toolStoragePlan = Get-CapsulenvToolStoragePlan
+    $toolStorageReady = Test-CapsulenvToolStorageReady -Plan $toolStoragePlan
     $toolPathValues = @($toolStoragePlan.Directories)
     $missingToolDirectories = @($toolPathValues | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Container) })
     $missingToolFiles = @($toolStoragePlan.Files | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
@@ -99,6 +100,11 @@ function Invoke-CapsulenvDoctor {
         } else {
             "$($toolStoragePlan.Locations.Count) location(s); $($missingToolDirectories.Count) directorie(s) and $($missingToolFiles.Count) config file(s) will be created on first session/cache init"
         })))
+    $results.Add((New-CapsulenvCheckResult `
+        -Name 'Portable tool storage readiness' `
+        -Passed $toolStorageReady `
+        -Importance Optional `
+        -Detail ("ReadyMarker={0}; missing directories={1}; missing files={2}" -f $toolStorageReady, $missingToolDirectories.Count, $missingToolFiles.Count)))
 
     $environmentPlan = Get-CapsulenvEnvironmentPlan
     $moduleRoots = @($environmentPlan.ModulePathEntries)
@@ -366,7 +372,6 @@ function Initialize-CapsulenvIntegrations {
         try {
             $serviceRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed', 'provider')
             $servicePlacement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
-            $serviceProbes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $sessionServiceConfigPath
             $serviceDefinition = New-CapsulenvSessionServiceDefinition `
                 -Name 'sing-box' `
                 -Requirement $serviceRequirement `

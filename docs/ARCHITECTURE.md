@@ -2,6 +2,48 @@
 
 This page defines runtime ownership, trust levels, and relocation repair rules. For operational instructions, see [USAGE](USAGE.md). For packaging and deployment mechanics, see [DEPLOYMENT](DEPLOYMENT.md).
 
+<!--
+CAPSULENV-AUTHORITY-CONTRACT
+primary: provider-neutral-selector, installed-state, generation, session, host-integration
+derived: package-projection, shortcut-projection, legacy-relocation-repair
+-->
+
+## Normative runtime authority
+
+Capsulenv's runtime model is ordered around installed application identity and
+state authority, not around the physical directory tree. A program requirement
+is resolved to a provider-neutral installed selector (`capsule/<app>` or
+`scoop/<app>`; use `scoop:user/<app>` or `scoop:global/<app>` only when a Scoop
+scope is ambiguous). The resolver validates the installed metadata and chooses
+the provider that owns the selected executable.
+
+The resulting installed state is published into a generation. A session then
+activates that generation and creates process-local effects. Persistent User
+integration is a separate, host-scoped authority with its own enrollment,
+backup, and restore evidence:
+
+```text
+program requirement
+        |
+        v
+provider-neutral installed selector
+        |
+        v
+installed metadata and provider authority
+        |
+        v
+generation -> session -> process plan
+        |
+        +--> optional host-scoped User integration
+```
+
+Shims, `current` links, persist links, Start Menu entries, and other physical
+projections are derived outputs of that authority. They may be rebuilt or
+repaired only under the owning contract; they do not select a provider, create
+a generation, or prove ownership by themselves. The bounded legacy adapter is
+documented below for migration and explicit repair, but it is not the primary
+runtime model.
+
 ## Terms
 
 | Term | Definition in this specification |
@@ -10,14 +52,17 @@ This page defines runtime ownership, trust levels, and relocation repair rules. 
 | host | The computer and Windows user environment currently running the capsule |
 | ownership | Proven authorization to modify and revert state based on verifiable evidence |
 | provider | Installed package source and runtime owner: Capsulenv or upstream Scoop |
-| projection | Derived links, shims, or environment variables constructed from installed state |
-| rehydrate | Reconstructing runtime projections after relocation based on installed evidence |
+| projection | A derived link, shim, environment variable, or host entry constructed from authoritative installed state |
+| rehydrate | Explicitly requested reconstruction of runtime projections after relocation based on installed evidence |
 | fail closed | Halting mutation when an operation cannot be proven compliant with invariants |
 | DAG | Directed Acyclic Graph |
 
-## Core ownership rule
+## Provisioning and trust boundary
 
-Scoop buckets and manifests provide package metadata. Capsulenv classifies the complete package dependency graph before choosing an execution strategy.
+Scoop buckets and manifests provide package metadata for provisioning. Capsulenv
+classifies the complete package dependency graph before choosing an execution
+strategy; the resulting installed selector and metadata, not the bucket path,
+remain runtime authority.
 
 ```text
 Scoop buckets / manifests
@@ -29,14 +74,13 @@ Capsulenv package planner
     |                        |
     v                        v
 PortableSafe             non-PortableSafe
-Capsulenv executor       explicit upstream Scoop
+Capsulenv acquisition    explicit upstream Scoop
     |                        |
     +-----------+------------+
                 v
-       installed runtime state
+       installed selector/state
                 |
-     ProcessPlan / app resolver
-     shims / persist / HostIntegration
+     generation / session / process plan
 ```
 
 Capsulenv owns files and state for PortableSafe packages. Upstream Scoop owns package operations executed directly or delegated explicitly.
@@ -54,7 +98,12 @@ Direct `scoop ...` invocations retain unmodified upstream semantics. Capsulenv m
 
 Trust levels operate independently of ShellOnly and User session modes. User mode never converts third-party scripts into PortableSafe guarantees. ShellOnly mode never constrains direct user-initiated upstream Scoop execution.
 
-## Runtime layout
+## Runtime layout and derived projections
+
+The following paths are implementation locations for authoritative state or its
+derived outputs. Their presence is not itself a provider or ownership claim;
+the installed records, generation metadata, session ledger, and host ledger
+remain authoritative.
 
 | Path | Ownership and preservation policy |
 |---|---|
@@ -67,7 +116,7 @@ Trust levels operate independently of ShellOnly and User session modes. User mod
 | `scoop/` | Upstream Scoop core, buckets, packages, and persist storage |
 | `scoop-global/` | Optional capsule-local Scoop `-g` root |
 | `PowerShell/Modules/` | User private PowerShell modules |
-| `tool-data/`, `cache/`, `project-cache/` | Classified storage; rules defined in [TOOLS](TOOLS.md#storage-classes) |
+| `tool-data/`, `cache/`, `project-cache/` | Explicit tool State and cache scopes; rules defined in [TOOLS](TOOLS.md#storage-classes) |
 | `workspace/` | User source repositories and working files |
 | `.capsulenv/` | Identity, package states, link registries, and integration backups |
 
@@ -80,6 +129,10 @@ Scoop's global scope is a provider-local storage option. It does not represent m
 The planner inspects the manifest, architecture, and complete dependency graph before mutation. Every node classifies as `PortableSafe`, `TrustedScript`, `ExternalInstaller`, or `Unsupported`.
 
 The safe executor runs only when all nodes in the closure classify as PortableSafe. All other plans report `TrustedExecutionRequired`.
+
+`PortableSafe` is an acquisition and execution trust boundary. It does not
+replace the provider-neutral selector, installed metadata, generation, or
+session authority defined above.
 
 | Manifest property | Capsulenv semantics |
 |---|---|
@@ -112,15 +165,21 @@ Upstream update review constructs the old graph from installed manifests and the
 
 If historical dependency data is missing, removed-node and removed-edge evaluations are marked conservative. Missing evidence is never treated as a safe no-op. For CLI presentation, see [CLI-UX](CLI-UX.md#trusted-package-review).
 
-## Provisioning and runtime separation
+## Installed selector and runtime separation
 
-Runtime consumers resolve installed application metadata and projections. Bucket manifests govern provisioning only; they never override installed execution rules.
+Runtime consumers resolve installed application selectors and authoritative
+metadata. Bucket manifests govern provisioning only; they never override
+installed execution rules. Projections are materialized after selection and
+are never used as a substitute for installed identity.
 
 `capsule/<app>` selects Capsulenv-owned packages; `scoop/<app>` selects Scoop packages. When identical package names exist in both Scoop roots, disambiguate with `scoop:user/` or `scoop:global/`.
 
 When prefixes are omitted, the resolver prefers Capsulenv packages. Legacy `user/` and `global/` aliases normalize to Scoop scopes. Browsers, Bitwarden, tools, and app commands share this resolver.
 
-PortableSafe version trees retain `manifest.json` and `install.json` for runtime parsers. Capsulenv JSON state records provider identity, source fingerprints, and installed metadata fingerprints.
+Capsulenv-owned package payloads may retain `manifest.json` and `install.json`
+for package parsers. Capsulenv JSON state records provider identity, source
+fingerprints, and installed metadata fingerprints; those records are the
+runtime authority even when a projection has not yet been rebuilt.
 
 Runtime resolvers verify directory roots and metadata identities. If state drifts, cached ownership assumptions are invalidated.
 
@@ -153,8 +212,8 @@ Callbacks reading `Context.Outputs['producer']` must declare an explicit `Depend
 | API or execution path | Diagnostic behavior |
 |---|---|
 | `Get-CapsulenvDesiredStatePlan` | Omitted by default; enable via `-IncludeDiagnostics` |
-| Public `Get-CapsulenvScoopRehydratePlan` | Included by default for plan inspection |
-| `Invoke-*` in activation, rehydrate, and package install | Diagnostics disabled |
+| Public `Get-CapsulenvScoopRehydratePlan` | Included for explicit repair-plan inspection |
+| `Invoke-*` in activation, explicit rehydrate, and package install | Diagnostics disabled |
 
 Static analysis enforces that conflict matrices and wave constructions reside within diagnostic guards. Changing diagnostic presentation must not affect scheduling correctness or concurrency.
 
@@ -184,21 +243,32 @@ The ledger records restore evidence; it does not select future session modes. If
 
 ## Start Menu HostIntegration
 
-PortableSafe shortcuts reside under:
+Capsulenv-owned shortcuts reside under:
 
 ```text
 Programs\Capsulenv Apps\<capsule-id-prefix>\PortableSafe\<package>\...
 ```
 
-The shortcut `.lnk` TargetPath points to `capsulenv.cmd`, passing arguments `app run capsule/<package> "<shortcut>"`.
+The shortcut `.lnk` TargetPath points to a persistent host-local PowerShell
+runner. Its arguments invoke the host-local package bridge with the capsule
+identity, `capsule/<package>` selector, and shortcut name. The bridge resolves
+the attached capsule through the host locator and invokes its `capsulenv.cmd`;
+the removable launcher is never persisted as the `.lnk` TargetPath or working
+directory.
 
-Windows shortcuts record absolute launcher paths. Therefore, User synchronization rebuilds the capsule-specific namespace upon relocation.
+Windows shortcuts record absolute host-runner paths. User synchronization
+rebuilds the capsule-specific namespace when declarations change, while the
+bridge keeps the entrypoint usable after capsule relocation.
 
 Capsulenv never modifies Scoop's `shortcut_folder` or foreign `Programs\Scoop Apps`. Shortcuts created by upstream Scoop remain managed by upstream Scoop.
 
-## Relocation projection repair
+## Bounded legacy projection adapter
 
-PortableSafe repair reconstructs `current` links, persist projections, shims, and User mode launcher shortcuts.
+This section is a compatibility adapter, not normative runtime authority.
+Explicit repair may reconstruct derived `current` links, persist projections,
+shims, and User-mode integration only after the installed state and ownership
+evidence have been verified. New runtime decisions must use the selector,
+generation, session, and host-ledger model above.
 
 Persisted files bearing reparse or hardlink identities verify as projections. Normal files created during drive copies replace targets only when source and destination SHA-256 hashes match. Diverged data halts repair and preserves files.
 
@@ -212,13 +282,13 @@ The legacy Scoop adapter reads installed metadata only. It never loads Scoop imp
 | External target, reparse version, multiple candidate versions, normal `current` folder | Halts modification |
 | Persisted file contents diverge | Halts modification |
 
-When automatic rehydration encounters ambiguous legacy ownership, it preserves the application, records stable diagnostic IDs and remediation guidance, and continues remaining projections and activation.
+When an explicit rehydrate encounters ambiguous legacy ownership, it preserves the application, records stable diagnostic IDs and remediation guidance, and continues remaining projections and activation.
 
 Locked applications postpone repair and retry on subsequent activation. Ambiguous ownership requires explicit intervention via `doctor`.
 
 Corrupted Capsulenv package projections fail immediately. Explicit `capsulenv reset` invocations maintain identical fail-closed invariants.
 
-### Rehydration readiness
+### Explicit rehydration readiness
 
 Generation fingerprints bind capsule identity, root paths, Scoop roots, host, and user. Each generation provides `.ready` and `.pending` markers:
 
@@ -241,9 +311,16 @@ ShellOnly mode prevents loading host CurrentUser profiles. Private modules are e
 
 ## Browser ownership
 
-The browser resolver identifies executables and profile storage from installed applications. `Browsers` configuration specifies Gecko profile relative paths, arguments, and executable overrides.
+The browser resolver identifies executables and profile storage from installed
+application selectors. `Browsers` configuration specifies Gecko profile
+relative paths, arguments, and narrowly scoped compatibility overrides.
 
-The `--host` switch allows borrowing a host executable of the identical product while using the capsule profile. Default browser registration represents HostIntegration backed by registry backups; Capsulenv does not forge Windows `UserChoice` hashes.
+Normal browser commands use the installed selector and the same provider
+resolution rules as other applications. A host executable override is a
+legacy compatibility surface, not a second provider model and not a reason to
+borrow an unrelated profile. Default browser registration represents
+HostIntegration backed by registry backups; Capsulenv does not forge Windows
+`UserChoice` hashes.
 
 ## Bitwarden SSH ownership
 
@@ -265,9 +342,14 @@ Child processes inherit `CAPSULENV_ROOT` and `CAPSULENV_LAUNCHER`. Orchestrators
 
 Weasel integration provides host input method backup and restore. Formal installation evidence, cold backup, and rollback mechanics are defined in [TOOLS](TOOLS.md#one-way-host-seeding).
 
-## Tool and project storage
+## Tool and project state adapter
 
-Tool storage classes, project cache links, and native repair mechanics are defined in [TOOLS](TOOLS.md). Persisted text repair allows only entries in `Scoop.RelocationRepairs`, prohibiting recursive scanning of unknown application directories.
+Tool storage classes, project cache links, and native repair mechanics are
+defined in [TOOLS](TOOLS.md). `ToolStorage` is a narrow routing configuration
+for tool state and caches; it is not authority for program providers,
+generations, sessions, or host integration. Persisted text repair allows only
+entries in `Scoop.RelocationRepairs`, prohibiting recursive scanning of
+unknown application directories.
 
 ## Static architecture gates
 

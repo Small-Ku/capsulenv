@@ -14,7 +14,10 @@
         Root = 'scoop'
         GlobalRoot = 'scoop-global'
         Cache = 'cache\scoop'
-        RehydrateOnRelocation = $true
+        # Relocation repair is explicit. This legacy compatibility switch is
+        # retained for schema compatibility but is disabled in the default
+        # configuration so activation never becomes a repair trigger.
+        RehydrateOnRelocation = $false
 
         # Fresh portable Scoop bootstrap. Git is preferred when available and
         # uses a shallow single-branch clone; archives keep first install
@@ -87,6 +90,12 @@
     }
 
 
+    # Explicit tool State scopes: this section is a narrow compatibility
+    # adapter for tool State and cache scopes.
+    # The historical section name is retained for configuration compatibility;
+    # this section is not authority for providers, installed selectors,
+    # generations, sessions, or host integration. Tool receipts, project
+    # registries, and repair commands remain authoritative for each state class.
     ToolStorage = @{
         Enabled = $true
         CreateDirectories = $true
@@ -233,7 +242,7 @@
     Routines = @{
         # Example = @{
         #     Enabled = $true
-        #     Trigger = @('OnEnter', 'OnRehydrate')
+        #     Trigger = @('OnEnter')
         #     Command = 'powershell.exe'
         #     Arguments = @('-NoLogo', '-NoProfile', '-Command', "Import-Module NyaModule -Force; Invoke-NyaJob -Name 'portable-sync'")
         #     MinimumIntervalSeconds = 300

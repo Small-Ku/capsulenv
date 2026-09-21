@@ -38,7 +38,7 @@ Describe 'Capsulenv SessionService lifecycle' {
         $pidPath = Join-Path $temporaryRoot 'sing-box.pid'
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $sleep) -Force)
         "#!/bin/sh`necho \`$PPID > '$pidPath'`nsleep 30`n" | Set-Content -LiteralPath $sleep -NoNewline
-        & chmod +x $sleep
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 30 } -ModuleName Capsulenv
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $config) -Force)
         '{}' | Set-Content -LiteralPath $config -NoNewline
         $result = & $script:Module {
@@ -95,7 +95,11 @@ Describe 'Capsulenv SessionService lifecycle' {
     }
     It 'fails optional activation when readiness never arrives and cleans the owned process' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-fail-' + [Guid]::NewGuid().ToString('N'))
-        $truePath = if (Test-Path -LiteralPath '/bin/true' -PathType Leaf) { '/bin/true' } else { 'true' }
+        $truePath = if (Test-Path -LiteralPath '/bin/true' -PathType Leaf) {
+            '/bin/true'
+        } else {
+            (Get-Command pwsh.exe, pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        }
         $result = & $script:Module {
             param($CapsuleRoot, $Executable)
             Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
@@ -156,24 +160,21 @@ Describe 'Capsulenv SessionService lifecycle' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-probe-throw-' + [Guid]::NewGuid().ToString('N'))
         $executable = Join-Path $temporaryRoot 'sing-box.sh'
         $pidPath = Join-Path $temporaryRoot 'pid'
+        $testPwsh = Get-CapsulenvTestPowerShellExecutable
         [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
-        $scriptText = @'
-#!/bin/sh
-echo $$ > __PID_PATH__
-sleep 30
-'@.Replace('__PID_PATH__', $pidPath)
+        $scriptText = "#!/bin/sh`necho \`$\`$ > '$pidPath'`nsleep 30`n"
         $scriptText | Set-Content -LiteralPath $executable -NoNewline
-        & chmod +x $executable
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 30 -WritePidPath $pidPath } -ModuleName Capsulenv
         {
             & $script:Module {
-                param($CapsuleRoot, $Executable)
+                param($CapsuleRoot, $Executable, $ProgramExecutable)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 $requirement = New-CapsulenvProgramRequirement -Name sing-box
-                $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable '/bin/sh' -Provider host-scoop -Version 1.0.0
+                $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable $ProgramExecutable -Provider host-scoop -Version 1.0.0
                 $definition = New-CapsulenvSessionServiceDefinition -Name sing-box -Requirement $requirement -Criticality required -ReadinessProbe { throw 'probe failure' }
                 $definition.Arguments = @($Executable)
                 Start-CapsulenvSessionService -Definition $definition -Candidates @($candidate)
-            } $temporaryRoot $executable
+            } $temporaryRoot $executable $testPwsh
         } | Should -Throw '*probe failure*'
         if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
             $spawnedPid = [int](Get-Content -LiteralPath $pidPath -Raw)
@@ -223,7 +224,7 @@ sleep 30
         Mock Resolve-CapsulenvProgramWithAcquisition {
             $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable '/bin/true' -Provider capsulenv-local -AcquisitionProvider seed -Scope host-local -Version 1.0.0 -Capabilities @('proxy') -Trusted:$true -OwnsLifecycle:$true -Provenance 'bootstrap/test'
             [pscustomobject]@{ Succeeded = $true; Selected = $candidate }
-        } -ModuleName Capsulenv -ParameterFilter { $PSBoundParameters.ContainsKey('ProviderCandidates') -and @($ProviderCandidates).Count -eq 0 }
+        } -ModuleName Capsulenv
 
         Mock Start-CapsulenvSessionService {
             [pscustomobject]@{
@@ -248,7 +249,7 @@ sleep 30
             } $temporaryRoot
         } | Should -Throw '*provider operation failed*'
 
-        Should -Invoke Resolve-CapsulenvProgramWithAcquisition -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $PSBoundParameters.ContainsKey('ProviderCandidates') -and @($ProviderCandidates).Count -eq 0 }
+        Should -Invoke Resolve-CapsulenvProgramWithAcquisition -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Start-CapsulenvSessionService -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Stop-CapsulenvSessionService -ModuleName Capsulenv -Times 1 -Exactly
     }

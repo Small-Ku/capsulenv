@@ -27,9 +27,10 @@ Describe 'Capsulenv host-local PowerShell binding' {
         $binding.Succeeded | Should -BeTrue
         $binding.Program.Provider | Should -Be 'host-scoop'
         $binding.ControlPlaneFallback | Should -BeFalse
-        $binding.ProfilePath | Should -BeLike "$temporaryRoot/state/portable/powershell/*"
-        $binding.HistoryPath | Should -BeLike "$temporaryRoot/state/portable/powershell/history/*"
-        $binding.PSModulePath.Split([System.IO.Path]::PathSeparator)[0] | Should -BeLike '*state/portable/powershell/modules'
+        $portableRootPattern = ([System.IO.Path]::GetFullPath($temporaryRoot).Replace('\', '/') + '/state/portable/powershell/*')
+        $binding.ProfilePath.Replace('\', '/') | Should -BeLike $portableRootPattern
+        $binding.HistoryPath.Replace('\', '/') | Should -BeLike ($portableRootPattern.TrimEnd('*') + 'history/*')
+        $binding.PSModulePath.Split([System.IO.Path]::PathSeparator)[0].Replace('\', '/') | Should -BeLike '*state/portable/powershell/modules'
         $binding.PSModulePath | Should -Match '/trusted/modules'
     }
 
@@ -122,13 +123,17 @@ Describe 'Capsulenv host-local PowerShell binding' {
         $oldModulePath = $env:PSModulePath
         try {
             $env:PSModulePath = [System.IO.Path]::PathSeparator -join @('/untrusted/inherited', '/trusted/inherited')
+            $pwshExecutable = Join-Path $PSHOME 'pwsh.exe'
+            if (-not (Test-Path -LiteralPath $pwshExecutable -PathType Leaf)) {
+                $pwshExecutable = Join-Path $PSHOME 'pwsh'
+            }
             $binding = & $script:Module {
-                param($CapsuleRoot)
+                param($CapsuleRoot, $Executable)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 $requirement = (Get-CapsulenvInteractivePowerShellRequirement -MinimumVersion 7.0.0).Requirement
-                $candidate = New-CapsulenvProgramCandidate -Name pwsh -Executable (Join-Path $PSHOME 'pwsh') -Provider host-scoop -Version 7.5.0 -Capabilities @('interactive')
+                $candidate = New-CapsulenvProgramCandidate -Name pwsh -Executable $Executable -Provider host-scoop -Version 7.5.0 -Capabilities @('interactive')
                 Resolve-CapsulenvPowerShellBinding -Requirement $requirement -Candidates @($candidate) -TrustedHostModulePaths @('/trusted/inherited')
-            } $temporaryRoot
+            } $temporaryRoot $pwshExecutable
             $binding.PSModulePath | Should -Match '/trusted/inherited'
             $binding.PSModulePath | Should -Not -Match '/untrusted/inherited'
         } finally {

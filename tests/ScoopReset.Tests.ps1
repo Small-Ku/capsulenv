@@ -236,13 +236,21 @@ Describe 'Capsulenv package projection repair boundary' {
     }
 
     It 'bypasses the relocation graph entirely when relocation rehydration is disabled' {
-        Mock Initialize-CapsulenvScoopBootstrap {} -ModuleName Capsulenv
-        Mock Get-CapsulenvConfiguration { [pscustomobject]@{ Scoop=[pscustomobject]@{ RehydrateOnRelocation=$false } } } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvHostPlacement {} -ModuleName Capsulenv
+        Mock Get-CapsulenvIdentity { 'scoop-reset-test' } -ModuleName Capsulenv
+        Mock Get-CapsulenvContext { [pscustomobject]@{ Root = 'C:\capsulenv-test' } } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvSession { [pscustomobject]@{ SessionId = 'scoop-reset-session' } } -ModuleName Capsulenv
+        Mock New-CapsulenvActivationSnapshot { [pscustomobject]@{} } -ModuleName Capsulenv
+        Mock Get-CapsulenvConfiguration {
+            [pscustomobject]@{
+                Scoop = [pscustomobject]@{ RehydrateOnRelocation = $false }
+                Bitwarden = [pscustomobject]@{ Enabled = $false }
+            }
+        } -ModuleName Capsulenv
         Mock Invoke-CapsulenvIntegrationDesiredState { throw 'disabled relocation rehydration must not enter graph dispatch' } -ModuleName Capsulenv
         Mock Get-CapsulenvIntegrationDesiredStatePlan { throw 'disabled relocation rehydration must not build a graph' } -ModuleName Capsulenv
         Mock Invoke-CapsulenvDesiredStatePlan { throw 'disabled relocation rehydration must not execute a graph' } -ModuleName Capsulenv
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{ IntegrationMode='User' } } -ModuleName Capsulenv
-        Mock Initialize-CapsulenvBitwarden {} -ModuleName Capsulenv
 
         & $script:Module { Initialize-CapsulenvIntegrations -IntegrationMode User }
 

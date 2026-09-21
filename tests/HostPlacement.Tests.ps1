@@ -228,6 +228,7 @@ Describe 'Capsulenv host identity and placement foundation' {
         $source = Get-Content -LiteralPath (Join-Path $script:Root 'src/07-HostPlacement.ps1') -Raw
         $source | Should -Match '\$rawLastBoot -is \[DateTime\]'
         Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+        Mock Get-CimInstance { throw 'CIM boot evidence unavailable for this fixture.' } -ModuleName Capsulenv
         & $script:Module { $script:CapsulenvUnavailableBootEpoch = $null }
         $fallback = & $script:Module {
             [pscustomobject]@{

@@ -38,7 +38,7 @@
         # to reconcile a portable job when the capsule becomes active.
         # Network = @{
         #     Enabled = $true
-        #     Trigger = @('OnEnter', 'OnRehydrate')
+        #     Trigger = @('OnEnter')
         #     Command = 'powershell.exe'
         #     Arguments = @('-NoLogo', '-NoProfile', '-Command', "Import-Module NyaModule -Force; Invoke-NyaJob -Name 'portable-network'")
         #     MinimumIntervalSeconds = 60

@@ -86,6 +86,7 @@ Describe 'Capsulenv portable workflow contracts' {
             '{"version":"2.0.0"}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/buckets/main/bucket/git.json') -Encoding UTF8
             'cache' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'cache/scoop/test.cache') -Encoding UTF8
 
+            Mock Test-CapsulenvCurrentUserIntegrationOwnership { $true } -ModuleName Capsulenv
             & $script:Module {
                 param($CapsuleRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
@@ -170,6 +171,7 @@ Describe 'Capsulenv portable workflow contracts' {
     It 'keeps lifecycle cleanup and desired-state repair authority bounded' {
         $lifecycleSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/72-Lifecycle.ps1') -Raw
         $doctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
+        $integrationSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/40-Scoop.ps1') -Raw
 
         $lifecycleSource | Should -Match 'Get-CapsulenvDirtyRepositories'
         $lifecycleSource | Should -Match 'Stop-CapsulenvOwnedProcesses'
@@ -177,40 +179,48 @@ Describe 'Capsulenv portable workflow contracts' {
         $lifecycleSource | Should -Match "'download', '--no-update-scoop'"
         $lifecycleSource | Should -Not -Match "arguments \+= '-g'"
         $lifecycleSource | Should -Not -Match 'Restore-CapsulenvUserEnvironment\s*(-|\()'
-        $doctorSource | Should -Match 'Invoke-CapsulenvIntegrationDesiredState'
+        $integrationSource | Should -Match 'Invoke-CapsulenvIntegrationDesiredState'
         $doctorSource | Should -Not -Match 'Repair-CapsulenvPackageProjections\s*(?:$|\r?\n)'
         $doctorSource | Should -Not -Match 'Repair-CapsulenvProjectCacheLinks\s+-Quiet'
     }
 
-    It 'synchronizes configured persistent browser integration on ordinary User shell activation only once' {
+    It 'does not synchronize removable default-browser integration during shell activation' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration { [pscustomobject]@{ Succeeded = $true; ActivationSnapshot = [pscustomobject]@{} } } -ModuleName Capsulenv
+        Mock New-CapsulenvActivationSnapshot { [pscustomobject]@{} } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram {
+            New-CapsulenvProgramCandidate -Name pwsh -Executable (Join-Path $PSHOME 'pwsh') -Provider capsulenv-local -Version 7.6.5 -Capabilities @('interactive')
+        } -ModuleName Capsulenv
         Mock Sync-CapsulenvConfiguredDefaultBrowser {} -ModuleName Capsulenv
         Mock Get-CapsulenvInteractivePowerShellExecutable { 'ignored-shell' } -ModuleName Capsulenv
-        Mock Get-CapsulenvPowerShellChildLaunchPlan {
+        Mock Resolve-CapsulenvPowerShellBinding {
             [pscustomobject][ordered]@{
-                PSTypeName = 'Capsulenv.ProcessPlan'
-                Executable = 'Write-Output'
-                Arguments = @('capsulenv-child')
-                WorkingDirectory = $null
+                Succeeded = $true
+                Program = [pscustomobject]@{ Executable = (Join-Path $PSHOME 'pwsh') }
+                LaunchArguments = @('-NoLogo', '-NoProfile', '-NoExit', '-Command', 'Write-Output capsulenv-child')
+                BootstrapCommand = 'Write-Output capsulenv-child'
+                ProfilePath = $null
+                HistoryPath = $null
+                PSModulePath = $null
                 Environment = [ordered]@{}
-                PathEntries = @()
-                ExecutionMode = 'Passthrough'
-                Metadata = [ordered]@{}
+                BootstrapPath = $null
             }
         } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvOwnedProcessPlan {} -ModuleName Capsulenv
+        Mock Stop-CapsulenvActiveSessionServices {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
 
         & $script:Module { Invoke-CapsulenvChildShell -SkipUserIntegrationSync } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
 
         Mock Get-CapsulenvInstallMode { 'ShellOnly' } -ModuleName Capsulenv
         & $script:Module { Invoke-CapsulenvChildShell } | Out-Null
-        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Sync-CapsulenvConfiguredDefaultBrowser -ModuleName Capsulenv -Times 0 -Exactly
     }
 
     It 'blocks eject while capsule-owned processes remain' {

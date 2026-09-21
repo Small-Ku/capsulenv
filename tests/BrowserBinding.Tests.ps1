@@ -187,7 +187,7 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         $executable = Join-Path $temporaryRoot 'host/browser.sh'
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
         "#!/bin/sh`nsleep 1`n" | Set-Content -LiteralPath $executable -NoNewline
-        & chmod +x $executable
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 1 } -ModuleName Capsulenv
         $browser = & $script:Module {
             param($CapsuleRoot, $Executable)
             Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
@@ -203,7 +203,7 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         $executable = Join-Path $temporaryRoot 'host/browser.sh'
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
         [System.IO.File]::WriteAllLines($executable, @('#!/bin/sh', 'sleep 1'))
-        & chmod +x $executable
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 1 } -ModuleName Capsulenv
         $browser = & $script:Module {
             param($CapsuleRoot, $Executable)
             Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
@@ -256,7 +256,7 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         $executable = Join-Path $temporaryRoot 'host/browser.sh'
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
         [System.IO.File]::WriteAllLines($executable, @('#!/bin/sh', 'sleep 5'))
-        & chmod +x $executable
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 5 } -ModuleName Capsulenv
         Mock Register-CapsulenvOwnedProcessRecord { throw 'synthetic registration failure' } -ModuleName Capsulenv
         $throws = $false
         try {
@@ -280,7 +280,7 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         $executable = Join-Path $temporaryRoot 'host/browser.sh'
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $executable) -Force)
         "#!/bin/sh`nsleep 1`n" | Set-Content -LiteralPath $executable -NoNewline
-        & chmod +x $executable
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 1 } -ModuleName Capsulenv
         $result = & $script:Module {
             param($CapsuleRoot, $Executable)
             Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null

@@ -102,20 +102,40 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
     It 'replaces an upgraded same-name selection while preserving unrelated programs' {
         $executable = Join-Path $TestDrive 'pwsh-new.exe'
         New-Item -ItemType File -Path $executable -Force | Out-Null
+        $oldRoot = Join-Path $TestDrive 'pwsh-old'
+        [void](New-Item -ItemType Directory -Path (Join-Path $oldRoot 'payload') -Force)
+        New-Item -ItemType File -Path (Join-Path $oldRoot 'payload/pwsh.exe') -Force | Out-Null
         $global:CapsulenvEnsurePublishedRealizations = $null
+        $script:ActiveProgramLookupCount = 0
         try {
             Mock Get-CapsulenvActiveGeneration {
                 [pscustomobject]@{
                     Generation = [pscustomobject]@{
                         GenerationId = 'generation-old'
                         Selections = @(
-                            [pscustomobject]@{ Kind = 'realization'; Name = 'pwsh'; RealizationRoot = 'C:\old\pwsh' },
+                            [pscustomobject]@{ Kind = 'realization'; Name = 'pwsh'; Version = '7.5.0'; Provider = 'capsulenv-local'; AcquisitionProvider = 'capsulenv-local'; Provenance = 'capsulenv-local/old-pwsh'; SourceHash = 'old-hash'; ExecutableRelativePath = 'pwsh.exe'; Capabilities = @(); RealizationRoot = $oldRoot },
                             [pscustomobject]@{ Kind = 'host-program'; Name = 'git'; Provider = 'host-scoop'; Scope = 'user'; Version = '2.0.0'; Provenance = 'scoop:user/git'; Executable = 'C:\git.exe'; Root = 'C:\'; Trusted = $true; OwnsLifecycle = $false; Capabilities = @() }
                         )
                     }
                 }
             } -ModuleName Capsulenv
-            Mock Get-CapsulenvActiveGenerationProgram { throw 'old pwsh does not satisfy the new requirement' } -ModuleName Capsulenv
+            Mock Get-CapsulenvActiveGenerationProgram {
+                $script:ActiveProgramLookupCount++
+                if ($script:ActiveProgramLookupCount -eq 1) {
+                    throw 'old pwsh does not satisfy the new requirement'
+                }
+                New-CapsulenvProgramCandidate `
+                    -Name 'pwsh' `
+                    -Executable $executable `
+                    -Root (Split-Path -Parent $executable) `
+                    -Provider 'capsulenv-local' `
+                    -Version '7.6.0' `
+                    -Capabilities @('interactive') `
+                    -Provenance 'capsulenv-local/pwsh-7.6'
+            } -ModuleName Capsulenv
+            Mock New-CapsulenvActivationSnapshot {
+                [pscustomobject]@{ GenerationId = 'generation-new'; Programs = [ordered]@{} }
+            } -ModuleName Capsulenv
             Mock Resolve-CapsulenvProgramWithAcquisition {
                 $candidate = New-CapsulenvProgramCandidate -Name pwsh -Executable $executable -Root 'C:\new\pwsh' -Provider capsulenv-local -Version '7.6.0' -Capabilities @('interactive') -Provenance 'capsulenv-local/pwsh-7.6'
                 [pscustomobject]@{ Succeeded = $true; Stage = 'test-acquisition'; Selected = $candidate }
@@ -137,10 +157,11 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
             })
             $names | Should -Contain 'git'
             $names | Should -Contain 'C:\new\pwsh'
-            $names | Should -Not -Contain 'C:\old\pwsh'
+            $names | Should -Not -Contain $oldRoot
             @($names | Where-Object { $_ -match 'pwsh' }).Count | Should -Be 1
         } finally {
             Remove-Variable -Name CapsulenvEnsurePublishedRealizations -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name ActiveProgramLookupCount -Scope Script -ErrorAction SilentlyContinue
         }
     }
 

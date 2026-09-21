@@ -318,3 +318,4 @@ Describe 'Capsulenv activation fast path and criticality' {
         ($plan.RequiredFailures -join ' ') | Should -Match 'identities disagree'
     }
 }
+
