@@ -65,6 +65,15 @@ Describe 'Capsulenv lifecycle routine contracts' {
     It 'runs shell lifecycle triggers around the resolved binding and carries portable state into the child plan' {
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration {
+            [pscustomobject]@{
+                Succeeded = $true
+                ActivationSnapshot = [pscustomobject]@{ GenerationId = 'routine-generation'; Programs = [ordered]@{} }
+            }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram {
+            [pscustomobject]@{ Name = 'pwsh'; Executable = 'pwsh.exe'; Provider = 'capsulenv-local'; Trusted = $true; Capabilities = @('interactive') }
+        } -ModuleName Capsulenv
         Mock Resolve-CapsulenvPowerShellBinding {
             [pscustomobject][ordered]@{
                 Succeeded = $true
@@ -83,14 +92,17 @@ Describe 'Capsulenv lifecycle routine contracts' {
             }
         } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
-        Mock Invoke-CapsulenvProcessPlan { $script:CapturedChildPlan = $Plan } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvOwnedProcessPlan {
+            $script:CapturedChildPlan = $Plan
+            [pscustomobject]@{ ProcessId = 9001; ProcessRecord = [pscustomobject]@{ PID = 9001 } }
+        } -ModuleName Capsulenv
         Mock Invoke-CapsulenvRoutines {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell -Command 'Write-Output ok' }
 
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnEnter' }
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnExit' }
-        Should -Invoke Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Invoke-CapsulenvOwnedProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
         $script:CapturedChildPlan.Executable | Should -Be 'pwsh.exe'
         $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_PROFILE'] | Should -Be '/capsule/profile.ps1'
         $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_HISTORY'] | Should -Be '/capsule/history.txt'

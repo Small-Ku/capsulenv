@@ -9,8 +9,11 @@ function Invoke-CapsulenvChildShell {
 
     [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
     $powerShellRequirement = (Get-CapsulenvInteractivePowerShellRequirement -Criticality required).Requirement
-    [void](Ensure-CapsulenvProgramGeneration -Requirement $powerShellRequirement)
-    $activationSnapshot = New-CapsulenvActivationSnapshot
+    $ensure = Ensure-CapsulenvProgramGeneration -Requirement $powerShellRequirement
+    if ($null -eq $ensure -or -not [bool]$ensure.Succeeded -or $null -eq $ensure.ActivationSnapshot) {
+        throw 'Required interactive pwsh generation could not provide an activation snapshot.'
+    }
+    $activationSnapshot = $ensure.ActivationSnapshot
     Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode -ActivationSnapshot $activationSnapshot
     $powerShellProgram = Get-CapsulenvActiveGenerationProgram `
         -Requirement $powerShellRequirement `
