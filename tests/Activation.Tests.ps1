@@ -201,6 +201,47 @@ Describe 'Capsulenv activation fast path and criticality' {
         Should -Invoke Get-CapsulenvActiveGeneration -ModuleName Capsulenv -Times 1 -Exactly
     }
 
+    It 'freezes mutable host Program binding once for every consumer of a session snapshot' {
+        $executable = Join-Path $TestDrive 'frozen-pwsh.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+        $active = [pscustomobject]@{
+            Authority = [pscustomobject]@{ GenerationId = 'frozen-generation' }
+            Generation = [pscustomobject]@{
+                GenerationId = 'frozen-generation'
+                Selections = @([pscustomobject]@{
+                    Name = 'pwsh'
+                    Kind = 'host-program'
+                    Provider = 'host-scoop'
+                    Scope = 'user'
+                    Provenance = 'scoop:user/pwsh'
+                    Version = '7.5.0'
+                    Executable = 'C:\stale\pwsh.exe'
+                    Root = 'C:\stale'
+                    Capabilities = @('interactive')
+                })
+            }
+        }
+        Mock Get-CapsulenvActiveGeneration { $active } -ModuleName Capsulenv
+        Mock Get-CapsulenvProgramCandidates {
+            New-CapsulenvProgramCandidate -Name pwsh -Executable $executable -Provider host-scoop -Scope user -Version '7.5.0' -Provenance 'scoop:user/pwsh' -Capabilities @('interactive')
+        } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name pwsh -RequiredCapabilities @('interactive')
+            $snapshot = New-CapsulenvActivationSnapshot
+            $first = Get-CapsulenvActiveGenerationProgram -Requirement $requirement -ActivationSnapshot $snapshot
+            $second = Get-CapsulenvActiveGenerationProgram -Requirement $requirement -ActivationSnapshot $snapshot
+            [pscustomobject]@{
+                FirstVersion = $first.Version
+                SecondVersion = $second.Version
+            }
+        }
+
+        $result.FirstVersion | Should -Be '7.5.0'
+        $result.SecondVersion | Should -Be '7.5.0'
+        Should -Invoke Get-CapsulenvProgramCandidates -ModuleName Capsulenv -Times 1 -Exactly
+    }
+
     It 'fails closed when an active selection lacks a required capability' {
         $executable = Join-Path $TestDrive 'capability-missing.exe'
         New-Item -ItemType File -Path $executable -Force | Out-Null

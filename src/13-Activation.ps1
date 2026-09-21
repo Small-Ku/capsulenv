@@ -102,11 +102,74 @@ function New-CapsulenvActivationSnapshot {
     if ($null -eq $active -or $null -eq $active.Generation) {
         return $null
     }
+    $programs = [ordered]@{}
+    foreach ($selection in @($active.Generation.Selections)) {
+        $name = [string]$selection.Name
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            continue
+        }
+        $capabilities = if ($null -ne $selection.PSObject.Properties['Capabilities']) {
+            @($selection.Capabilities)
+        } else {
+            @()
+        }
+        $selectionProvider = if ($null -ne $selection.PSObject.Properties['Provider']) {
+            [string]$selection.Provider
+        } else {
+            ''
+        }
+        $allowedProviders = @('host-scoop', 'capsulenv-local', 'seed', 'provider')
+        if (-not [string]::IsNullOrWhiteSpace($selectionProvider)) {
+            $allowedProviders = @($selectionProvider)
+        }
+        $requirement = New-CapsulenvProgramRequirement `
+            -Name $name `
+            -RequiredCapabilities $capabilities `
+            -AllowedProviders $allowedProviders
+        # Host programs are mutable outside Capsulenv, so this is the single
+        # revalidation point for the entire activation session.  Consumers
+        # must read the resulting immutable map instead of rediscovering the
+        # host program on each binding call.
+        $candidate = ConvertTo-CapsulenvGenerationProgramCandidate `
+            -Requirement $requirement `
+            -Selection $selection
+        $check = Test-CapsulenvProgramCandidate -Requirement $requirement -Candidate $candidate
+        if (-not $check.Compatible) {
+            throw "Activation snapshot program '$name' failed binding validation: $($check.Reasons -join ', ')"
+        }
+        $programs[$name] = $candidate
+    }
     return [pscustomobject][ordered]@{
         GenerationId = [string]$active.Generation.GenerationId
         Generation = $active.Generation
         Authority = $active.Authority
+        Programs = $programs
     }
+}
+
+function Get-CapsulenvActivationProgram {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Requirement,
+        [Parameter(Mandatory = $true)]$ActivationSnapshot
+    )
+
+    if ($null -eq $ActivationSnapshot -or $null -eq $ActivationSnapshot.Programs) {
+        throw 'Activation snapshot does not contain its immutable resolved Program map.'
+    }
+    $program = $null
+    if ($ActivationSnapshot.Programs -is [System.Collections.IDictionary]) {
+        foreach ($key in $ActivationSnapshot.Programs.Keys) {
+            if ([System.StringComparer]::OrdinalIgnoreCase.Equals([string]$key, [string]$Requirement.Name)) {
+                $program = $ActivationSnapshot.Programs[$key]
+                break
+            }
+        }
+    }
+    if ($null -eq $program) {
+        throw "Program '$($Requirement.Name)' is not present in the activation snapshot."
+    }
+    return $program
 }
 
 function Get-CapsulenvActiveGenerationProgram {
@@ -125,19 +188,7 @@ function Get-CapsulenvActiveGenerationProgram {
     if ($null -eq $active -or $null -eq $active.Generation) {
         throw "Program '$($Requirement.Name)' has no active generation authority."
     }
-    $selection = @($active.Generation.Selections |
-        Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.Name) } |
-        Select-Object -First 1)
-    if ($selection.Count -ne 1) {
-        throw "Program '$($Requirement.Name)' is not selected by the active generation authority."
-    }
-
-    $candidate = ConvertTo-CapsulenvGenerationProgramCandidate -Requirement $Requirement -Selection $selection[0]
-    $check = Test-CapsulenvProgramCandidate -Requirement $Requirement -Candidate $candidate
-    if (-not $check.Compatible) {
-        throw "Active generation program '$($Requirement.Name)' failed binding validation: $($check.Reasons -join ', ')"
-    }
-    return $candidate
+    return Get-CapsulenvActivationProgram -Requirement $Requirement -ActivationSnapshot $snapshot
 }
 
 function Resolve-CapsulenvActivation {
