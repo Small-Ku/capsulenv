@@ -95,12 +95,19 @@ function Get-CapsulenvRealizationAuthority {
         $acquisitionProvider = $manifestProvider
     }
 
+    $capabilities = if ($null -ne $Manifest.PSObject.Properties['Capabilities']) {
+        @($Manifest.Capabilities | ForEach-Object { ([string]$_).ToLowerInvariant() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    } else {
+        @()
+    }
+
     return [pscustomobject][ordered]@{
         Provider = $currentProvider
         AcquisitionProvider = $acquisitionProvider
         Scope = 'host-local'
         OwnsLifecycle = ($currentProvider -eq 'capsulenv-local')
         Provenance = [string]$Manifest.Provenance
+        Capabilities = @($capabilities)
     }
 }
 
@@ -397,7 +404,8 @@ function Get-CapsulenvLocalRealizationCandidates {
             $payload = Join-Path $root 'payload'
             $executable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payload -ExecutableRelativePath ([string]$manifest.ExecutableRelativePath)
             $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
-            $candidates.Add((New-CapsulenvProgramCandidate -Name ([string]$manifest.Name) -Executable $executable -Root $root -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope $authority.Scope -Version ([string]$manifest.Version) -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance $authority.Provenance))
+            $manifestCapabilities = if ($null -ne $manifest.PSObject.Properties['Capabilities']) { @($manifest.Capabilities) } else { @() }
+            $candidates.Add((New-CapsulenvProgramCandidate -Name ([string]$manifest.Name) -Executable $executable -Root $root -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope $authority.Scope -Version ([string]$manifest.Version) -Capabilities $manifestCapabilities -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance $authority.Provenance))
         }
     } catch { return @() }
     return @($candidates.ToArray())
