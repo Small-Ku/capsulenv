@@ -202,6 +202,67 @@ function Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement {
     )
 
     try {
+        if ([string]$Candidate.Kind -ne 'seed-acquisition' -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Candidate.Provider, 'seed') -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Candidate.Scope, 'portable')) {
+            return [pscustomobject][ordered]@{
+                Compatible = $false
+                Reasons = @('seed-not-canonical')
+                Candidate = $Candidate
+            }
+        }
+
+        # A caller may provide a syntactically valid candidate whose source and
+        # hash agree with one another. That is not sufficient authority: seed
+        # acquisition is allowed only for the immutable entry published by the
+        # capsule's canonical manifest. Require a unique manifest identity
+        # before inspecting any caller-selected source bytes.
+        $canonicalMatches = @(
+            Get-CapsulenvPortableSeedEntries |
+                Where-Object {
+                    [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Candidate.Name) -and
+                    [System.StringComparer]::Ordinal.Equals([string]$_.Version, [string]$Candidate.Version)
+                }
+        )
+        if ($canonicalMatches.Count -ne 1) {
+            return [pscustomobject][ordered]@{
+                Compatible = $false
+                Reasons = @('seed-not-canonical')
+                Candidate = $Candidate
+            }
+        }
+
+        $canonical = $canonicalMatches[0]
+        if (-not (Test-CapsulenvPortableSeedEntry -Entry $canonical)) {
+            throw 'Canonical portable seed entry is invalid.'
+        }
+
+        $candidateCapabilities = @(
+            $Candidate.Capabilities |
+                ForEach-Object { ([string]$_).ToLowerInvariant() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Sort-Object -Unique
+        )
+        $canonicalCapabilities = @(
+            $canonical.Capabilities |
+                ForEach-Object { ([string]$_).ToLowerInvariant() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Sort-Object -Unique
+        )
+        $identityMatches =
+            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$canonical.SourceReference, [string]$Candidate.SourceReference) -and
+            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$canonical.ExpectedHash, [string]$Candidate.ExpectedHash) -and
+            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$canonical.ExecutableRelativePath, [string]$Candidate.ExecutableRelativePath) -and
+            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$canonical.Provenance, [string]$Candidate.Provenance) -and
+            (($canonicalCapabilities -join "`n") -eq ($candidateCapabilities -join "`n"))
+        if (-not $identityMatches) {
+            return [pscustomobject][ordered]@{
+                Compatible = $false
+                Reasons = @('seed-not-canonical')
+                Candidate = $Candidate
+            }
+        }
+
         $source = Resolve-CapsulenvStatePathReference -Reference ([string]$Candidate.SourceReference) -CapsuleRoot (Get-CapsulenvContext).Root
         if (Test-Path -LiteralPath $source -PathType Container) {
             if ([string]::IsNullOrWhiteSpace([string]$Candidate.ExecutableRelativePath)) {

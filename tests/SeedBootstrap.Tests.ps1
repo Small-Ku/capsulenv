@@ -320,6 +320,45 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         }
     }
 
+    It 'rejects a caller-supplied seed candidate that is self-consistent but absent from the canonical manifest' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-canonical-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $canonicalSource = Join-Path $capsuleRoot 'seed/pwsh.exe'
+        $forgedSource = Join-Path $capsuleRoot 'seed/forged.exe'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $canonicalSource) -Force)
+        'canonical-seed' | Set-Content -LiteralPath $canonicalSource -Encoding UTF8 -NoNewline
+        'forged-seed' | Set-Content -LiteralPath $forgedSource -Encoding UTF8 -NoNewline
+        try {
+            $result = & $script:Module {
+                param($CapsuleRoot, $CanonicalSource, $ForgedSource)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $canonicalHash = (Get-FileHash -LiteralPath $CanonicalSource -Algorithm SHA256).Hash
+                $forgedHash = (Get-FileHash -LiteralPath $ForgedSource -Algorithm SHA256).Hash
+                $canonical = New-CapsulenvPortableSeedEntry -Name pwsh -Version 7.5.0 -SourcePath $CanonicalSource -ExpectedHash $canonicalHash
+                Set-CapsulenvPortableSeedManifest -Entries @($canonical) | Out-Null
+                $candidate = [pscustomobject]@{
+                    Kind = 'seed-acquisition'
+                    Name = 'pwsh'
+                    Version = '7.5.0'
+                    Provider = 'seed'
+                    Scope = 'portable'
+                    SourceReference = ConvertTo-CapsulenvStatePathReference -Path $ForgedSource
+                    ExpectedHash = $forgedHash
+                    ExecutableRelativePath = $null
+                    Capabilities = @()
+                    Provenance = 'caller'
+                }
+                Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement (New-CapsulenvProgramRequirement -Name pwsh -AllowedProviders @('seed')) -Candidate $candidate
+            } $capsuleRoot $canonicalSource $forgedSource
+            $result.Compatible | Should -BeFalse
+            $result.Reasons | Should -Contain 'seed-not-canonical'
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
+
 
     It 'materializes the production provider adapter and publishes an active generation without injected candidates' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-production-' + [Guid]::NewGuid().ToString('N'))
