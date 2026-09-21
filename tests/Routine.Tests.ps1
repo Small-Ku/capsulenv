@@ -65,6 +65,8 @@ Describe 'Capsulenv lifecycle routine contracts' {
     It 'runs shell lifecycle triggers around the resolved binding and carries portable state into the child plan' {
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
+        Mock Get-CapsulenvConfiguration { @{ Bitwarden = @{ Enabled = $false } } } -ModuleName Capsulenv
+        Mock Get-CapsulenvContext { [pscustomobject]@{ Root = [IO.Path]::GetTempPath() } } -ModuleName Capsulenv
         Mock Ensure-CapsulenvProgramGeneration {
             [pscustomobject]@{
                 Succeeded = $true
