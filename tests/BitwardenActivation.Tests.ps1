@@ -17,6 +17,55 @@ Describe 'Capsulenv Bitwarden activation contracts' {
         $config.Bitwarden.StartOnEnter | Should -BeFalse
     }
 
+    It 'routes normal activation through the attach-only binding' {
+        $requirement = & $script:Module { New-CapsulenvProgramRequirement -Name bitwarden }
+        $program = & $script:Module {
+            param($Executable)
+            New-CapsulenvProgramCandidate `
+                -Name bitwarden `
+                -Executable $Executable `
+                -Provider host-scoop `
+                -Version 1.0.0 `
+                -Provenance 'scoop:user/bitwarden'
+        } ([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+        $snapshot = [pscustomobject]@{ GenerationId = 'bitwarden-generation'; Programs = [ordered]@{ bitwarden = $program } }
+
+        Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
+        Mock Get-CapsulenvIdentity { '11111111-2222-3333-4444-555555555555' } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvHostPlacement {} -ModuleName Capsulenv
+        Mock Initialize-CapsulenvSession { [pscustomobject]@{ SessionId = 'activation-session' } } -ModuleName Capsulenv
+        Mock Get-CapsulenvConfiguration {
+            @{ Bitwarden = @{ Enabled = $true; App = 'bitwarden'; SetSshAuthSock = $false } }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvBitwardenProgramRequirement {
+            [pscustomobject]@{ Requirement = $requirement; Criticality = 'optional'; App = 'bitwarden' }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram { $program } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvBitwardenBinding {
+            [pscustomobject]@{
+                Succeeded = $true
+                Program = $program
+                ProcessRecord = [pscustomobject]@{ PID = 4242 }
+            }
+        } -ModuleName Capsulenv
+        Mock Invoke-CapsulenvBitwardenSessionIntegration { [pscustomobject]@{ Succeeded = $true } } -ModuleName Capsulenv
+        Mock Start-CapsulenvBitwarden {} -ModuleName Capsulenv
+        Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
+
+        & $script:Module {
+            param($Snapshot)
+            Initialize-CapsulenvIntegrations -IntegrationMode ShellOnly -ActivationSnapshot $Snapshot
+        } $snapshot
+
+        Should -Invoke Resolve-CapsulenvBitwardenBinding -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $Program.Name -eq 'bitwarden' -and $SessionId -eq 'activation-session'
+        }
+        Should -Invoke Invoke-CapsulenvBitwardenSessionIntegration -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $ResolvedBinding.Succeeded -and $SessionId -eq 'activation-session'
+        }
+        Should -Invoke Start-CapsulenvBitwarden -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
     It 'resolves the desktop executable and persisted state from the configured Scoop app selector' {
         Mock Get-CapsulenvConfiguration {
             @{
