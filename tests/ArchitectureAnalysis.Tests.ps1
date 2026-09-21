@@ -981,4 +981,15 @@ function Initialize-CapsulenvIntegrations {
             -IntegrationsPath (Join-Path (Join-Path $script:Root 'src') '70-Doctor.ps1')).Count | Should -Be 0
     }
 
+    It 'keeps the PowerShell production call path in its owning binding slice' {
+        $source = Get-Content -LiteralPath (Join-Path (Join-Path $script:Root 'src') '30-50-SessionShell.ps1') -Raw
+        $childShell = [regex]::Match($source, '(?s)function Invoke-CapsulenvChildShell.*?(?=function Invoke-CapsulenvExternalCommand)').Value
+        $childShell | Should -Not -BeNullOrEmpty
+        $childShell | Should -Match 'Ensure-CapsulenvProgramGeneration'
+        $childShell | Should -Match '\$ensure\s*=\s*Ensure-CapsulenvProgramGeneration'
+        $childShell | Should -Match '\$activationSnapshot\s*=\s*\$ensure\.ActivationSnapshot'
+        $childShell | Should -Match 'Resolve-CapsulenvPowerShellBinding'
+        $childShell | Should -Not -Match 'Get-CapsulenvInteractivePowerShellExecutable|Get-CapsulenvPowerShellChildLaunchPlan|Invoke-CapsulenvProcessPlan\s+-Plan'
+    }
+
 }
