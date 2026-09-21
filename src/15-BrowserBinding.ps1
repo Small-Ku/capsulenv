@@ -187,8 +187,23 @@ function Complete-CapsulenvPortableBrowserBinding {
 
     $hasProcess = $null -ne $Binding.PSObject.Properties['Process'] -and $null -ne $Binding.Process
     $hasLease = $null -ne $Binding.PSObject.Properties['Lease'] -and $null -ne $Binding.Lease
-    if ($WaitForExit -and $hasProcess) {
-        Wait-Process -Id ([int]$Binding.Process.Id) -ErrorAction SilentlyContinue
+    if ($WaitForExit) {
+        if (-not $hasProcess) {
+            throw 'Cannot prove browser exit because the binding has no launched process; the profile lease remains held.'
+        }
+        try {
+            # Wait on the exact Process object captured by the launch boundary.
+            # A missing object must never be treated as an already-exited browser:
+            # releasing the lease would allow a second writer to enter an
+            # unverified profile.
+            $Binding.Process.WaitForExit()
+            $Binding.Process.Refresh()
+            if (-not [bool]$Binding.Process.HasExited) {
+                throw 'the captured browser process did not report an exited state'
+            }
+        } catch {
+            throw "Cannot prove browser exit; the profile lease remains held. $($_.Exception.Message)"
+        }
     }
     if ($hasLease) {
         [void](Release-CapsulenvStateLease -Lease $Binding.Lease)

@@ -218,6 +218,20 @@ Describe 'Capsulenv provider-agnostic browser bindings' {
         $browser.Process.HasExited | Should -BeTrue
     }
 
+    It 'keeps the profile lease when a wait binding has no process to observe' {
+        Mock Release-CapsulenvStateLease {} -ModuleName Capsulenv
+        $browser = [pscustomobject]@{
+            Binding = [pscustomobject]@{
+                Lease = [pscustomobject]@{ LeaseId = 'unverified-browser-lease' }
+            }
+        }
+
+        {
+            Wait-CapsulenvPortableBrowser -Browser $browser | Out-Null
+        } | Should -Throw '*Cannot prove browser exit*'
+        Should -Invoke Release-CapsulenvStateLease -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
     It 'rejects an existing nonempty profile without compatibility provenance' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-browser-unknown-profile-' + [Guid]::NewGuid().ToString('N'))
         $profile = & $script:Module {
