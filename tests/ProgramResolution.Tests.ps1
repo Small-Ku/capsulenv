@@ -103,6 +103,36 @@ Describe 'Capsulenv program requirement and provider resolution' {
         @($result).Count | Should -Be 0
         Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 2 -Exactly
     }
+
+    It 'derives the trusted sing-box proxy capability during host discovery' {
+        $executable = Join-Path $TestDrive 'sing-box.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+        Mock Get-CapsulenvInstalledApp {
+            [pscustomobject]@{
+                Selector = $Selector
+                Current = (Split-Path -Parent $executable)
+                Manifest = [pscustomobject]@{ version = '1.0.0' }
+            }
+        } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvScoopAppExecutable { $executable } -ModuleName Capsulenv
+        Mock Get-CapsulenvDiscoveredProgramTrustDecision {
+            [pscustomobject]@{ Trusted = $true; Policy = 'test'; Reason = 'verified test host' }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvLocalRealizationCandidates { @() } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name sing-box -RequiredCapabilities @('proxy')
+            $candidates = @(Get-CapsulenvProgramCandidates -Requirement $requirement)
+            [pscustomobject]@{
+                Candidate = @($candidates | Where-Object Provider -eq 'host-scoop')[0]
+                Resolution = Resolve-CapsulenvProgram -Requirement $requirement -Candidates $candidates
+            }
+        }
+
+        $result.Candidate.Capabilities | Should -Contain 'proxy'
+        $result.Resolution.Succeeded | Should -BeTrue
+    }
+
     It 'uses SemVer prerelease precedence for minimum and maximum ranges' {
         $executable = Join-Path $TestDrive 'semver-range.exe'
         New-Item -ItemType File -Path $executable -Force | Out-Null

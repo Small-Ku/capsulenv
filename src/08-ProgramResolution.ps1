@@ -428,7 +428,11 @@ function Get-CapsulenvProgramCandidates {
         }
         $provider = [string]$selector.Provider
         $trust = Get-CapsulenvDiscoveredProgramTrustDecision -Requirement $Requirement -Installed $installed -Executable $executable
-        $capabilities = if ([System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Requirement.Name, 'pwsh')) { @('interactive') } else { @() }
+        $capabilities = switch ([string]$Requirement.Name) {
+            'pwsh' { @('interactive'); break }
+            'sing-box' { @('proxy'); break }
+            default { @() }
+        }
         $candidate = New-CapsulenvProgramCandidate -Name $Requirement.Name -Executable $executable -Root $installed.Current -Provider $provider -Scope ([string]$selector.Scope) -Version ([string]$installed.Manifest.version) -Capabilities $capabilities -Trusted:$trust.Trusted -OwnsLifecycle:($provider -eq 'capsulenv-local') -Provenance ([string]$installed.Selector)
         $candidate | Add-Member -NotePropertyName TrustPolicy -NotePropertyValue $trust.Policy -Force
         $candidate | Add-Member -NotePropertyName TrustReason -NotePropertyValue $trust.Reason -Force
