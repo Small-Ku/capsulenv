@@ -148,8 +148,8 @@ Describe 'Capsulenv activation fast path and criticality' {
                 [void](New-Item -ItemType Directory -Path (Split-Path -Parent $pwsh75) -Force)
                 '7.5' | Set-Content -LiteralPath $pwsh75 -NoNewline
                 '7.6' | Set-Content -LiteralPath $pwsh76 -NoNewline
-                $older = Acquire-CapsulenvProgramRealization -Name pwsh -Version 7.5.0 -SourcePath $pwsh75 -Provider capsulenv-local -Provenance 'local/7.5'
-                $newer = Acquire-CapsulenvProgramRealization -Name pwsh -Version 7.6.5 -SourcePath $pwsh76 -Provider capsulenv-local -Provenance 'local/7.6'
+                $older = Acquire-CapsulenvProgramRealization -Name pwsh -Version 7.5.0 -SourcePath $pwsh75 -Provider capsulenv-local -Provenance 'local/7.5' -Capabilities @('interactive')
+                $newer = Acquire-CapsulenvProgramRealization -Name pwsh -Version 7.6.5 -SourcePath $pwsh76 -Provider capsulenv-local -Provenance 'local/7.6' -Capabilities @('interactive')
                 $generation = Publish-CapsulenvGeneration -Realizations @($older)
                 Set-CapsulenvActiveGenerationAuthority -GenerationId $generation.GenerationId | Out-Null
                 $requirement = (Get-CapsulenvInteractivePowerShellRequirement -MinimumVersion 7.0.0).Requirement
