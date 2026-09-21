@@ -26,6 +26,18 @@ function Invoke-CapsulenvChildShell {
             Write-CapsulenvMessage -Level Warning -Message "Optional Bitwarden Program was not prepared for attach-only activation: $($_.Exception.Message)"
         }
     }
+    $sessionServiceConfigPath = Join-Path (Get-CapsulenvContext).Root 'state/portable/sing-box/config.json'
+    if (Test-Path -LiteralPath $sessionServiceConfigPath -PathType Leaf) {
+        try {
+            $serviceRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed', 'provider')
+            $serviceEnsure = Ensure-CapsulenvProgramGeneration -Requirement $serviceRequirement
+            if ($null -ne $serviceEnsure -and [bool]$serviceEnsure.Succeeded -and $null -ne $serviceEnsure.ActivationSnapshot) {
+                $activationSnapshot = $serviceEnsure.ActivationSnapshot
+            }
+        } catch {
+            Write-CapsulenvMessage -Level Warning -Message "Optional SessionService Program was not prepared for activation: $($_.Exception.Message)"
+        }
+    }
     Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode -ActivationSnapshot $activationSnapshot
     $powerShellProgram = Get-CapsulenvActiveGenerationProgram `
         -Requirement $powerShellRequirement `

@@ -158,15 +158,23 @@ function Resolve-CapsulenvSessionService {
     param(
         [Parameter(Mandatory = $true)]$Definition,
         [object[]]$Candidates,
-        $Program
+        $Program,
+        $ActivationSnapshot
     )
 
     $resolution = if ($PSBoundParameters.ContainsKey('Program')) {
         Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates @($Program)
     } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates $Candidates
+    } elseif ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates @(
+            Get-CapsulenvActiveGenerationProgram -Requirement $Definition.Requirement -ActivationSnapshot $ActivationSnapshot
+        )
     } else {
-        Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates @(Get-CapsulenvActiveGenerationProgram -Requirement $Definition.Requirement)
+        $snapshot = New-CapsulenvActivationSnapshot
+        Get-CapsulenvProgramResolution -Requirement $Definition.Requirement -Candidates @(
+            Get-CapsulenvActiveGenerationProgram -Requirement $Definition.Requirement -ActivationSnapshot $snapshot
+        )
     }
     if (-not $resolution.Succeeded) {
         return [pscustomobject][ordered]@{
@@ -218,6 +226,7 @@ function Start-CapsulenvSessionService {
         [Parameter(Mandatory = $true)]$Definition,
         [object[]]$Candidates,
         $Program,
+        $ActivationSnapshot,
         [string]$SessionId,
         [int]$ReadinessTimeoutMilliseconds = 1500
     )
@@ -226,6 +235,8 @@ function Start-CapsulenvSessionService {
         Resolve-CapsulenvSessionService -Definition $Definition -Program $Program
     } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Resolve-CapsulenvSessionService -Definition $Definition -Candidates $Candidates
+    } elseif ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        Resolve-CapsulenvSessionService -Definition $Definition -ActivationSnapshot $ActivationSnapshot
     } else {
         Resolve-CapsulenvSessionService -Definition $Definition
     }
@@ -262,13 +273,18 @@ function Start-CapsulenvSessionService {
     $proxySnapshot = $null
     $proxyApplied = $false
     $process = $null
-    $processStartIdentity = $null
     $record = $null
-    $completed = $false
     try {
-        $process = Start-Process -FilePath $resolved.Program.Executable -WorkingDirectory (Split-Path -Parent $resolved.Program.Executable) -ArgumentList $argumentList -PassThru
-        $processStartIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $process.Id
-        $record = Register-CapsulenvOwnedProcessRecord -SessionId $effectiveSessionId -ProcessId $process.Id -Role session-service -ProcessStartIdentity $processStartIdentity -Provenance ([string]$resolved.Program.Provenance) -HeldLeases $(if ($null -eq $lease) { @() } else { @($lease.LeaseId) })
+        $launch = Start-CapsulenvOwnedProcess `
+            -FilePath ([string]$resolved.Program.Executable) `
+            -WorkingDirectory (Split-Path -Parent ([string]$resolved.Program.Executable)) `
+            -ArgumentList $argumentList `
+            -SessionId $effectiveSessionId `
+            -Role session-service `
+            -Provenance ([string]$resolved.Program.Provenance) `
+            -HeldLeases $(if ($null -eq $lease) { @() } else { @($lease.LeaseId) })
+        $process = $launch.Process
+        $record = $launch.ProcessRecord
         $readiness = Test-CapsulenvSessionServiceReady -Process $process -ReadinessProbe $Definition.ReadinessProbe -HealthProbe $Definition.HealthProbe -TimeoutMilliseconds $ReadinessTimeoutMilliseconds
         if (-not $readiness.Ready -or -not $readiness.Healthy) {
             [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record)
@@ -304,11 +320,6 @@ function Start-CapsulenvSessionService {
     } catch {
         if ($null -ne $record) {
             try { [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record) } catch {}
-        } elseif ($null -ne $process -and $null -ne $processStartIdentity) {
-            try {
-                $currentIdentity = Get-CapsulenvProcessStartIdentity -ProcessId $process.Id
-                if ([string]$currentIdentity -eq [string]$processStartIdentity) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
-            } catch {}
         }
         if ($proxyApplied -and $null -ne $proxySnapshot) { [void](Restore-CapsulenvSessionServiceProxyEnvironment -Snapshot $proxySnapshot) }
         if ($null -ne $lease -and -not $lease.Released) { [void](Release-CapsulenvStateLease -Lease $lease) }
@@ -452,7 +463,8 @@ function Invoke-CapsulenvProviderBootstrapNetworkScope {
     }
 
     $bootstrapRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed')
-    $bootstrap = Resolve-CapsulenvProgramWithAcquisition -Requirement $bootstrapRequirement -ProviderCandidates @()
+    $emptyProviderCandidates = [object[]]@()
+    $bootstrap = Resolve-CapsulenvProgramWithAcquisition -Requirement $bootstrapRequirement -ProviderCandidates $emptyProviderCandidates
     if (-not $bootstrap.Succeeded -or $null -eq $bootstrap.Selected) {
         throw 'Provider acquisition needs bootstrap networking, but no trusted host/local/seed bootstrap Program is available.'
     }
