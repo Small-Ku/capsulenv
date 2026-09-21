@@ -323,8 +323,14 @@ function Initialize-CapsulenvIntegrations {
     [CmdletBinding()]
     param(
         [ValidateSet('ShellOnly', 'User')]
-        [string]$IntegrationMode = (Get-CapsulenvInstallMode)
+        [string]$IntegrationMode = (Get-CapsulenvInstallMode),
+        $ActivationSnapshot
     )
+
+    if ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
+        return
+    }
 
     [void](Initialize-CapsulenvScoopBootstrap)
     $configuration = Get-CapsulenvConfiguration

@@ -80,6 +80,7 @@ function Resolve-CapsulenvPowerShellBinding {
         $Requirement,
         [object[]]$Candidates,
         $Program,
+        $ActivationSnapshot,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'required',
         [string[]]$TrustedHostModulePaths = @()
@@ -92,6 +93,8 @@ function Resolve-CapsulenvPowerShellBinding {
         @($Program)
     } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         @($Candidates)
+    } elseif ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        @(Get-CapsulenvActiveGenerationProgram -Requirement $Requirement -ActivationSnapshot $ActivationSnapshot)
     } else {
         $active = Get-CapsulenvActiveGeneration
         if ($null -ne $active) {
