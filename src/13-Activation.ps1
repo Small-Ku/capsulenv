@@ -169,6 +169,14 @@ function Get-CapsulenvActivationProgram {
     if ($null -eq $program) {
         throw "Program '$($Requirement.Name)' is not present in the activation snapshot."
     }
+    # The snapshot freezes the selected executable and provenance, but a
+    # consumer may impose a stricter version or capability requirement than
+    # the generation selection recorded.  Revalidate that requirement against
+    # the frozen candidate only; never rediscover a mutable provider here.
+    $check = Test-CapsulenvProgramCandidate -Requirement $Requirement -Candidate $program
+    if (-not $check.Compatible) {
+        throw "Activation snapshot program '$($Requirement.Name)' failed binding validation: $($check.Reasons -join ', ')"
+    }
     return $program
 }
 

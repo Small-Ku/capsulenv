@@ -186,7 +186,7 @@ Describe 'Capsulenv activation fast path and criticality' {
         }
         Mock Get-CapsulenvActiveGeneration { $activeA } -ModuleName Capsulenv
         Mock ConvertTo-CapsulenvGenerationProgramCandidate {
-            New-CapsulenvProgramCandidate -Name 'pwsh' -Executable (Join-Path $PSHOME 'pwsh') -Provider host-scoop -Scope user -Version '7.5.0' -Provenance 'scoop:user/pwsh' -Capabilities @('interactive')
+            New-CapsulenvProgramCandidate -Name 'pwsh' -Executable ([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) -Provider host-scoop -Scope user -Version '7.5.0' -Provenance 'scoop:user/pwsh' -Capabilities @('interactive')
         } -ModuleName Capsulenv
 
         $result = & $script:Module {
