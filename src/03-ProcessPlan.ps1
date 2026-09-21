@@ -158,6 +158,109 @@ function Invoke-CapsulenvDetachedProcessPlan {
     return $process
 }
 
+function Stop-CapsulenvUnregisteredProcess {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$Process,
+        [AllowEmptyString()][string]$ProcessStartIdentity
+    )
+
+    if ($null -eq $Process -or $null -eq $Process.PSObject.Properties['Id']) {
+        return
+    }
+
+    # An exact birth identity is authoritative when it was obtained.  Never
+    # fall back to a PID stop after that identity has changed: the PID may now
+    # belong to an unrelated process.
+    if (-not [string]::IsNullOrWhiteSpace($ProcessStartIdentity)) {
+        try {
+            $current = Get-CapsulenvProcessStartIdentity -ProcessId ([int]$Process.Id)
+            if ([string]$current -eq [string]$ProcessStartIdentity) {
+                Stop-Process -Id ([int]$Process.Id) -Force -ErrorAction SilentlyContinue
+            }
+        } catch {}
+        return
+    }
+
+    # The child has already been spawned, but its birth identity could not be
+    # read.  Use the Process instance returned by Start-Process first.  This
+    # closes the otherwise unsafe window where identity acquisition failure
+    # leaves a live child with neither a ledger record nor a safe PID stop.
+    if ($Process -is [System.Diagnostics.Process]) {
+        try {
+            $Process.Refresh()
+            if (-not $Process.HasExited) {
+                $Process.Kill()
+                [void]$Process.WaitForExit(5000)
+            }
+            return
+        } catch {}
+    }
+
+    # Test doubles and older host wrappers may expose only an Id.  There is no
+    # stronger handle operation available in that shape; make the best-effort
+    # cleanup explicit rather than allowing an uncontrolled child to survive.
+    try { Stop-Process -Id ([int]$Process.Id) -Force -ErrorAction SilentlyContinue } catch {}
+}
+
+function Start-CapsulenvOwnedProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][string]$SessionId,
+        [Parameter(Mandatory = $true)][string]$Role,
+        [string]$Provenance = 'capsulenv',
+        [string[]]$HeldLeases = @()
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FilePath)) {
+        throw 'Owned process launch requires an executable.'
+    }
+    if ([System.IO.Path]::IsPathRooted($FilePath) -and -not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
+        throw "Owned process executable does not exist: $FilePath"
+    }
+
+    $process = $null
+    $startIdentity = $null
+    $record = $null
+    try {
+        $startParameters = @{
+            FilePath = $FilePath
+            ArgumentList = @($ArgumentList)
+            PassThru = $true
+        }
+        if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+            $startParameters.WorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
+        }
+        if (Test-CapsulenvWindows) {
+            $startParameters.NoNewWindow = $true
+        }
+        $process = Start-Process @startParameters
+        $startIdentity = Get-CapsulenvProcessStartIdentity -ProcessId ([int]$process.Id)
+        $record = Register-CapsulenvOwnedProcessRecord `
+            -SessionId $SessionId `
+            -ProcessId ([int]$process.Id) `
+            -Role $Role `
+            -ProcessStartIdentity $startIdentity `
+            -Provenance $Provenance `
+            -HeldLeases $HeldLeases
+        return [pscustomobject][ordered]@{
+            Process = $process
+            ProcessStartIdentity = $startIdentity
+            ProcessRecord = $record
+        }
+    } catch {
+        if ($null -ne $record) {
+            try { [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record) } catch {}
+        } else {
+            Stop-CapsulenvUnregisteredProcess -Process $process -ProcessStartIdentity $startIdentity
+        }
+        throw
+    }
+}
+
 function Invoke-CapsulenvProcessPlan {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Plan)
@@ -298,13 +401,8 @@ function Invoke-CapsulenvOwnedProcessPlan {
         if ($null -ne $record) {
             try { [void](Stop-CapsulenvOwnedProcessRecord -ProcessRecord $record) } catch {}
             try { [void](Complete-CapsulenvOwnedChildSession -ProcessRecord $record) } catch {}
-        } elseif ($null -ne $process -and -not [string]::IsNullOrWhiteSpace([string]$startIdentity)) {
-            try {
-                $currentIdentity = Get-CapsulenvProcessStartIdentity -ProcessId ([int]$process.Id)
-                if ([string]$currentIdentity -eq [string]$startIdentity) {
-                    Stop-Process -Id ([int]$process.Id) -Force -ErrorAction SilentlyContinue
-                }
-            } catch {}
+        } elseif ($null -ne $process) {
+            Stop-CapsulenvUnregisteredProcess -Process $process -ProcessStartIdentity $startIdentity
         }
         throw
     } finally {

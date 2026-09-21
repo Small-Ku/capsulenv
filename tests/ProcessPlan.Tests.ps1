@@ -99,4 +99,16 @@ param([Parameter(Mandatory = $true)][string]$ResultPath)
             Should -Invoke Stop-Process -Times 0 -Exactly
         }
     }
+
+    It 'cleans up a spawned child when its first start-identity read fails' {
+        InModuleScope Capsulenv {
+            Mock Start-Process { [pscustomobject]@{ Id = 5252 } }
+            Mock Get-CapsulenvProcessStartIdentity { throw 'synthetic identity acquisition failure' }
+            Mock Stop-Process {}
+            $plan = New-CapsulenvProcessPlan -Executable 'tool.exe'
+
+            { Invoke-CapsulenvOwnedProcessPlan -Plan $plan } | Should -Throw '*identity acquisition failure*'
+            Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq 5252 }
+        }
+    }
 }
