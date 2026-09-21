@@ -68,16 +68,24 @@ function ConvertTo-CapsulenvGenerationProgramCandidate {
         if ($null -eq $current) {
             throw "Host program '$($Selection.Name)' is no longer available from its recorded provider binding."
         }
+        if ($null -ne $Selection.PSObject.Properties['Capabilities']) {
+            $currentCapabilities = @($current.Capabilities | ForEach-Object { ([string]$_).ToLowerInvariant() })
+            foreach ($recordedCapability in @($Selection.Capabilities)) {
+                if ($currentCapabilities -notcontains ([string]$recordedCapability).ToLowerInvariant()) {
+                    throw "Host program '$($Selection.Name)' no longer provides recorded capability '$recordedCapability'."
+                }
+            }
+        }
         return $current
     }
     if ($selectionKind -eq 'seed-acquisition') {
         $source = Resolve-CapsulenvPortableSeedSourcePath -Entry $Selection
-        $Selection = Acquire-CapsulenvProgramRealization -Name ([string]$Selection.Name) -Version ([string]$Selection.Version) -SourcePath $source -ExecutableRelativePath ([string]$Selection.ExecutableRelativePath) -ExpectedHash ([string]$Selection.ExpectedHash) -Provider capsulenv-local -AcquisitionProvider seed -Provenance ([string]$Selection.Provenance)
+        $Selection = Acquire-CapsulenvProgramRealization -Name ([string]$Selection.Name) -Version ([string]$Selection.Version) -SourcePath $source -ExecutableRelativePath ([string]$Selection.ExecutableRelativePath) -ExpectedHash ([string]$Selection.ExpectedHash) -Provider capsulenv-local -AcquisitionProvider seed -Provenance ([string]$Selection.Provenance) -Capabilities @($Selection.Capabilities)
     }
     $relative = [string]$Selection.ExecutableRelativePath
     $executable = Join-Path (Join-Path ([string]$Selection.RealizationRoot) 'payload') ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
     $authority = Get-CapsulenvRealizationAuthority -Manifest $Selection
-    return New-CapsulenvProgramCandidate -Name ([string]$Selection.Name) -Executable $executable -Root ([string]$Selection.RealizationRoot) -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope host-local -Version ([string]$Selection.Version) -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance ([string]$Selection.Provenance)
+    return New-CapsulenvProgramCandidate -Name ([string]$Selection.Name) -Executable $executable -Root ([string]$Selection.RealizationRoot) -Provider $authority.Provider -AcquisitionProvider $authority.AcquisitionProvider -Scope host-local -Version ([string]$Selection.Version) -Capabilities @($Selection.Capabilities) -Trusted:$true -OwnsLifecycle:$authority.OwnsLifecycle -Provenance ([string]$Selection.Provenance)
 }
 
 function New-CapsulenvActivationSnapshot {
@@ -125,11 +133,6 @@ function Get-CapsulenvActiveGenerationProgram {
     }
 
     $candidate = ConvertTo-CapsulenvGenerationProgramCandidate -Requirement $Requirement -Selection $selection[0]
-    # Generation metadata predates capability persistence. The binding still
-    # validates the executable/version/provider contract here; required
-    # capabilities are the binding's explicit contract and are carried on the
-    # canonical selected candidate for downstream consumers.
-    $candidate.Capabilities = @($candidate.Capabilities + @($Requirement.RequiredCapabilities) | Sort-Object -Unique)
     $check = Test-CapsulenvProgramCandidate -Requirement $Requirement -Candidate $candidate
     if (-not $check.Compatible) {
         throw "Active generation program '$($Requirement.Name)' failed binding validation: $($check.Reasons -join ', ')"

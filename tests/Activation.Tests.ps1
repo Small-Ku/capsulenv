@@ -201,6 +201,41 @@ Describe 'Capsulenv activation fast path and criticality' {
         Should -Invoke Get-CapsulenvActiveGeneration -ModuleName Capsulenv -Times 1 -Exactly
     }
 
+    It 'fails closed when an active selection lacks a required capability' {
+        $executable = Join-Path $TestDrive 'capability-missing.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+        Mock Get-CapsulenvActiveGeneration {
+            [pscustomobject]@{
+                Authority = [pscustomobject]@{ GenerationId = 'capability-missing' }
+                Generation = [pscustomobject]@{
+                    GenerationId = 'capability-missing'
+                    Selections = @([pscustomobject]@{
+                        Kind = 'realization'
+                        Name = 'sing-box'
+                        Version = '1.0.0'
+                        Provider = 'capsulenv-local'
+                        AcquisitionProvider = 'provider'
+                        Provenance = 'test/sing-box'
+                        SourceHash = 'hash'
+                        ExecutableRelativePath = 'sing-box.exe'
+                        RealizationRoot = (Split-Path -Parent $executable)
+                        Capabilities = @()
+                    })
+                }
+            }
+        } -ModuleName Capsulenv
+        Mock ConvertTo-CapsulenvGenerationProgramCandidate {
+            New-CapsulenvProgramCandidate -Name sing-box -Executable $executable -Provider capsulenv-local -Version '1.0.0' -Capabilities @()
+        } -ModuleName Capsulenv
+
+        {
+            & $script:Module {
+                $requirement = New-CapsulenvProgramRequirement -Name sing-box -RequiredCapabilities @('proxy')
+                Get-CapsulenvActiveGenerationProgram -Requirement $requirement | Out-Null
+            }
+        } | Should -Throw '*missing-capability:proxy*'
+    }
+
     It 'does not silently drop required binding or session-service resources' {
         $plan = & $script:Module {
             $binding = New-CapsulenvActivationResource -Name git -Criticality required -Kind binding -Value $null
