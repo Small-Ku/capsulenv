@@ -25,6 +25,42 @@ Describe 'Capsulenv host-local realization and generation authority' {
         } | Should -Throw '*non-rooted relative path*'
     }
 
+    It 'persists acquisition capabilities through the realization and generation authorities' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-realization-capabilities-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        $oldBootEpoch = $env:CAPSULENV_HOST_BOOT_EPOCH
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $env:CAPSULENV_HOST_BOOT_EPOCH = 'realization-capabilities-test'
+            $source = Join-Path $temporaryRoot 'source/sing-box.exe'
+            [void](New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force)
+            'sing-box' | Set-Content -LiteralPath $source -Encoding UTF8
+
+            $result = & $script:Module {
+                param($CapsuleRoot, $Source)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $realization = Acquire-CapsulenvProgramRealization -Name sing-box -Version 1.0.0 -SourcePath $Source -Provider capsulenv-local -Capabilities @('proxy') -Provenance 'test/sing-box'
+                $generation = Publish-CapsulenvGeneration -Realizations @($realization)
+                [void](Set-CapsulenvActiveGenerationAuthority -GenerationId $generation.GenerationId)
+                $requirement = New-CapsulenvProgramRequirement -Name sing-box -RequiredCapabilities @('proxy')
+                $selected = Get-CapsulenvActiveGenerationProgram -Requirement $requirement
+                $manifest = Read-CapsulenvRealizationManifest -RealizationRoot $realization.RealizationRoot
+                [pscustomobject]@{
+                    ManifestCapabilities = @($manifest.Capabilities)
+                    SelectionCapabilities = @($generation.Selections[0].Capabilities)
+                    SelectedCapabilities = @($selected.Capabilities)
+                }
+            } $temporaryRoot $source
+
+            $result.ManifestCapabilities | Should -Contain 'proxy'
+            $result.SelectionCapabilities | Should -Contain 'proxy'
+            $result.SelectedCapabilities | Should -Contain 'proxy'
+        } finally {
+            if ($null -eq $oldStateRoot) { Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot }
+            if ($null -eq $oldBootEpoch) { Remove-Item Env:CAPSULENV_HOST_BOOT_EPOCH -ErrorAction SilentlyContinue } else { $env:CAPSULENV_HOST_BOOT_EPOCH = $oldBootEpoch }
+        }
+    }
+
     It 'publishes a verified immutable realization before activating a small generation' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-realization-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
