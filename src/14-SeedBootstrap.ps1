@@ -639,7 +639,8 @@ function Resolve-CapsulenvProgramWithAcquisition {
     $seed = @(
         $seedCandidates |
             Where-Object {
-                [string]$_.Kind -eq 'seed-acquisition' -and
+                $kind = if ($null -ne $_ -and $null -ne $_.PSObject -and $null -ne $_.PSObject.Properties['Kind']) { [string]$_.Kind } else { '' }
+                $kind -eq 'seed-acquisition' -and
                 [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.Name)
             } |
             Where-Object { (Test-CapsulenvSeedAcquisitionCandidateAgainstRequirement -Requirement $Requirement -Candidate $_).Compatible } |
@@ -656,7 +657,8 @@ function Resolve-CapsulenvProgramWithAcquisition {
             -ExpectedHash ([string]$entry.ExpectedHash) `
             -Provider capsulenv-local `
             -AcquisitionProvider seed `
-            -Provenance ([string]$entry.Provenance)
+            -Provenance ([string]$entry.Provenance) `
+            -Capabilities @($entry.Capabilities)
         $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
         $payload = Join-Path ([string]$manifest.RealizationRoot) 'payload'
         $executable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot $payload -ExecutableRelativePath ([string]$manifest.ExecutableRelativePath)
@@ -726,6 +728,7 @@ function Resolve-CapsulenvProgramWithAcquisition {
                 Provider = 'capsulenv-local'
                 AcquisitionProvider = 'provider'
                 Provenance = [string]$sourceCandidate.Provenance
+                Capabilities = @($sourceCandidate.Capabilities)
             }
             $manifest = Acquire-CapsulenvProgramRealization @manifestParameters
             $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
@@ -798,7 +801,11 @@ function Ensure-CapsulenvProgramGeneration {
 
     $realizations = New-Object System.Collections.Generic.List[object]
     if ($null -ne $active) {
+        $replacementName = [string]$resolved.Selected.Name
         foreach ($selection in @($active.Generation.Selections)) {
+            if ([System.StringComparer]::OrdinalIgnoreCase.Equals([string]$selection.Name, $replacementName)) {
+                continue
+            }
             if ([string]$selection.Kind -eq 'host-program') {
                 $realizations.Add([pscustomobject]@{ Kind = 'host-program'; Program = $selection })
             } elseif ([string]$selection.Kind -eq 'realization' -or [string]::IsNullOrWhiteSpace([string]$selection.Kind)) {

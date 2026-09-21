@@ -99,6 +99,51 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.ActiveSelection | Should -Be 'pwsh'
     }
 
+    It 'replaces an upgraded same-name selection while preserving unrelated programs' {
+        $executable = Join-Path $TestDrive 'pwsh-new.exe'
+        New-Item -ItemType File -Path $executable -Force | Out-Null
+        $global:CapsulenvEnsurePublishedRealizations = $null
+        try {
+            Mock Get-CapsulenvActiveGeneration {
+                [pscustomobject]@{
+                    Generation = [pscustomobject]@{
+                        GenerationId = 'generation-old'
+                        Selections = @(
+                            [pscustomobject]@{ Kind = 'realization'; Name = 'pwsh'; RealizationRoot = 'C:\old\pwsh' },
+                            [pscustomobject]@{ Kind = 'host-program'; Name = 'git'; Provider = 'host-scoop'; Scope = 'user'; Version = '2.0.0'; Provenance = 'scoop:user/git'; Executable = 'C:\git.exe'; Root = 'C:\'; Trusted = $true; OwnsLifecycle = $false; Capabilities = @() }
+                        )
+                    }
+                }
+            } -ModuleName Capsulenv
+            Mock Get-CapsulenvActiveGenerationProgram { throw 'old pwsh does not satisfy the new requirement' } -ModuleName Capsulenv
+            Mock Resolve-CapsulenvProgramWithAcquisition {
+                $candidate = New-CapsulenvProgramCandidate -Name pwsh -Executable $executable -Root 'C:\new\pwsh' -Provider capsulenv-local -Version '7.6.0' -Capabilities @('interactive') -Provenance 'capsulenv-local/pwsh-7.6'
+                [pscustomobject]@{ Succeeded = $true; Stage = 'test-acquisition'; Selected = $candidate }
+            } -ModuleName Capsulenv
+            Mock Publish-CapsulenvGeneration {
+                param($Realizations)
+                $global:CapsulenvEnsurePublishedRealizations = @($Realizations)
+                [pscustomobject]@{ GenerationId = 'generation-new'; Selections = @() }
+            } -ModuleName Capsulenv
+            Mock Set-CapsulenvActiveGenerationAuthority {} -ModuleName Capsulenv
+
+            & $script:Module {
+                $requirement = New-CapsulenvProgramRequirement -Name pwsh -MinimumVersion 7.6.0 -RequiredCapabilities @('interactive')
+                Ensure-CapsulenvProgramGeneration -Requirement $requirement | Out-Null
+            }
+
+            $names = @($global:CapsulenvEnsurePublishedRealizations | ForEach-Object {
+                if ($_.Kind -eq 'host-program') { [string]$_.Program.Name } else { [string]$_.RealizationRoot }
+            })
+            $names | Should -Contain 'git'
+            $names | Should -Contain 'C:\new\pwsh'
+            $names | Should -Not -Contain 'C:\old\pwsh'
+            @($names | Where-Object { $_ -match 'pwsh' }).Count | Should -Be 1
+        } finally {
+            Remove-Variable -Name CapsulenvEnsurePublishedRealizations -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'enforces seed version provider and capability requirements before acquisition' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-seed-requirement-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'
@@ -348,28 +393,30 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-bootstrap-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'
         $providerRoot = Join-Path $temporaryRoot 'provider-source'
+        $global:CapsulenvProviderRetryState = [pscustomobject]@{
+            Root = $providerRoot
+            Attempts = 0
+            BootstrapInvocations = 0
+        }
         [void](New-Item -ItemType Directory -Path $providerRoot -Force)
         'provider-demo' | Set-Content -LiteralPath (Join-Path $providerRoot 'demo.exe') -Encoding UTF8 -NoNewline
 
         & $script:Module {
-            param($CapsuleRoot, $ProviderRoot)
+            param($CapsuleRoot, $State)
             Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
-            $script:ProviderRetryRoot = $ProviderRoot
-            $script:ProviderRetryAttempts = 0
-            $script:ProviderBootstrapInvocations = 0
             Set-CapsulenvBootstrapNetworkInvoker -Invoker {
                 param($Requirement, $Operation)
-                $script:ProviderBootstrapInvocations++
+                $State.BootstrapInvocations++
                 & $Operation
-            }
-        } $capsuleRoot $providerRoot
+            }.GetNewClosure()
+        } $capsuleRoot $global:CapsulenvProviderRetryState
 
         Mock Get-CapsulenvProgramProviderCandidates {
-            $script:ProviderRetryAttempts++
-            if ($script:ProviderRetryAttempts -eq 1) {
+            $global:CapsulenvProviderRetryState.Attempts++
+            if ($global:CapsulenvProviderRetryState.Attempts -eq 1) {
                 throw 'simulated provider transport failure'
             }
-            $candidate = New-CapsulenvProgramCandidate -Name demo -Executable (Join-Path $script:ProviderRetryRoot 'demo.exe') -Root $script:ProviderRetryRoot -Provider provider -AcquisitionProvider provider -Scope acquisition -Version 1.2.3 -Trusted:$true -Provenance 'provider/test'
+            $candidate = New-CapsulenvProgramCandidate -Name demo -Executable (Join-Path $global:CapsulenvProviderRetryState.Root 'demo.exe') -Root $global:CapsulenvProviderRetryState.Root -Provider provider -AcquisitionProvider provider -Scope acquisition -Version 1.2.3 -Trusted:$true -Provenance 'provider/test'
             return @($candidate)
         } -ModuleName Capsulenv
 
@@ -382,8 +429,8 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
                 Stage = $resolved.Stage
                 Provider = $resolved.Selected.Provider
                 AcquisitionProvider = $resolved.Selected.AcquisitionProvider
-                ProviderAttempts = $script:ProviderRetryAttempts
-                BootstrapInvocations = $script:ProviderBootstrapInvocations
+                ProviderAttempts = $global:CapsulenvProviderRetryState.Attempts
+                BootstrapInvocations = $global:CapsulenvProviderRetryState.BootstrapInvocations
             }
         }
 
@@ -393,6 +440,7 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.AcquisitionProvider | Should -Be 'provider'
         $result.ProviderAttempts | Should -Be 2
         $result.BootstrapInvocations | Should -Be 1
+        Remove-Variable -Name CapsulenvProviderRetryState -Scope Global -ErrorAction SilentlyContinue
     }
 
 }
