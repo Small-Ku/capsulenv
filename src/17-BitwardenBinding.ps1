@@ -117,6 +117,7 @@ function Resolve-CapsulenvBitwardenBinding {
         $Requirement,
         [object[]]$Candidates,
         $Program,
+        $ActivationSnapshot,
         [ValidateSet('required', 'optional')]
         [string]$Criticality = 'optional',
         [string]$SessionId,
@@ -138,6 +139,10 @@ function Resolve-CapsulenvBitwardenBinding {
         Get-CapsulenvProgramResolution -Requirement $parameters.Requirement -Candidates @($Program)
     } elseif ($PSBoundParameters.ContainsKey('Candidates')) {
         Get-CapsulenvProgramResolution -Requirement $parameters.Requirement -Candidates $parameters.Candidates
+    } elseif ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        Get-CapsulenvProgramResolution -Requirement $parameters.Requirement -Candidates @(
+            Get-CapsulenvActiveGenerationProgram -Requirement $parameters.Requirement -ActivationSnapshot $ActivationSnapshot
+        )
     } else {
         Get-CapsulenvProgramResolution -Requirement $parameters.Requirement -Candidates @(Get-CapsulenvActiveGenerationProgram -Requirement $parameters.Requirement)
     }
