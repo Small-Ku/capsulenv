@@ -88,7 +88,9 @@ function Assert-CapsulenvNoForeignBitwardenProcess {
             }
         }
     ) -join '; '
-    throw "A non-capsule Bitwarden process is running. Capsulenv will not reuse, stop, or patch it: $details"
+    # Capsulenv will not reuse, stop, or patch it when the process is foreign.
+    Write-CapsulenvMessage -Level Detail -Message "A foreign Bitwarden process is running; attach-only integration may reuse its SSH agent, but Capsulenv will not stop or patch it: $details"
+    return $foreign
 }
 
 function Initialize-CapsulenvBitwarden {
@@ -132,7 +134,10 @@ function Start-CapsulenvBitwarden {
         return
     }
 
-    Assert-CapsulenvNoForeignBitwardenProcess
+    $foreign = @(Assert-CapsulenvNoForeignBitwardenProcess)
+    if ($foreign.Count -gt 0) {
+        throw 'A non-capsule Bitwarden process is running; close it before starting the capsule copy.'
+    }
     $existing = @(Get-CapsulenvBitwardenProcesses)
     if ($existing.Count -gt 0) {
         Write-CapsulenvMessage -Level Detail -Message 'Capsule-owned Bitwarden desktop is already running.'
