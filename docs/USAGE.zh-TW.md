@@ -138,7 +138,7 @@ capsulenv app run scoop/<app> "<shortcut name>"
 capsulenv app exec capsule/<app> <bin> -- <arguments>
 ```
 
-一般外部命令則使用 `capsulenv run <command> <arguments>`。Selector 的內部解析規則見 [ARCHITECTURE](ARCHITECTURE.md#provisioning-and-runtime-separation)。
+一般外部命令則使用 `capsulenv run <command> <arguments>`。Selector 的內部解析規則見 [ARCHITECTURE](ARCHITECTURE.md#installed-selector-and-runtime-separation)。
 
 ## Configuration
 
@@ -167,7 +167,9 @@ capsulenv browser capsule/librewolf
 capsulenv browser scoop/firefox
 ```
 
-只有需要借用同一產品的主機 executable 時，才加 `--host`。Profile 仍使用所選 app 的資料。
+請使用你要啟動之 browser 的已安裝 selector。若 provider 支援主機 executable
+的發現，會沿用一般 program-resolution 規則；不要另外指定 host path，也不要
+依賴舊的 host-executable override。Profile 仍由所選 app binding 管理。
 
 要讓 Windows 顯示 capsule browser 為預設瀏覽器候選，設定：
 
@@ -300,7 +302,7 @@ capsulenv doctor
 | uv/Pixi 搬移修復失敗 | 先用 `capsulenv tools repair all --last --dry-run` 檢查 |
 | 確認可重試工具修復 | `capsulenv tools repair all --last --strict` |
 
-`capsulenv reset` 只修復 projection。若診斷表示 Scoop active version 不明確或資料已分歧，先確認要保留的版本與資料。再依診斷明確使用 upstream Scoop 修復或重新安裝。不要刪除 `.capsulenv/` 來消除警告。修復與所有權界限見 [ARCHITECTURE](ARCHITECTURE.md#relocation-projection-repair)。
+`capsulenv reset` 只修復 projection。若診斷表示 Scoop active version 不明確或資料已分歧，先確認要保留的版本與資料。再依診斷明確使用 upstream Scoop 修復或重新安裝。不要刪除 `.capsulenv/` 來消除警告。明確 relocation 修復與所有權界限見 [ARCHITECTURE](ARCHITECTURE.md#bounded-legacy-projection-adapter)。
 
 Pixi global sync 可能重新解析版本。只有接受這個變更時，才使用 `tools repair pixi --last --include-global`。失敗、略過與重試規則見 [TOOLS](TOOLS.md#failure-and-retry)。
 
