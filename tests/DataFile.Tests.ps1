@@ -16,7 +16,7 @@ Describe 'Capsulenv PowerShell data-file reader' {
         $configuration = & $script:Module { param($dataPath) Import-CapsulenvPowerShellDataFile -LiteralPath $dataPath } $path
 
         $configuration.SchemaVersion | Should -Be 12
-        $configuration.Scoop.RehydrateOnRelocation | Should -BeTrue
+        $configuration.Scoop.RehydrateOnRelocation | Should -BeFalse
         $configuration.Browsers.ContainsKey('LibreWolf') | Should -BeTrue
     }
 

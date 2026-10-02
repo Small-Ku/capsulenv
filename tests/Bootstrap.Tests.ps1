@@ -98,9 +98,36 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
             return
         }
         $git = [string]$gitCommand.Source
-        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-bootstrap-tests-{0}' -f [Guid]::NewGuid().ToString('N'))
+        # The isolated runner deliberately places its TEMP under a deep artifact
+        # directory. Git for Windows can still reject a local clone there even
+        # when core.longpaths is enabled, so keep this Git fixture at a short,
+        # exact temporary root while preserving per-run uniqueness.
+        $temporaryParent = if ($env:OS -eq 'Windows_NT' -and -not [string]::IsNullOrWhiteSpace($env:SystemDrive)) {
+            [string]$env:SystemDrive
+        } else {
+            [System.IO.Path]::GetTempPath()
+        }
+        $temporaryRoot = Join-Path $temporaryParent ('capsulenv-bootstrap-tests-{0}' -f [Guid]::NewGuid().ToString('N'))
         try {
             [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
+            # The fixture creates commits and then asks the runtime to clone the
+            # repositories. Keep both operations independent of a user's global
+            # signing policy and enable Git's Windows long-path support for the
+            # isolated temporary roots used by the test harness.
+            $oldGitConfigCount = $env:GIT_CONFIG_COUNT
+            $oldGitConfigKey0 = $env:GIT_CONFIG_KEY_0
+            $oldGitConfigValue0 = $env:GIT_CONFIG_VALUE_0
+            $oldGitConfigKey1 = $env:GIT_CONFIG_KEY_1
+            $oldGitConfigValue1 = $env:GIT_CONFIG_VALUE_1
+            $oldGitConfigGlobal = $env:GIT_CONFIG_GLOBAL
+            $oldGitConfigNoSystem = $env:GIT_CONFIG_NOSYSTEM
+            $env:GIT_CONFIG_COUNT = '2'
+            $env:GIT_CONFIG_KEY_0 = 'commit.gpgsign'
+            $env:GIT_CONFIG_VALUE_0 = 'false'
+            $env:GIT_CONFIG_KEY_1 = 'core.longpaths'
+            $env:GIT_CONFIG_VALUE_1 = 'true'
+            $env:GIT_CONFIG_GLOBAL = 'NUL'
+            $env:GIT_CONFIG_NOSYSTEM = '1'
             $scoopSource = Join-Path $temporaryRoot 'scoop-source'
             $mainSource = Join-Path $temporaryRoot 'main-source'
             [void](New-Item -ItemType Directory -Path $scoopSource -Force)
@@ -306,6 +333,13 @@ throw 'Capsulenv Scoop shim requires an active capsulenv shell.'
 
             Write-Host 'capsulenv bootstrap/isolation tests passed.' -ForegroundColor Green
         } finally {
+            if ($null -eq $oldGitConfigCount) { Remove-Item Env:GIT_CONFIG_COUNT -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_COUNT = $oldGitConfigCount }
+            if ($null -eq $oldGitConfigKey0) { Remove-Item Env:GIT_CONFIG_KEY_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_KEY_0 = $oldGitConfigKey0 }
+            if ($null -eq $oldGitConfigValue0) { Remove-Item Env:GIT_CONFIG_VALUE_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_VALUE_0 = $oldGitConfigValue0 }
+            if ($null -eq $oldGitConfigKey1) { Remove-Item Env:GIT_CONFIG_KEY_1 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_KEY_1 = $oldGitConfigKey1 }
+            if ($null -eq $oldGitConfigValue1) { Remove-Item Env:GIT_CONFIG_VALUE_1 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_VALUE_1 = $oldGitConfigValue1 }
+            if ($null -eq $oldGitConfigGlobal) { Remove-Item Env:GIT_CONFIG_GLOBAL -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_GLOBAL = $oldGitConfigGlobal }
+            if ($null -eq $oldGitConfigNoSystem) { Remove-Item Env:GIT_CONFIG_NOSYSTEM -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_NOSYSTEM = $oldGitConfigNoSystem }
             Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
