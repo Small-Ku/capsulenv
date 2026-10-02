@@ -65,4 +65,4 @@ CLI display rules:
 - `capsulenv app list` displays `Provider` and `ScoopScope` as distinct columns.
 - Displays launchable apps, declared binaries, and named shortcuts.
 
-For selector resolution and disambiguation rules, see [ARCHITECTURE](ARCHITECTURE.md#provisioning-and-runtime-separation). For execution commands, see [USAGE](USAGE.md#installed-apps).
+For selector resolution and disambiguation rules, see [ARCHITECTURE](ARCHITECTURE.md#installed-selector-and-runtime-separation). For execution commands, see [USAGE](USAGE.md#installed-apps).
