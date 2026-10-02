@@ -2,7 +2,7 @@ Describe 'Capsulenv lifecycle routine contracts' {
     BeforeAll {
         $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
-        $script:Build = Get-CapsulenvTestModuleBuild -Root $script:Root
+        $script:Build = & (Join-Path $script:Root 'Merge-ModuleScripts.ps1') -Clean
         Import-Module $script:Build.ModulePath -Force -DisableNameChecking
         $script:Module = @(Get-Module Capsulenv)[-1]
     }
@@ -62,20 +62,52 @@ Describe 'Capsulenv lifecycle routine contracts' {
         $due | Should -BeFalse
     }
 
-    It 'runs shell lifecycle triggers around the child shell process' {
+    It 'runs shell lifecycle triggers around the resolved binding and carries portable state into the child plan' {
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
-        Mock Get-CapsulenvInteractivePowerShellExecutable { 'pwsh.exe' } -ModuleName Capsulenv
-        Mock Get-CapsulenvPowerShellChildLaunchPlan { [pscustomobject]@{ ExecutionMode='Passthrough' } } -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration {
+            [pscustomobject]@{
+                Succeeded = $true
+                ActivationSnapshot = [pscustomobject]@{ GenerationId = 'routine-generation'; Programs = [ordered]@{} }
+            }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram {
+            [pscustomobject]@{ Name = 'pwsh'; Executable = 'pwsh.exe'; Provider = 'capsulenv-local'; Trusted = $true; Capabilities = @('interactive') }
+        } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvPowerShellBinding {
+            [pscustomobject][ordered]@{
+                Succeeded = $true
+                Program = [pscustomobject]@{ Executable = 'pwsh.exe' }
+                LaunchArguments = @('-NoLogo', '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', 'bootstrap')
+                BootstrapCommand = 'bootstrap'
+                ProfilePath = '/capsule/profile.ps1'
+                HistoryPath = '/capsule/history.txt'
+                BootstrapPath = '/capsule/bootstrap.ps1'
+                PSModulePath = '/capsule/modules:/host/modules'
+                Environment = [ordered]@{
+                    PSModulePath = '/capsule/modules:/host/modules'
+                    CAPSULENV_POWERSHELL_PROFILE = '/capsule/profile.ps1'
+                    CAPSULENV_POWERSHELL_HISTORY = '/capsule/history.txt'
+                }
+            }
+        } -ModuleName Capsulenv
         Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
-        Mock Invoke-CapsulenvProcessPlan {} -ModuleName Capsulenv
+        Mock Invoke-CapsulenvOwnedProcessPlan {
+            $script:CapturedChildPlan = $Plan
+            [pscustomobject]@{ ProcessId = 9001; ProcessRecord = [pscustomobject]@{ PID = 9001 } }
+        } -ModuleName Capsulenv
         Mock Invoke-CapsulenvRoutines {} -ModuleName Capsulenv
 
         & $script:Module { Invoke-CapsulenvChildShell -Command 'Write-Output ok' }
 
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnEnter' }
         Should -Invoke Invoke-CapsulenvRoutines -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $Trigger -eq 'OnExit' }
-        Should -Invoke Invoke-CapsulenvProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
+        Should -Invoke Invoke-CapsulenvOwnedProcessPlan -ModuleName Capsulenv -Times 1 -Exactly
+        $script:CapturedChildPlan.Executable | Should -Be 'pwsh.exe'
+        $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_PROFILE'] | Should -Be '/capsule/profile.ps1'
+        $script:CapturedChildPlan.Environment['CAPSULENV_POWERSHELL_HISTORY'] | Should -Be '/capsule/history.txt'
+        $script:CapturedChildPlan.Environment['PSModulePath'] | Should -Be '/capsule/modules:/host/modules'
+        $script:CapturedChildPlan.Arguments[-1] | Should -Match 'Write-Output ok'
     }
 
     It 'runs the rehydrate lifecycle trigger after projection reconciliation' {
