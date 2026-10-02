@@ -8,6 +8,13 @@ function ConvertTo-CapsulenvLauncherArgument {
     return '"' + $Value + '"'
 }
 
+function New-CapsulenvStartMenuShortcutShell {
+    [CmdletBinding()]
+    param()
+
+    return New-Object -ComObject WScript.Shell
+}
+
 function Sync-CapsulenvPackageStartMenuShortcuts {
     [CmdletBinding()]
     param(
@@ -49,12 +56,14 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
         return
     }
 
-    $launcher = Join-Path (Get-CapsulenvContext).Root 'capsulenv.cmd'
-    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-        throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.HostIntegration.LauncherMissing' -Message ('[[CapsulenvText:HostIntegration.LauncherMissing.Message]]' -f $launcher) -TargetObject $launcher -Remediation @('Rebuild or reinstall the capsule launcher before synchronizing User-mode Start Menu integration.'))
-    }
+    $capsuleId = Get-CapsulenvIdentity
+    # Persistent shortcuts must remain usable after a removable capsule moves.
+    # The host-local package bridge owns capsule discovery and is the only
+    # persistent entrypoint allowed to name the capsule launcher.
+    $packageBridge = New-CapsulenvUserIntegrationPackageBridge -CapsuleId $capsuleId
+    $hostPowerShell = Get-CapsulenvPersistentHostPowerShellExecutable
     [void](New-Item -ItemType Directory -Path $ownedRoot -Force)
-    $shell = New-Object -ComObject WScript.Shell
+    $shell = New-CapsulenvStartMenuShortcutShell
     try {
         foreach ($declaration in $declarations.ToArray()) {
             $packageRoot = Join-Path $ownedRoot ([string]$declaration.Package)
@@ -64,26 +73,26 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
                 -RelativePath (([string]$declaration.Name) + '.lnk')
             [void](New-Item -ItemType Directory -Path (Split-Path -Parent $shortcutPath) -Force)
             $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = $launcher
+            $shortcut.TargetPath = $hostPowerShell
             $shortcut.Arguments = @(
-                'app',
-                'run',
+                '-NoLogo',
+                '-NoProfile',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-File',
+                (ConvertTo-CapsulenvLauncherArgument -Value ([string]$packageBridge)),
+                '-CapsuleId',
+                (ConvertTo-CapsulenvLauncherArgument -Value ([string]$capsuleId)),
+                '-Package',
                 (ConvertTo-CapsulenvLauncherArgument -Value ('capsule/' + [string]$declaration.Package)),
+                '-Shortcut',
                 (ConvertTo-CapsulenvLauncherArgument -Value ([string]$declaration.Name))
             ) -join ' '
-            $shortcut.WorkingDirectory = (Get-CapsulenvContext).Root
+            $shortcut.WorkingDirectory = Split-Path -Parent ([string]$packageBridge)
             $shortcut.Description = "Capsulenv PortableSafe package: $($declaration.Package)"
-            $icon = if (
-                -not [string]::IsNullOrWhiteSpace([string]$declaration.Icon) -and
-                (Test-Path -LiteralPath ([string]$declaration.Icon) -PathType Leaf)
-            ) {
-                [string]$declaration.Icon
-            } else {
-                [string]$declaration.Target
-            }
-            if (Test-Path -LiteralPath $icon -PathType Leaf) {
-                $shortcut.IconLocation = $icon
-            }
+            # Do not persist a removable package target as the shortcut icon.
+            # The host runner is stable and keeps the complete .lnk host-local.
+            $shortcut.IconLocation = $hostPowerShell + ',0'
             $shortcut.Save()
         }
     } finally {
