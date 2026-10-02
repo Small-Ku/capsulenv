@@ -196,11 +196,11 @@ function Get-CapsulenvInstalledScoopApps {
                 continue
             }
             $current = Join-Path $directory.FullName 'current'
-            $manifestPath = Join-Path $current 'manifest.json'
-            $installPath = Join-Path $current 'install.json'
+            $manifestPath = Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $current -Kind Manifest -AllowMissing
+            $installPath = Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $current -Kind Install -AllowMissing
             $version = $null
             $bucket = $null
-            if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$manifestPath)) {
                 try {
                     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
                     $version = [string]$manifest.version
@@ -208,7 +208,7 @@ function Get-CapsulenvInstalledScoopApps {
                     $version = $null
                 }
             }
-            if (Test-Path -LiteralPath $installPath -PathType Leaf) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$installPath)) {
                 try {
                     $install = Get-Content -LiteralPath $installPath -Raw | ConvertFrom-Json
                     $bucketProperty = $install.PSObject.Properties['bucket']

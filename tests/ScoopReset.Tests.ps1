@@ -272,6 +272,25 @@ Describe 'Capsulenv package projection repair boundary' {
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 0 -Exactly
     }
 
+    It 'removes only newly-added capsule-owned PATH entries after ShellOnly Scoop execution' {
+        $hostPath = Join-Path $TestDrive 'host-bin'
+        $thirdParty = Join-Path $TestDrive 'third-party-bin'
+        $capsuleRoot = Join-Path $TestDrive 'capsule'
+        $capsuleShim = Join-Path $capsuleRoot 'scoop\shims'
+        $capsuleExisting = Join-Path $capsuleRoot 'bin'
+        $before = @($capsuleExisting, $hostPath) -join ';'
+        $after = @($capsuleShim, $thirdParty, $capsuleExisting, $hostPath) -join ';'
+
+        $result = & $script:Module {
+            param($Before, $After, $CapsuleRoot)
+            Get-CapsulenvShellOnlyUserPathAfterScoopCommand -BeforePath $Before -AfterPath $After -CapsuleRoot $CapsuleRoot
+        } $before $after $capsuleRoot
+
+        @($result -split ';') | Should -Not -Contain $capsuleShim
+        @($result -split ';') | Should -Contain $capsuleExisting
+        @($result -split ';') | Should -Contain $thirdParty
+        @($result -split ';') | Should -Contain $hostPath
+    }
     It 'keeps Scoop command output out of the returned exit-code value' {
         $fakeScoop = Join-Path $TestDrive 'fake-scoop.ps1'
         @'
@@ -291,8 +310,8 @@ $global:LASTEXITCODE = 0
         $appRoot = Join-Path $TestDrive 'single/apps/tool'
         $versionRoot = Join-Path $appRoot '1.0.0'
         New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
-        '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'manifest.json') -Encoding UTF8
-        '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'install.json') -Encoding UTF8
+        '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'scoop-manifest.json') -Encoding UTF8
+        '{}' | Set-Content -LiteralPath (Join-Path $versionRoot 'scoop-install.json') -Encoding UTF8
         $location = [pscustomobject]@{
             Selector = 'user/tool'
             Name = 'tool'

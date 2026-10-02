@@ -363,6 +363,10 @@ function Install-CapsulenvUserEnvironment {
     if ($rehydrationRequired) {
         Invoke-CapsulenvScoopRehydrate -IntegrationMode User
     }
+    $defaultBrowser = Get-CapsulenvConfiguredDefaultBrowser
+    if (-not [string]::IsNullOrWhiteSpace([string]$defaultBrowser)) {
+        [void](Install-CapsulenvUserIntegration -CapsuleId (Get-CapsulenvIdentity) -BrowserApp $defaultBrowser)
+    }
     Sync-CapsulenvConfiguredDefaultBrowser
     Write-CapsulenvMessage -Level Success -Message $(if ($alreadyUser) { "User environment synchronized. Backup: $backupPath" } else { "User environment enabled. Backup: $backupPath" })
 }

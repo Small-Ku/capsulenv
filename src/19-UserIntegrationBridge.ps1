@@ -214,11 +214,11 @@ function New-CapsulenvUserIntegrationBridge {
     $manifestPath = Join-Path $root 'bridge.json'
     $locator = New-CapsulenvUserIntegrationCapsuleLocator -CapsuleId $CapsuleId
     $rootReference = [string](@($locator.CapsuleRoots)[0])
-    $browserIdentity = [string]$BrowserApp
+    $browserIdentity = Get-CapsulenvBrowserStateIdentity -App $BrowserApp
     if ($null -ne $BrowserBinding -and $null -ne $BrowserBinding.PSObject.Properties['Program']) {
         $boundName = [string]$BrowserBinding.Program.Name
         if (-not [string]::IsNullOrWhiteSpace($boundName)) {
-            $browserIdentity = $boundName
+            $browserIdentity = Get-CapsulenvBrowserStateIdentity -App $boundName
         }
     }
     $bridgeScript = @'

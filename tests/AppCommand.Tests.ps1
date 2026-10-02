@@ -109,7 +109,7 @@ Describe 'Capsulenv app command trust boundary' {
         & $script:Module { Invoke-CapsulenvAppCommand -Arguments @('install', 'demo', '--allow-trusted') }
 
         Should -Invoke Invoke-CapsulenvScoopCommand -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
-            $Arguments.Count -eq 2 -and $Arguments[0] -eq 'install' -and $Arguments[1] -eq 'demo'
+            $Arguments.Count -eq 3 -and $Arguments[0] -eq 'install' -and $Arguments[1] -eq 'demo' -and $Arguments[2] -eq '--no-update-scoop'
         }
     }
 

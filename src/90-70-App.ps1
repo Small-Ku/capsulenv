@@ -139,7 +139,7 @@ function Invoke-CapsulenvAppCommand {
 
             [void](Set-CapsulenvSessionEnvironment)
             Write-CapsulenvMessage -Level Warning -Message "Delegating '$reference' to unmodified upstream Scoop. Third-party lifecycle code may execute and is outside Capsulenv's PortableSafe guarantees."
-            [void](Invoke-CapsulenvScoopCommand -Arguments @('install', $reference))
+            [void](Invoke-CapsulenvScoopCommand -Arguments @('install', $reference, '--no-update-scoop'))
         }
         'update' {
             $allowTrusted = $remaining -contains '--allow-trusted'

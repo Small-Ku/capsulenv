@@ -91,6 +91,28 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
         }
     }
 
+    It 'canonicalizes provider-qualified browser selectors in persistent bridge identity' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-user-selector-' + [Guid]::NewGuid().ToString('N'))
+        $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
+        try {
+            $env:CAPSULENV_HOST_STATE_ROOT = Join-Path $temporaryRoot 'host-state'
+            $bridge = & $script:Module {
+                param($CapsuleRoot, $PlacementRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                New-CapsulenvUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity) -BrowserApp 'scoop/firefox'
+            } (Join-Path $temporaryRoot 'capsule') (Join-Path $temporaryRoot 'nvme')
+
+            $bridge.BrowserApp | Should -Be 'scoop/firefox'
+            $bridge.BrowserStateIdentity | Should -Be 'firefox'
+        } finally {
+            if ($null -eq $oldStateRoot) {
+                Remove-Item Env:CAPSULENV_HOST_STATE_ROOT -ErrorAction SilentlyContinue
+            } else {
+                $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot
+            }
+        }
+    }
     It 'discovers the registered capsule without session environment and reports deterministic absence' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-user-absent-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT

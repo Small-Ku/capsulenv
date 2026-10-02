@@ -28,7 +28,7 @@ function Invoke-CapsulenvDoctor {
     $scoopRoot = Get-CapsulenvScoopRoot
     $scoopGlobalRoot = Get-CapsulenvScoopGlobalRoot
 
-    $installMode = Get-CapsulenvInstallMode
+    $installMode = Get-CapsulenvUserIntegrationMode
     $modePassed = $true
     $modeDetail = if ($installMode -eq 'User') {
         try {

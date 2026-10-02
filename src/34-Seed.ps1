@@ -422,11 +422,12 @@ function New-CapsulenvShellOnlyScoopSeedPlan {
         }
         $destinationScopeRoot = if ($global) { Get-CapsulenvScoopGlobalRoot } else { Get-CapsulenvScoopRoot }
         $destinationAppRoot = Join-Path (Join-Path $destinationScopeRoot 'apps') $name
-        $destinationReady = Test-Path -LiteralPath (Join-Path (Join-Path $destinationAppRoot 'current') 'manifest.json') -PathType Leaf
+        $destinationCurrent = Join-Path $destinationAppRoot 'current'
+        $destinationReady = Test-CapsulenvScoopInstalledMetadataPair -VersionRoot $destinationCurrent
         if (-not $destinationReady -and (Test-Path -LiteralPath $destinationAppRoot -PathType Container)) {
             $destinationReady = $null -ne (
                 Get-ChildItem -LiteralPath $destinationAppRoot -Directory -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Name -ne 'current' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'manifest.json') -PathType Leaf) } |
+                    Where-Object { $_.Name -ne 'current' -and (Test-CapsulenvScoopInstalledMetadataPair -VersionRoot $_.FullName) } |
                     Select-Object -First 1
             )
         }
@@ -442,8 +443,8 @@ function New-CapsulenvShellOnlyScoopSeedPlan {
             if ($null -eq $sourceVersionPath) {
                 $current = Join-Path (Join-Path (Join-Path $sourceScopeRoot 'apps') $name) 'current'
                 if (Test-Path -LiteralPath $current -PathType Container) {
-                    $manifestPath = Join-Path $current 'manifest.json'
-                    if ([string]::IsNullOrWhiteSpace($version) -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+                    $manifestPath = Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $current -Kind Manifest -AllowMissing
+                    if ([string]::IsNullOrWhiteSpace($version) -and -not [string]::IsNullOrWhiteSpace([string]$manifestPath)) {
                         try {
                             $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
                             $version = [string]$manifest.version

@@ -29,8 +29,8 @@ Describe 'Capsulenv installed Scoop shortcut launcher' {
                         )
                     }
                 }
-            } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Encoding UTF8
-            @{ architecture = '64bit'; bucket = 'main' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $current 'install.json') -Encoding UTF8
+            } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $current 'scoop-manifest.json') -Encoding UTF8
+            @{ architecture = '64bit'; bucket = 'main' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $current 'scoop-install.json') -Encoding UTF8
 
             & $script:Module {
                 param($CapsuleRoot)

@@ -81,8 +81,8 @@ Describe 'Capsulenv portable workflow contracts' {
                 [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot $path) -Force)
             }
             'param()' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/apps/scoop/current/bin/scoop.ps1') -Encoding UTF8
-            '{"version":"1.0.0"}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/apps/git/current/manifest.json') -Encoding UTF8
-            '{"bucket":"main"}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/apps/git/current/install.json') -Encoding UTF8
+            '{"version":"1.0.0"}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/apps/git/current/scoop-manifest.json') -Encoding UTF8
+            '{"bucket":"main"}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/apps/git/current/scoop-install.json') -Encoding UTF8
             '{"version":"2.0.0"}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'scoop/buckets/main/bucket/git.json') -Encoding UTF8
             'cache' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'cache/scoop/test.cache') -Encoding UTF8
 
@@ -168,6 +168,21 @@ Describe 'Capsulenv portable workflow contracts' {
         $script:ChildShellCall.SkipSync | Should -BeTrue
     }
 
+    It 'installs the persistent browser bridge before synchronizing default-browser registration' {
+        $source = Get-Content -LiteralPath (Join-Path $script:Root 'src/30-30-UserEnvironment.ps1') -Raw
+        $configuredIndex = $source.IndexOf('Get-CapsulenvConfiguredDefaultBrowser', [StringComparison]::Ordinal)
+        $bridgeIndex = $source.IndexOf('Install-CapsulenvUserIntegration', [StringComparison]::Ordinal)
+        $syncIndex = $source.IndexOf('Sync-CapsulenvConfiguredDefaultBrowser', [StringComparison]::Ordinal)
+
+        $configuredIndex | Should -BeGreaterOrEqual 0
+        $bridgeIndex | Should -BeGreaterThan $configuredIndex
+        $syncIndex | Should -BeGreaterThan $bridgeIndex
+    }
+    It 'checks persistent User ownership independently from fresh session mode' {
+        $doctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw
+        $doctorSource | Should -Match '\$installMode\s*=\s*Get-CapsulenvUserIntegrationMode'
+        $doctorSource | Should -Not -Match '\$installMode\s*=\s*Get-CapsulenvInstallMode'
+    }
     It 'keeps lifecycle cleanup and desired-state repair authority bounded' {
         $lifecycleSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/72-Lifecycle.ps1') -Raw
         $doctorSource = Get-Content -LiteralPath (Join-Path $script:Root 'src/70-Doctor.ps1') -Raw

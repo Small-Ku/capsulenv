@@ -87,22 +87,14 @@ function Test-CapsulenvLegacyScoopVersionRootCandidate {
     if ($null -ne (Get-CapsulenvReparseTarget -Path $candidate)) {
         return $false
     }
-    return (
-        (Test-Path -LiteralPath (Join-Path $candidate 'manifest.json') -PathType Leaf) -and
-        (Test-Path -LiteralPath (Join-Path $candidate 'install.json') -PathType Leaf)
-    )
+    return Test-CapsulenvScoopInstalledMetadataPair -VersionRoot $candidate
 }
 
 function Resolve-CapsulenvLegacyScoopVersionRoot {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Location)
 
-    $currentManifest = Join-Path $Location.CurrentRoot 'manifest.json'
-    $currentInstall = Join-Path $Location.CurrentRoot 'install.json'
-    if (
-        (Test-Path -LiteralPath $currentManifest -PathType Leaf) -and
-        (Test-Path -LiteralPath $currentInstall -PathType Leaf)
-    ) {
+    if (Test-CapsulenvScoopInstalledMetadataPair -VersionRoot $Location.CurrentRoot) {
         $resolvedCurrent = Get-CapsulenvReparseTarget -Path $Location.CurrentRoot
         if (
             $null -ne $resolvedCurrent -and

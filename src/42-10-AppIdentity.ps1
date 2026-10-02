@@ -22,6 +22,42 @@ function Get-CapsulenvJsonPropertyRecord {
     return [pscustomobject]@{ Value = $property.Value }
 }
 
+function Get-CapsulenvScoopInstalledMetadataPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$VersionRoot,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Manifest', 'Install')]
+        [string]$Kind,
+        [switch]$AllowMissing
+    )
+
+    $names = if ($Kind -eq 'Manifest') {
+        @('scoop-manifest.json', 'manifest.json')
+    } else {
+        @('scoop-install.json', 'install.json')
+    }
+    foreach ($name in $names) {
+        $candidate = Join-Path $VersionRoot $name
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return $candidate
+        }
+    }
+    if ($AllowMissing) {
+        return $null
+    }
+    throw "Scoop installed $($Kind.ToLowerInvariant()) metadata is missing under $VersionRoot. Expected one of: $($names -join ', ')."
+}
+
+function Test-CapsulenvScoopInstalledMetadataPair {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$VersionRoot)
+
+    return (
+        $null -ne (Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $VersionRoot -Kind Manifest -AllowMissing) -and
+        $null -ne (Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $VersionRoot -Kind Install -AllowMissing)
+    )
+}
 function Get-CapsulenvInstalledAppRootRecord {
     [CmdletBinding()]
     param(
@@ -230,13 +266,18 @@ function Get-CapsulenvInstalledApp {
         $displaySelector = if ($provider -eq 'Capsulenv') { $canonicalSelector } else { 'scoop/{0}' -f $parsed.Name }
         $legacySelector = if ($provider -eq 'Capsulenv') { $canonicalSelector } else { '{0}/{1}' -f $scope.ToLowerInvariant(), $parsed.Name }
 
-        $manifestPath = Join-Path $current 'manifest.json'
-        $installPath = Join-Path $current 'install.json'
-        if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-            throw "Installed manifest is missing for ${canonicalSelector}: $manifestPath"
+        if ($provider -eq 'Capsulenv') {
+            $manifestPath = Join-Path $current 'manifest.json'
+            $installPath = Join-Path $current 'install.json'
+        } else {
+            $manifestPath = Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $current -Kind Manifest -AllowMissing
+            $installPath = Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $current -Kind Install -AllowMissing
         }
-        if (-not (Test-Path -LiteralPath $installPath -PathType Leaf)) {
-            throw "Installed metadata is missing for ${canonicalSelector}: $installPath"
+        if ([string]::IsNullOrWhiteSpace([string]$manifestPath)) {
+            throw "Installed manifest is missing for $($canonicalSelector): $current"
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$installPath)) {
+            throw "Installed metadata is missing for $($canonicalSelector): $current"
         }
 
         try {

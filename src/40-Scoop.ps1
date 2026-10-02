@@ -30,6 +30,46 @@ function Get-CapsulenvScoopExecutable {
     return $null
 }
 
+function Get-CapsulenvShellOnlyUserPathAfterScoopCommand {
+    [CmdletBinding()]
+    param(
+        [AllowNull()][string]$BeforePath,
+        [AllowNull()][string]$AfterPath,
+        [Parameter(Mandatory = $true)][string]$CapsuleRoot
+    )
+
+    $capsuleRoot = [System.IO.Path]::GetFullPath($CapsuleRoot).TrimEnd('\', '/')
+    $beforeEntries = @{}
+    foreach ($entry in @(([string]$BeforePath) -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+        try {
+            $normalized = [System.IO.Path]::GetFullPath($entry.Trim()).TrimEnd('\', '/')
+        } catch {
+            $normalized = $entry.Trim().TrimEnd('\', '/')
+        }
+        $beforeEntries[$normalized] = $true
+    }
+
+    $kept = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @(([string]$AfterPath) -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+        try {
+            $normalized = [System.IO.Path]::GetFullPath($entry.Trim()).TrimEnd('\', '/')
+        } catch {
+            $normalized = $entry.Trim().TrimEnd('\', '/')
+        }
+        $underCapsule = (
+            [System.StringComparer]::OrdinalIgnoreCase.Equals($normalized, $capsuleRoot) -or
+            $normalized.StartsWith($capsuleRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+        )
+        if ($underCapsule -and -not $beforeEntries.ContainsKey($normalized)) {
+            continue
+        }
+        $kept.Add($entry)
+    }
+    return ($kept -join ';')
+}
+
 function Invoke-CapsulenvScoopCommand {
     [CmdletBinding()]
     param(
@@ -42,9 +82,35 @@ function Invoke-CapsulenvScoopCommand {
         throw (New-CapsulenvDiagnosticErrorRecord -Id 'Capsulenv.Scoop.NotInstalled' -Message '[[CapsulenvText:Scoop.NotInstalled.Message]]' -TargetObject (Get-CapsulenvScoopRoot) -Remediation @('[[CapsulenvText:Scoop.NotInstalled.Remediation]]'))
     }
 
+    $guardPersistentPath = $false
+    $capsuleRootForGuard = $null
+    if ((Test-CapsulenvWindows) -and (Get-CapsulenvInstallMode) -eq 'ShellOnly') {
+        try {
+            $capsuleRootForGuard = [string](Get-CapsulenvContext).Root
+            $guardPersistentPath = -not [string]::IsNullOrWhiteSpace($capsuleRootForGuard)
+        } catch {
+            $guardPersistentPath = $false
+        }
+    }
+    $userPathBefore = if ($guardPersistentPath) {
+        [Environment]::GetEnvironmentVariable('PATH', 'User')
+    } else {
+        $null
+    }
+
     Clear-CapsulenvLastExitCode
-    $commandOutput = @(& $scoop @Arguments)
-    $succeeded = $?
+    try {
+        $commandOutput = @(& $scoop @Arguments)
+        $succeeded = $?
+    } finally {
+        if ($guardPersistentPath) {
+            $userPathAfter = [Environment]::GetEnvironmentVariable('PATH', 'User')
+            $reconciledUserPath = Get-CapsulenvShellOnlyUserPathAfterScoopCommand -BeforePath $userPathBefore -AfterPath $userPathAfter -CapsuleRoot $capsuleRootForGuard
+            if (-not [System.StringComparer]::Ordinal.Equals([string]$userPathAfter, [string]$reconciledUserPath)) {
+                [Environment]::SetEnvironmentVariable('PATH', $reconciledUserPath, 'User')
+            }
+        }
+    }
     if ($commandOutput.Count -gt 0) {
         $commandOutput | Out-Host
     }
