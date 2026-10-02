@@ -166,6 +166,189 @@ function Get-CapsulenvHostBootEpoch {
     return $script:CapsulenvUnavailableBootEpoch
 }
 
+function Publish-CapsulenvFileAuthorityAtomically {
+    [CmdletBinding(DefaultParameterSetName = 'Value')]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true, ParameterSetName = 'Value')][AllowNull()]$Value,
+        [Parameter(Mandatory = $true, ParameterSetName = 'Staged')][string]$StagedPath
+    )
+
+    $parent = Split-Path -Parent $Path
+    [void](New-Item -ItemType Directory -Path $parent -Force)
+    $ownsStagedPath = $false
+    if ($PSCmdlet.ParameterSetName -eq 'Value') {
+        $StagedPath = Join-Path $parent ('.{0}.{1}.tmp' -f (Split-Path -Leaf $Path), [Guid]::NewGuid().ToString('N'))
+        $ownsStagedPath = $true
+        $encoding = New-Object System.Text.UTF8Encoding($true)
+        [System.IO.File]::WriteAllText(
+            $StagedPath,
+            ($Value | ConvertTo-Json -Depth 12),
+            $encoding
+        )
+    } elseif (-not (Test-Path -LiteralPath $StagedPath -PathType Leaf)) {
+        throw "The staged authority file does not exist: $StagedPath"
+    }
+
+    $backupPath = $null
+    try {
+        if ((Test-Path -LiteralPath $Path) -and -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Authority path is occupied by a directory or incompatible item: $Path"
+        }
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            try {
+                # File.Replace either publishes the new file or leaves the old
+                # authority untouched. There is deliberately no delete-then-
+                # move fallback for a durable authority file.
+                $backupPath = '{0}.backup-{1}' -f $Path, [Guid]::NewGuid().ToString('N')
+                [System.IO.File]::Replace($StagedPath, $Path, $backupPath, $true)
+                if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $backupPath -Force
+                }
+            } catch {
+                if ($null -ne $backupPath -and (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
+                    Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+                }
+                throw "Could not atomically publish authority '$Path'; the previous valid file was retained. $($_.Exception.Message)"
+            }
+        } else {
+            Move-Item -LiteralPath $StagedPath -Destination $Path
+        }
+    } finally {
+        if (($ownsStagedPath -or $PSCmdlet.ParameterSetName -eq 'Staged') -and (Test-Path -LiteralPath $StagedPath -PathType Leaf)) {
+            Remove-Item -LiteralPath $StagedPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Get-CapsulenvDirectoryAuthorityJournalPath {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd([char[]]'\/')
+    $parent = Split-Path -Parent $fullPath
+    return Join-Path $parent ('.{0}.transaction.json' -f (Split-Path -Leaf $fullPath))
+}
+
+function Recover-CapsulenvDirectoryAuthorityTransaction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string]$JournalPath
+    )
+
+    $destination = [System.IO.Path]::GetFullPath($Path).TrimEnd([char[]]'\/')
+    if ([string]::IsNullOrWhiteSpace($JournalPath)) {
+        $JournalPath = Get-CapsulenvDirectoryAuthorityJournalPath -Path $destination
+    }
+    if (-not (Test-Path -LiteralPath $JournalPath -PathType Leaf)) {
+        return $false
+    }
+    $journal = Get-Content -LiteralPath $JournalPath -Raw | ConvertFrom-Json
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$journal.Destination, $destination)) {
+        throw "Directory authority journal targets a different destination: $JournalPath"
+    }
+    $backup = [string]$journal.Backup
+    $staged = [string]$journal.Staged
+    try {
+        if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+            if (Test-Path -LiteralPath $backup -PathType Container) {
+                Move-Item -LiteralPath $backup -Destination $destination
+            } elseif (Test-Path -LiteralPath $staged -PathType Container) {
+                Move-Item -LiteralPath $staged -Destination $destination
+            } elseif ([string]$journal.Phase -eq 'Prepared') {
+                # Nothing was published and no previous authority existed. A
+                # fault at this point only leaves transaction metadata behind.
+                Remove-Item -LiteralPath $JournalPath -Force
+                return $true
+            } else {
+                throw "Directory authority transaction has no recoverable destination, backup, or staging root: $destination"
+            }
+        }
+        if (Test-Path -LiteralPath $backup) {
+            Remove-Item -LiteralPath $backup -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $staged) {
+            Remove-Item -LiteralPath $staged -Recurse -Force
+        }
+        Remove-Item -LiteralPath $JournalPath -Force
+        return $true
+    } catch {
+        throw "Could not recover directory authority transaction '$destination': $($_.Exception.Message)"
+    }
+}
+
+function Publish-CapsulenvDirectoryAuthorityTransactionally {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$StagedPath,
+        [scriptblock]$FaultInjector
+    )
+
+    $destination = [System.IO.Path]::GetFullPath($Path).TrimEnd([char[]]'\/')
+    $staged = [System.IO.Path]::GetFullPath($StagedPath).TrimEnd([char[]]'\/')
+    if (-not (Test-Path -LiteralPath $staged -PathType Container)) {
+        throw "The staged authority directory does not exist: $staged"
+    }
+    if ((Test-Path -LiteralPath $destination) -and -not (Test-Path -LiteralPath $destination -PathType Container)) {
+        throw "Directory authority path is occupied by a file or incompatible item: $destination"
+    }
+    $parent = Split-Path -Parent $destination
+    [void](New-Item -ItemType Directory -Path $parent -Force)
+    $journalPath = Get-CapsulenvDirectoryAuthorityJournalPath -Path $destination
+    if (Test-Path -LiteralPath $journalPath -PathType Leaf) {
+        [void](Recover-CapsulenvDirectoryAuthorityTransaction -Path $destination -JournalPath $journalPath)
+    }
+    $backup = '{0}.backup-{1}' -f $destination, [Guid]::NewGuid().ToString('N')
+    $journal = [ordered]@{
+        SchemaVersion = 1
+        Destination = $destination
+        Staged = $staged
+        Backup = $backup
+        Phase = 'Prepared'
+        CreatedAtUtc = [DateTime]::UtcNow.ToString('o')
+    }
+    Publish-CapsulenvFileAuthorityAtomically -Path $journalPath -Value $journal
+    $destinationBackedUp = $false
+    $published = $false
+    try {
+        if (Test-Path -LiteralPath $destination -PathType Container) {
+            Move-Item -LiteralPath $destination -Destination $backup
+            $destinationBackedUp = $true
+            $journal.Phase = 'BackedUp'
+            Publish-CapsulenvFileAuthorityAtomically -Path $journalPath -Value $journal
+        }
+        if ($null -ne $FaultInjector) { & $FaultInjector 'AfterBackup' }
+        Move-Item -LiteralPath $staged -Destination $destination
+        $published = $true
+        $journal.Phase = 'Published'
+        Publish-CapsulenvFileAuthorityAtomically -Path $journalPath -Value $journal
+        if (Test-Path -LiteralPath $backup) {
+            Remove-Item -LiteralPath $backup -Recurse -Force
+        }
+        Remove-Item -LiteralPath $journalPath -Force
+        return [pscustomobject][ordered]@{ Published = $true; Destination = $destination }
+    } catch {
+        if ($destinationBackedUp -and -not (Test-Path -LiteralPath $destination) -and (Test-Path -LiteralPath $backup -PathType Container)) {
+            try {
+                Move-Item -LiteralPath $backup -Destination $destination
+                Remove-Item -LiteralPath $journalPath -Force -ErrorAction SilentlyContinue
+            } catch {
+                throw "Directory authority publication failed and recovery is still pending at '$journalPath': $($_.Exception.Message)"
+            }
+        }
+        throw
+    } finally {
+        if (Test-Path -LiteralPath $staged) {
+            Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if ($published -and (Test-Path -LiteralPath $backup)) {
+            Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Write-CapsulenvHostJsonAtomically {
     [CmdletBinding()]
     param(
@@ -173,34 +356,7 @@ function Write-CapsulenvHostJsonAtomically {
         [Parameter(Mandatory = $true)]$Value
     )
 
-    $parent = Split-Path -Parent $Path
-    [void](New-Item -ItemType Directory -Path $parent -Force)
-    $temporary = Join-Path $parent ('.{0}.{1}.tmp' -f (Split-Path -Leaf $Path), [Guid]::NewGuid().ToString('N'))
-    try {
-        $encoding = New-Object System.Text.UTF8Encoding($true)
-        [System.IO.File]::WriteAllText(
-            $temporary,
-            ($Value | ConvertTo-Json -Depth 8),
-            $encoding
-        )
-        if (Test-Path -LiteralPath $Path -PathType Leaf) {
-            $backupPath = '{0}.backup-{1}' -f $Path, [Guid]::NewGuid().ToString('N')
-            try {
-                [System.IO.File]::Replace($temporary, $Path, $backupPath, $true)
-                if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
-                    Remove-Item -LiteralPath $backupPath -Force
-                }
-            } catch {
-                throw "Could not atomically publish host state '$Path'; the previous valid file was retained. $($_.Exception.Message)"
-            }
-        } else {
-            Move-Item -LiteralPath $temporary -Destination $Path
-        }
-    } finally {
-        if (Test-Path -LiteralPath $temporary -PathType Leaf) {
-            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
-        }
-    }
+    Publish-CapsulenvFileAuthorityAtomically -Path $Path -Value $Value
 }
 
 function Assert-CapsulenvHostPlacementRoot {
