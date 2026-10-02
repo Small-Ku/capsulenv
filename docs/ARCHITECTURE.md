@@ -272,3 +272,37 @@ Tool storage classes, project cache links, and native repair mechanics are defin
 ## Static architecture gates
 
 Static ownership boundaries are enforced by `scripts/Capsulenv.StaticAnalysis.ps1`. Every rule requires rejecting and accepting synthetic fixtures. For test execution, see [DEVELOPMENT](DEVELOPMENT.md#tests).
+
+## Host identity and depot retention
+
+Capsulenv keeps capsule identity and desired state portable, while resolving a
+host-local depot from an independent host record. A host record is keyed by a
+stable machine/user integration key and never by the portable root or drive
+letter.
+
+Unknown hosts resolve to retention = ephemeral by default. The ephemeral
+placement is namespaced by host key, capsule identity, and the current boot
+epoch, so a valid realization can be reused during one host lifetime without
+making reboot/reimage persistence part of correctness. No shutdown cleanup hook
+is required.
+
+Persistent placement requires an explicit host enrollment/tag such as home. An
+enrolled host may provide a stable local depot root, including a custom local
+volume. Portable state is not copied into this depot merely to simplify
+cleanup, and a stale host-local record never overrides portable desired state.
+
+The host placement foundation only resolves and materializes layout. Program
+resolution, immutable generations, activation, and integration ownership remain
+separate boundaries implemented by the downstream architecture issues.
+
+Host identity uses layered evidence. When available, the Windows GDID value at
+`HKCU\\SOFTWARE\\Microsoft\\IdentityCRL\\ExtendedProperties\\LID` is a
+strong host-installation signal; the machine/user tuple remains a fallback and
+co-factor. Capsulenv stores only the derived host digest in placement keys, and
+never copies raw GDID into portable state. GDID presence does not infer home or
+enable persistent retention; explicit enrollment remains authoritative.
+
+Host JSON publication is fail-closed when replacement is unsupported, retaining
+the previous valid record. An invalid or unmarked ephemeral placement is stale
+material and is moved aside before rematerialization; an invalid persistent
+placement reports a diagnostic instead of being silently adopted.

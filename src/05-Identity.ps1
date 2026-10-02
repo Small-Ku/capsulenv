@@ -24,8 +24,9 @@ function Write-CapsulenvIdentity {
             try {
                 [System.IO.File]::Replace($temporary, $path, $null, $true)
             } catch {
-                Remove-Item -LiteralPath $path -Force
-                Move-Item -LiteralPath $temporary -Destination $path
+                throw [System.IO.IOException]::new(
+                    "Could not atomically publish capsule identity '$path'; the previous valid identity was retained. $($_.Exception.Message)"
+                )
             }
         } else {
             Move-Item -LiteralPath $temporary -Destination $path
@@ -45,17 +46,23 @@ function Get-CapsulenvIdentity {
     if (Test-Path -LiteralPath $path -PathType Leaf) {
         try {
             $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            $id = [Guid]::Empty
-            if (
-                [int]$state.SchemaVersion -eq 1 -and
-                [Guid]::TryParse([string]$state.Id, [ref]$id) -and
-                $id -ne [Guid]::Empty
-            ) {
-                return $id.ToString('D')
-            }
         } catch {
-            Write-CapsulenvMessage -Level Warning -Message "Replacing invalid capsule identity: $path"
+            throw [System.IO.InvalidDataException]::new(
+                "Capsule identity authority could not be read: $path. The existing identity was retained. $($_.Exception.Message)"
+            )
         }
+
+        $id = [Guid]::Empty
+        if (
+            [int]$state.SchemaVersion -ne 1 -or
+            -not [Guid]::TryParse([string]$state.Id, [ref]$id) -or
+            $id -eq [Guid]::Empty
+        ) {
+            throw [System.IO.InvalidDataException]::new(
+                "Capsule identity authority is invalid: $path. Refusing to replace the portable identity automatically."
+            )
+        }
+        return $id.ToString('D')
     }
 
     $newId = [Guid]::NewGuid()
@@ -111,15 +118,7 @@ function Get-CapsulenvHostIntegrationKey {
     [CmdletBinding()]
     param()
 
-    $identityText = ('{0}|{1}\{2}' -f [Environment]::MachineName, [Environment]::UserDomainName, [Environment]::UserName).ToLowerInvariant()
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($identityText)
-        $hash = $sha256.ComputeHash($bytes)
-    } finally {
-        $sha256.Dispose()
-    }
-    return (($hash | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 24)
+    return Get-CapsulenvHostIdentityDigest
 }
 
 function Get-CapsulenvUserIntegrationStateRoot {
