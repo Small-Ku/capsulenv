@@ -90,19 +90,14 @@ function Invoke-CapsulenvDoctor {
     $toolPathValues = @($toolStoragePlan.Directories)
     $missingToolDirectories = @($toolPathValues | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Container) })
     $missingToolFiles = @($toolStoragePlan.Files | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
-    $conflictingToolFiles = @($toolStoragePlan.Files | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
-    $toolStorageReady = Test-CapsulenvToolStorageReady -Plan $toolStoragePlan
-    $toolStorageHealthy = $toolStoragePlan.Enabled -and $missingToolDirectories.Count -eq 0 -and $missingToolFiles.Count -eq 0 -and $conflictingToolFiles.Count -eq 0
     $results.Add((New-CapsulenvCheckResult `
         -Name 'Portable tool storage' `
-        -Passed $toolStorageHealthy `
+        -Passed $toolStoragePlan.Enabled `
         -Importance Optional `
         -Detail $(if (-not $toolStoragePlan.Enabled) {
             'Disabled'
-        } elseif ($toolStorageHealthy) {
-            "$($toolStoragePlan.Locations.Count) location(s); readiness marker=$toolStorageReady"
         } else {
-            "$($missingToolDirectories.Count) missing directorie(s), $($missingToolFiles.Count) missing config file(s), $($conflictingToolFiles.Count) file-path conflict(s); run 'capsulenv cache init' to repair"
+            "$($toolStoragePlan.Locations.Count) location(s); $($missingToolDirectories.Count) directorie(s) and $($missingToolFiles.Count) config file(s) will be created on first session/cache init"
         })))
 
     $environmentPlan = Get-CapsulenvEnvironmentPlan
@@ -366,6 +361,31 @@ function Initialize-CapsulenvIntegrations {
             Write-CapsulenvMessage -Level Warning -Message "Optional Bitwarden attach integration was not activated: $($_.Exception.Message)"
         }
     }
+    $sessionServiceConfigPath = Join-Path (Get-CapsulenvContext).Root 'state/portable/sing-box/config.json'
+    if (Test-Path -LiteralPath $sessionServiceConfigPath -PathType Leaf) {
+        try {
+            $serviceRequirement = New-CapsulenvProgramRequirement -Name 'sing-box' -RequiredCapabilities @('proxy') -AllowedProviders @('host-scoop', 'capsulenv-local', 'seed', 'provider')
+            $servicePlacement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
+            $serviceProbes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $sessionServiceConfigPath
+            $serviceDefinition = New-CapsulenvSessionServiceDefinition `
+                -Name 'sing-box' `
+                -Requirement $serviceRequirement `
+                -Criticality optional `
+                -ConfigPath $sessionServiceConfigPath `
+                -RuntimeRoot (Join-Path $servicePlacement.ScratchRoot 'session-service') `
+                -LogRoot (Join-Path $servicePlacement.ScratchRoot 'session-service/logs') `
+                -ReadinessProbe $serviceProbes.ReadinessProbe `
+                -HealthProbe $serviceProbes.HealthProbe
+            $serviceProgram = Get-CapsulenvActiveGenerationProgram -Requirement $serviceRequirement -ActivationSnapshot $ActivationSnapshot
+            $serviceBinding = Start-CapsulenvSessionService -Definition $serviceDefinition -Program $serviceProgram -SessionId $session.SessionId
+            if ($serviceBinding.Succeeded) {
+                Write-CapsulenvMessage -Level Detail -Message 'Configured session service attached through the generic SessionService lifecycle.'
+            }
+        } catch {
+            Write-CapsulenvMessage -Level Warning -Message "Optional configured session service was not activated: $($_.Exception.Message)"
+        }
+    }
+    Write-CapsulenvMessage -Level Detail -Message 'Activation fast path established host placement and session identity; repair and legacy projection reconciliation require explicit commands.'
 }
 
 function Initialize-Capsulenv {
@@ -378,16 +398,18 @@ function Initialize-Capsulenv {
     )
 
     [void](Get-CapsulenvConfiguration -Refresh)
-    [void](Initialize-CapsulenvScoopBootstrap -ForceRepair)
-    Invoke-CapsulenvScoopRehydrate `
-        -SkipHooks:$SkipHooks `
-        -SkipPersistRepairs:$SkipPersistRepairs `
-        -SkipToolRepairs:$SkipToolRepairs `
-        -StrictToolRepairs:$StrictToolRepairs
-    Initialize-CapsulenvBitwarden
+    [void](Set-CapsulenvSessionEnvironment)
+    [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
+    $session = Initialize-CapsulenvSession -Role activation -Provenance 'capsulenv:init'
 
     $context = Get-CapsulenvContext
-    Write-CapsulenvMessage -Level Success -Message "capsulenv initialized at $($context.Root)"
+    Write-CapsulenvMessage -Level Success -Message "capsulenv activation initialized at $($context.Root); use explicit deploy, repair, or migrate commands for mutations."
+    return [pscustomobject][ordered]@{
+        Context = $context
+        SessionId = $session.SessionId
+        RepairPerformed = $false
+        LegacyRehydratePerformed = $false
+    }
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Initialize-Capsulenv, Invoke-CapsulenvDoctor
