@@ -1,6 +1,12 @@
 # Tool storage and native relocation
 
-This page defines tool data classifications, cache stores, project-cache links, and uv/Pixi relocation repair semantics. For operational instructions, see [USAGE](USAGE.md#tool-storage). For runtime ownership rules, see [ARCHITECTURE](ARCHITECTURE.md).
+This page defines tool data classifications, cache stores, project-cache links, and uv/Pixi relocation repair semantics. For operational instructions, see [USAGE](USAGE.md#tool-state-and-project-cache). For runtime ownership rules, see [ARCHITECTURE](ARCHITECTURE.md).
+
+`ToolStorage` is a narrow compatibility adapter for routing tool-native State,
+cache, and explicitly registered project-cache data. It is not the authority
+for installed program identity, provider selection, generations, sessions, or
+host integration. Those decisions remain in the installed selector and state
+ledgers described by [ARCHITECTURE](ARCHITECTURE.md#normative-runtime-authority).
 
 ## Storage classes
 
@@ -55,7 +61,7 @@ Capsulenv does not relocate project-level `node_modules`, `.venv`, `.pixi`, or b
 
 ## Project-cache links
 
-`ToolStorage.ProjectLinks` defines allowed profile types. The default `cargo-target` profile places Rust `target/` directories into `project-cache/` using directory junctions. For usage instructions, see [USAGE](USAGE.md#tool-storage).
+`ToolStorage.ProjectLinks` defines allowed profile types. The default `cargo-target` profile places Rust `target/` directories into `project-cache/` using directory junctions. For usage instructions, see [USAGE](USAGE.md#tool-state-and-project-cache).
 
 | Link type | Conditions |
 |---|---|
@@ -73,11 +79,11 @@ File hardlink registries record file length and SHA-256 hashes. After copying ac
 
 Capsulenv repairs only explicitly registered workspaces with lock files. It does not scan the filesystem recursively for `.venv` or `.pixi`.
 
-The registry resides in `.capsulenv/tool-workspaces.json`. Workspaces inside the capsule use relative paths; external workspaces retain absolute paths. For registration syntax, see [USAGE](USAGE.md#tool-storage).
+The registry resides in `.capsulenv/tool-workspaces.json`. Workspaces inside the capsule use relative paths; external workspaces retain absolute paths. For registration syntax, see [USAGE](USAGE.md#tool-state-and-project-cache).
 
 ## uv native repair
 
-`ToolStorage.Relocation.Uv.App` specifies the installed app, defaulting to `uv`. The resolver selects the application's declared manifest binary. It accepts Capsulenv and Scoop providers; for resolver rules, see [Provisioning and runtime separation](ARCHITECTURE.md#provisioning-and-runtime-separation).
+`ToolStorage.Relocation.Uv.App` specifies the installed app, defaulting to `uv`. The resolver selects the application's declared manifest binary. It accepts Capsulenv and Scoop providers; for resolver rules, see [Installed selector and runtime separation](ARCHITECTURE.md#installed-selector-and-runtime-separation).
 
 Fallback to internal `tool-data` or `bin/` binaries occurs only when the specified app is absent. If an app is ambiguous or its executable is incompatible, resolution fails closed without borrowing host executables.
 

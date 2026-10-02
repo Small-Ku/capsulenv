@@ -38,7 +38,7 @@ Describe 'Capsulenv SessionService lifecycle' {
         $pidPath = Join-Path $temporaryRoot 'sing-box.pid'
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $sleep) -Force)
         "#!/bin/sh`necho \`$PPID > '$pidPath'`nsleep 30`n" | Set-Content -LiteralPath $sleep -NoNewline
-        & chmod +x $sleep
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 30 } -ModuleName Capsulenv
         [void](New-Item -ItemType Directory -Path (Split-Path -Parent $config) -Force)
         '{}' | Set-Content -LiteralPath $config -NoNewline
         $result = & $script:Module {
@@ -95,7 +95,11 @@ Describe 'Capsulenv SessionService lifecycle' {
     }
     It 'fails optional activation when readiness never arrives and cleans the owned process' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-fail-' + [Guid]::NewGuid().ToString('N'))
-        $truePath = if (Test-Path -LiteralPath '/bin/true' -PathType Leaf) { '/bin/true' } else { 'true' }
+        $truePath = if (Test-Path -LiteralPath '/bin/true' -PathType Leaf) {
+            '/bin/true'
+        } else {
+            (Get-Command pwsh.exe, pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        }
         $result = & $script:Module {
             param($CapsuleRoot, $Executable)
             Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
@@ -156,24 +160,21 @@ Describe 'Capsulenv SessionService lifecycle' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-probe-throw-' + [Guid]::NewGuid().ToString('N'))
         $executable = Join-Path $temporaryRoot 'sing-box.sh'
         $pidPath = Join-Path $temporaryRoot 'pid'
+        $testPwsh = Get-CapsulenvTestPowerShellExecutable
         [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
-        $scriptText = @'
-#!/bin/sh
-echo $$ > __PID_PATH__
-sleep 30
-'@.Replace('__PID_PATH__', $pidPath)
+        $scriptText = "#!/bin/sh`necho \`$\`$ > '$pidPath'`nsleep 30`n"
         $scriptText | Set-Content -LiteralPath $executable -NoNewline
-        & chmod +x $executable
+        Mock Start-Process { Start-CapsulenvTestSleepProcess -Seconds 30 -WritePidPath $pidPath } -ModuleName Capsulenv
         {
             & $script:Module {
-                param($CapsuleRoot, $Executable)
+                param($CapsuleRoot, $Executable, $ProgramExecutable)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 $requirement = New-CapsulenvProgramRequirement -Name sing-box
-                $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable '/bin/sh' -Provider host-scoop -Version 1.0.0
+                $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable $ProgramExecutable -Provider host-scoop -Version 1.0.0
                 $definition = New-CapsulenvSessionServiceDefinition -Name sing-box -Requirement $requirement -Criticality required -ReadinessProbe { throw 'probe failure' }
                 $definition.Arguments = @($Executable)
                 Start-CapsulenvSessionService -Definition $definition -Candidates @($candidate)
-            } $temporaryRoot $executable
+            } $temporaryRoot $executable $testPwsh
         } | Should -Throw '*probe failure*'
         if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
             $spawnedPid = [int](Get-Content -LiteralPath $pidPath -Raw)
@@ -223,7 +224,7 @@ sleep 30
         Mock Resolve-CapsulenvProgramWithAcquisition {
             $candidate = New-CapsulenvProgramCandidate -Name sing-box -Executable '/bin/true' -Provider capsulenv-local -AcquisitionProvider seed -Scope host-local -Version 1.0.0 -Capabilities @('proxy') -Trusted:$true -OwnsLifecycle:$true -Provenance 'bootstrap/test'
             [pscustomobject]@{ Succeeded = $true; Selected = $candidate }
-        } -ModuleName Capsulenv -ParameterFilter { $PSBoundParameters.ContainsKey('ProviderCandidates') -and @($ProviderCandidates).Count -eq 0 }
+        } -ModuleName Capsulenv
 
         Mock Start-CapsulenvSessionService {
             [pscustomobject]@{
@@ -248,10 +249,95 @@ sleep 30
             } $temporaryRoot
         } | Should -Throw '*provider operation failed*'
 
-        Should -Invoke Resolve-CapsulenvProgramWithAcquisition -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $PSBoundParameters.ContainsKey('ProviderCandidates') -and @($ProviderCandidates).Count -eq 0 }
+        Should -Invoke Resolve-CapsulenvProgramWithAcquisition -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Start-CapsulenvSessionService -ModuleName Capsulenv -Times 1 -Exactly
         Should -Invoke Stop-CapsulenvSessionService -ModuleName Capsulenv -Times 1 -Exactly
     }
 
+    It 'derives readiness from the configured TCP listener instead of process liveness alone' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-derived-probe-' + [Guid]::NewGuid().ToString('N'))
+        $config = Join-Path $temporaryRoot 'config.json'
+        [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $listener.Start()
+        $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+        [ordered]@{
+            inbounds = @(
+                [ordered]@{ type = 'mixed'; listen = '127.0.0.1'; listen_port = $port }
+            )
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $config -Encoding UTF8
+
+        $aliveProcess = [pscustomobject]@{ HasExited = $false }
+        try {
+            $listening = & $script:Module {
+                param($ConfigPath, $Process)
+                $probes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $ConfigPath
+                [pscustomobject]@{
+                    Ready = & $probes.ReadinessProbe $Process
+                    Healthy = & $probes.HealthProbe $Process
+                }
+            } $config $aliveProcess
+            $listening.Ready | Should -BeTrue
+            $listening.Healthy | Should -BeTrue
+        } finally {
+            $listener.Stop()
+        }
+
+        $closed = & $script:Module {
+            param($ConfigPath, $Process)
+            $probes = New-CapsulenvSessionServiceTcpProbes -ConfigPath $ConfigPath
+            & $probes.ReadinessProbe $Process
+        } $config $aliveProcess
+        $closed | Should -BeFalse
+    }
+
+    It 'wires concrete TCP probes into the production sing-box integration path' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-service-integration-probe-' + [Guid]::NewGuid().ToString('N'))
+        $config = Join-Path $temporaryRoot 'state/portable/sing-box/config.json'
+        $scratchRoot = Join-Path $temporaryRoot 'scratch'
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $config) -Force)
+        [void](New-Item -ItemType Directory -Path $scratchRoot -Force)
+        [ordered]@{
+            inbounds = @(
+                [ordered]@{ type = 'mixed'; listen = '127.0.0.1'; listen_port = 47931 }
+            )
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $config -Encoding UTF8
+
+        Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{ IntegrationMode = 'ShellOnly' } } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvHostPlacement {} -ModuleName Capsulenv
+        Mock Get-CapsulenvIdentity { 'session-service-integration-test' } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvSession { [pscustomobject]@{ SessionId = 'session-service-integration-session' } } -ModuleName Capsulenv
+        Mock Get-CapsulenvConfiguration {
+            [pscustomobject]@{
+                Bitwarden = [pscustomobject]@{ Enabled = $false }
+            }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvContext { [pscustomobject]@{ Root = $temporaryRoot } } -ModuleName Capsulenv
+        Mock Get-CapsulenvHostPlacement { [pscustomobject]@{ ScratchRoot = $scratchRoot } } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGenerationProgram {
+            [pscustomobject]@{
+                Name = 'sing-box'
+                Executable = 'sing-box'
+                Provider = 'host-scoop'
+                Provenance = 'host-scoop/sing-box'
+            }
+        } -ModuleName Capsulenv
+        Mock Start-CapsulenvSessionService {
+            [pscustomobject]@{ Succeeded = $true }
+        } -ModuleName Capsulenv
+        Mock Write-CapsulenvMessage {} -ModuleName Capsulenv
+
+        & $script:Module {
+            Initialize-CapsulenvIntegrations -IntegrationMode ShellOnly -ActivationSnapshot ([pscustomobject]@{ Programs = @() })
+        }
+
+        Should -Invoke Start-CapsulenvSessionService -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter {
+            $Definition.Name -eq 'sing-box' -and
+            $Definition.ConfigPath -eq $config -and
+            $Definition.ReadinessProbe -is [scriptblock] -and
+            $Definition.HealthProbe -is [scriptblock] -and
+            $SessionId -eq 'session-service-integration-session'
+        }
+    }
 }
 

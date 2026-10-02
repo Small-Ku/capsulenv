@@ -53,7 +53,7 @@ function ConvertTo-CapsulenvGenerationProgramCandidate {
         # Host Scoop is mutable outside Capsulenv. Re-discover the selected
         # provider/provenance at activation and validate the current executable
         # and version against the live requirement.
-        $current = @(
+        $currentMatches = @(
             Get-CapsulenvProgramCandidates -Requirement $Requirement |
                 Where-Object {
                     [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Provider, [string]$Selection.Provider) -and
@@ -65,11 +65,16 @@ function ConvertTo-CapsulenvGenerationProgramCandidate {
                 } |
                 Select-Object -First 1
         )
+        $current = if ($currentMatches.Count -gt 0) { $currentMatches[0] } else { $null }
         if ($null -eq $current) {
             throw "Host program '$($Selection.Name)' is no longer available from its recorded provider binding."
         }
         if ($null -ne $Selection.PSObject.Properties['Capabilities']) {
-            $currentCapabilities = @($current.Capabilities | ForEach-Object { ([string]$_).ToLowerInvariant() })
+            $currentCapabilities = if ($null -ne $current.PSObject.Properties['Capabilities']) {
+                @($current.Capabilities | ForEach-Object { ([string]$_).ToLowerInvariant() })
+            } else {
+                @()
+            }
             foreach ($recordedCapability in @($Selection.Capabilities)) {
                 if ($currentCapabilities -notcontains ([string]$recordedCapability).ToLowerInvariant()) {
                     throw "Host program '$($Selection.Name)' no longer provides recorded capability '$recordedCapability'."
