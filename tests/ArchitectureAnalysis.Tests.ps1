@@ -1001,4 +1001,12 @@ function Initialize-CapsulenvIntegrations {
         $integration | Should -Not -Match 'Initialize-CapsulenvBitwarden|Start-CapsulenvBitwarden|Assert-CapsulenvNoForeignBitwardenProcess'
     }
 
+    It 'keeps SessionService spawn and registration inside the owned launch primitive' {
+        $source = Get-Content -LiteralPath (Join-Path (Join-Path $script:Root 'src') '18-SessionService.ps1') -Raw
+        $start = [regex]::Match($source, '(?s)function Start-CapsulenvSessionService.*?(?=function Register-CapsulenvSessionServiceExitWatcher)').Value
+        $start | Should -Not -BeNullOrEmpty
+        $start | Should -Match 'Start-CapsulenvOwnedProcess'
+        $start | Should -Not -Match 'Start-Process|Register-CapsulenvOwnedProcessRecord|Get-CapsulenvProcessStartIdentity'
+    }
+
 }
