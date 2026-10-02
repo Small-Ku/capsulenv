@@ -254,26 +254,7 @@ function Write-CapsulenvDefaultBrowserState {
     param([Parameter(Mandatory = $true)]$State)
 
     $path = Get-CapsulenvDefaultBrowserStatePath
-    $parent = Split-Path -Parent $path
-    [void](New-Item -ItemType Directory -Path $parent -Force)
-    $temporary = Join-Path $parent ('.default-browser-{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
-    try {
-        $State | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporary -Encoding UTF8
-        if (Test-Path -LiteralPath $path -PathType Leaf) {
-            try {
-                [System.IO.File]::Replace($temporary, $path, $null, $true)
-            } catch {
-                Remove-Item -LiteralPath $path -Force
-                Move-Item -LiteralPath $temporary -Destination $path
-            }
-        } else {
-            Move-Item -LiteralPath $temporary -Destination $path
-        }
-    } finally {
-        if (Test-Path -LiteralPath $temporary) {
-            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
-        }
-    }
+    Publish-CapsulenvFileAuthorityAtomically -Path $path -Value $State
 }
 
 function Get-CapsulenvDefaultBrowserState {
@@ -340,7 +321,6 @@ function Resolve-CapsulenvRequiredDefaultBrowserBridge {
         throw "Persistent default-browser registration requires a valid host-local UserIntegration bridge: $($_.Exception.Message)"
     }
 }
-
 function Install-CapsulenvDefaultBrowserRegistration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
@@ -359,7 +339,6 @@ function Install-CapsulenvDefaultBrowserRegistration {
     $profileArgument = ''
     $urlCommand = [string]$handler.Command
     $fileCommand = [string]$handler.Command
-
     $state = Get-CapsulenvDefaultBrowserState
     if ($null -eq $state) {
         foreach ($path in @($registration.ClientPath, $registration.UrlClassPath, $registration.HtmlClassPath)) {
