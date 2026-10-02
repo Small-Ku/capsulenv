@@ -327,19 +327,45 @@ function Initialize-CapsulenvIntegrations {
         $ActivationSnapshot
     )
 
-    if ($PSBoundParameters.ContainsKey('ActivationSnapshot')) {
-        [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
-        return
+    [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
+    [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
+    if (-not $PSBoundParameters.ContainsKey('ActivationSnapshot')) {
+        $ActivationSnapshot = New-CapsulenvActivationSnapshot
     }
-
-    [void](Initialize-CapsulenvScoopBootstrap)
+    $session = Initialize-CapsulenvSession -Role activation -Provenance ('capsulenv:{0}' -f $IntegrationMode)
     $configuration = Get-CapsulenvConfiguration
-    if ($configuration.Scoop.RehydrateOnRelocation) {
-        [void](Invoke-CapsulenvIntegrationDesiredState -IntegrationMode $IntegrationMode)
-    } else {
-        [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
+    if ($configuration.Bitwarden.Enabled) {
+        $endpoint = if ($configuration.Bitwarden.SetSshAuthSock) { '\\.\pipe\openssh-ssh-agent' } else { [Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process') }
+        try {
+            $bitwardenRequirement = (Get-CapsulenvBitwardenProgramRequirement -App ([string]$configuration.Bitwarden.App) -Criticality optional).Requirement
+            $bitwardenProgram = Get-CapsulenvActiveGenerationProgram -Requirement $bitwardenRequirement -ActivationSnapshot $ActivationSnapshot
+            $resolvedBinding = Resolve-CapsulenvBitwardenBinding `
+                -App ([string]$configuration.Bitwarden.App) `
+                -Requirement $bitwardenRequirement `
+                -Program $bitwardenProgram `
+                -Criticality optional `
+                -SessionId $session.SessionId
+            if ($resolvedBinding.Succeeded) {
+                $agentBinding = [pscustomobject][ordered]@{
+                    Endpoint = $endpoint
+                    ProgramProvenance = [string]$resolvedBinding.Program.Provenance
+                    ProcessId = [int]$resolvedBinding.ProcessRecord.PID
+                }
+                $binding = Invoke-CapsulenvBitwardenSessionIntegration `
+                    -App ([string]$configuration.Bitwarden.App) `
+                    -SshAuthSock $endpoint `
+                    -AgentBinding $agentBinding `
+                    -ResolvedBinding $resolvedBinding `
+                    -Criticality optional `
+                    -SessionId $session.SessionId
+                if ($binding.Succeeded) {
+                    Write-CapsulenvMessage -Level Detail -Message 'Bitwarden activation uses the attach-only binding; foreign process lifecycle remains outside Capsulenv authority.'
+                }
+            }
+        } catch {
+            Write-CapsulenvMessage -Level Warning -Message "Optional Bitwarden attach integration was not activated: $($_.Exception.Message)"
+        }
     }
-    Initialize-CapsulenvBitwarden
 }
 
 function Initialize-Capsulenv {

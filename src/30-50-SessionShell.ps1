@@ -14,6 +14,18 @@ function Invoke-CapsulenvChildShell {
         throw 'Required interactive pwsh generation could not provide an activation snapshot.'
     }
     $activationSnapshot = $ensure.ActivationSnapshot
+    $configuration = Get-CapsulenvConfiguration
+    if ($configuration.Bitwarden.Enabled) {
+        try {
+            $bitwardenRequirement = (Get-CapsulenvBitwardenProgramRequirement -App ([string]$configuration.Bitwarden.App) -Criticality optional).Requirement
+            $bitwardenEnsure = Ensure-CapsulenvProgramGeneration -Requirement $bitwardenRequirement
+            if ($null -ne $bitwardenEnsure -and [bool]$bitwardenEnsure.Succeeded -and $null -ne $bitwardenEnsure.ActivationSnapshot) {
+                $activationSnapshot = $bitwardenEnsure.ActivationSnapshot
+            }
+        } catch {
+            Write-CapsulenvMessage -Level Warning -Message "Optional Bitwarden Program was not prepared for attach-only activation: $($_.Exception.Message)"
+        }
+    }
     Initialize-CapsulenvIntegrations -IntegrationMode $IntegrationMode -ActivationSnapshot $activationSnapshot
     $powerShellProgram = Get-CapsulenvActiveGenerationProgram `
         -Requirement $powerShellRequirement `

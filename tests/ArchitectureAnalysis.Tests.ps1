@@ -992,4 +992,13 @@ function Initialize-CapsulenvIntegrations {
         $childShell | Should -Not -Match 'Get-CapsulenvInteractivePowerShellExecutable|Get-CapsulenvPowerShellChildLaunchPlan|Invoke-CapsulenvProcessPlan\s+-Plan'
     }
 
+    It 'keeps attach-only Bitwarden activation in its owning binding slice' {
+        $source = Get-Content -LiteralPath (Join-Path (Join-Path $script:Root 'src') '70-Doctor.ps1') -Raw
+        $integration = [regex]::Match($source, '(?s)function Initialize-CapsulenvIntegrations.*?(?=function Initialize-Capsulenv)').Value
+        $integration | Should -Not -BeNullOrEmpty
+        $integration | Should -Match 'Resolve-CapsulenvBitwardenBinding'
+        $integration | Should -Match 'Invoke-CapsulenvBitwardenSessionIntegration'
+        $integration | Should -Not -Match 'Initialize-CapsulenvBitwarden|Start-CapsulenvBitwarden|Assert-CapsulenvNoForeignBitwardenProcess'
+    }
+
 }
