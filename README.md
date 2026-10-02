@@ -82,7 +82,7 @@ For step-by-step instructions, see [Usage guide](docs/USAGE.md) ([繁體中文](
 
 ## Relocation, updates, and removal
 
-After moving to another drive letter or PC, launch `capsulenv.cmd` from the new location. The runtime repairs projections automatically. If unresolved items remain, run `doctor` and follow the [Repair workflow](docs/USAGE.md#repair).
+After moving to another drive letter or PC, launch `capsulenv.cmd` from the new location. Activation does not mutate projections automatically; run `doctor`, review its evidence, and request `rehydrate` or a narrower repair command when required. See the [Repair workflow](docs/USAGE.md#repair).
 
 To update Capsulenv, run the installer from a **new release bundle** targeting the existing capsule:
 

@@ -76,6 +76,8 @@ function Copy-CapsulenvArchiveSource {
         [void](New-Item -ItemType Directory -Path $temporaryRoot -Force)
         if (Test-Path -LiteralPath $Archive -PathType Leaf) {
             Copy-Item -LiteralPath $Archive -Destination $archivePath -Force
+        } elseif ([Uri]$Archive -and ([Uri]$Archive).Scheme -eq 'file') {
+            Copy-Item -LiteralPath ([Uri]$Archive).LocalPath -Destination $archivePath -Force
         } else {
             $webRequestParameters = @{
                 Uri = $Archive

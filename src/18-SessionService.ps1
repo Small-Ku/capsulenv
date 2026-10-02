@@ -110,10 +110,11 @@ function New-CapsulenvSessionServiceTcpProbes {
     $endpoint = Get-CapsulenvSessionServiceTcpEndpoint -ConfigPath $ConfigPath
     $address = [string]$endpoint.Address
     $port = [int]$endpoint.Port
+    $testTcpEndpoint = (Get-Command Test-CapsulenvTcpEndpoint -CommandType Function).ScriptBlock
     $probe = {
         param($Process)
         if ($Process.HasExited) { return $false }
-        return Test-CapsulenvTcpEndpoint -Address $address -Port $port
+        return & $testTcpEndpoint -Address $address -Port $port
     }.GetNewClosure()
     return [pscustomobject][ordered]@{
         Address = $address
