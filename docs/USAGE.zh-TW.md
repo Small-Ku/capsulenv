@@ -185,6 +185,8 @@ UserIntegration = @{
 
 先安裝相容的 Bitwarden Desktop。若 app 名稱不同，設定 `Bitwarden.App` 為對應 selector。
 
+修改持續設定或服務前，先執行 `capsulenv user-shell`。工作階段連接受信任且已執行的 Bitwarden，不需要持續設定。
+
 ```powershell
 capsulenv bitwarden setup
 capsulenv bitwarden status

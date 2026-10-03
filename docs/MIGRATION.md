@@ -260,3 +260,12 @@ Capsulenv separates package providers from Scoop's provider-local root scopes:
 - When identical app names exist in both Scoop roots, use `scoop:user/<app>` or `scoop:global/<app>` for disambiguation.
 
 For selector resolution rules, see [ARCHITECTURE](ARCHITECTURE.md#installed-selector-and-runtime-separation). For usage syntax, see [USAGE](USAGE.md#installed-apps).
+
+## Independent integration lifetime
+
+Existing persistent placement grants no UserIntegration permission after this upgrade.
+Existing validated User ledgers with original backups retain persistent restore behavior.
+If you previously relied on enrollment alone to publish a bridge, run `install-user` deliberately.
+For temporary integration, select `user-integration leased`, then run `lease-user`.
+Use `release-user` for stale lease recovery; use `restore-user` for persistent ownership.
+See [integration lifetime](ARCHITECTURE.md#placement-retention-and-userintegration-lifetime) for the current authority contract.

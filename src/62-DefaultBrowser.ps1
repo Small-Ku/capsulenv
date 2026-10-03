@@ -301,8 +301,16 @@ function Resolve-CapsulenvRequiredDefaultBrowserBridge {
 
     try {
         $bridge = Get-CapsulenvUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity)
-        if ($null -eq $bridge -or [bool]$bridge.Persistent -ne $true) {
-            throw 'the host-local bridge is missing or not persistent'
+        if ($null -eq $bridge) { throw 'the host-local bridge is missing' }
+        if (-not [bool]$bridge.Persistent) {
+            $lease = Get-CapsulenvUserIntegrationLease
+            if ($null -eq $lease -or [string]$lease.Phase -ne 'Active' -or
+                -not (Test-CapsulenvUserIntegrationLeaseOwner -Lease $lease) -or
+                [string]$bridge.LeaseId -ne [string]$lease.LeaseId) {
+                # Initial registration runs under the serialized Prepared lease.
+                Assert-CapsulenvUserIntegrationAuthority -LeaseApplyOnly
+                if ([string]$bridge.LeaseId -ne [string]$lease.LeaseId) { throw 'bridge belongs to another lease' }
+            }
         }
         if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$bridge.CapsuleId, [string](Get-CapsulenvIdentity))) {
             throw 'the bridge belongs to a different capsule'
@@ -325,6 +333,7 @@ function Install-CapsulenvDefaultBrowserRegistration {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
 
+    Assert-CapsulenvUserIntegrationAuthority -LeaseApplyOnly
     if (-not (Test-CapsulenvWindows)) {
         return $null
     }
@@ -340,6 +349,10 @@ function Install-CapsulenvDefaultBrowserRegistration {
     $urlCommand = [string]$handler.Command
     $fileCommand = [string]$handler.Command
     $state = Get-CapsulenvDefaultBrowserState
+    if ($null -ne $state -and (Test-CapsulenvDefaultBrowserAlreadyRestored -State $state)) {
+        Remove-Item -LiteralPath (Get-CapsulenvDefaultBrowserStatePath) -Force
+        $state = $null
+    }
     if ($null -eq $state) {
         foreach ($path in @($registration.ClientPath, $registration.UrlClassPath, $registration.HtmlClassPath)) {
             if (Test-CapsulenvCurrentUserRegistryKey -SubKey $path) {
@@ -576,6 +589,31 @@ function Test-CapsulenvDefaultBrowserProgIdsSelected {
     return $true
 }
 
+function Test-CapsulenvDefaultBrowserProgIdsInUse {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$UrlProgId,
+        [Parameter(Mandatory = $true)][string]$HtmlProgId
+    )
+
+    if (-not (Test-CapsulenvWindows)) {
+        return $false
+    }
+    $expected = @(
+        [pscustomobject]@{ Association = 'http'; Type = 'Protocol'; ProgId = $UrlProgId }
+        [pscustomobject]@{ Association = 'https'; Type = 'Protocol'; ProgId = $UrlProgId }
+        [pscustomobject]@{ Association = '.htm'; Type = 'FileExtension'; ProgId = $HtmlProgId }
+        [pscustomobject]@{ Association = '.html'; Type = 'FileExtension'; ProgId = $HtmlProgId }
+    )
+    foreach ($entry in $expected) {
+        $progId = Get-CapsulenvEffectiveAssociationProgId -Association $entry.Association -Type $entry.Type
+        if ([System.StringComparer]::OrdinalIgnoreCase.Equals([string]$progId, [string]$entry.ProgId)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Test-CapsulenvDefaultBrowserSelected {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$App)
@@ -604,13 +642,18 @@ function Sync-CapsulenvConfiguredDefaultBrowser {
     [CmdletBinding()]
     param()
 
+    if ((Get-CapsulenvUserIntegrationLifetime) -eq 'leased') {
+        throw 'Leased browser registration is applied only at lease acquisition; release-user before reacquiring.'
+    }
     $app = Get-CapsulenvConfiguredDefaultBrowser
-    if ((Get-CapsulenvInstallMode) -ne 'User') {
+    if ((Get-CapsulenvUserIntegrationLifetime) -eq 'isolated') {
         if ([string]::IsNullOrWhiteSpace([string]$app)) {
             return
         }
-        throw 'Default-browser integration is persistent and may only be synchronized in User mode.'
+        throw 'Default-browser integration requires explicit UserIntegration authority.'
     }
+
+    Assert-CapsulenvUserIntegrationAuthority
 
     if ([string]::IsNullOrWhiteSpace([string]$app)) {
         # A tracked registration is Capsulenv-owned persistent state even when
@@ -693,7 +736,7 @@ function Assert-CapsulenvDefaultBrowserRestorable {
         return
     }
     $app = Get-CapsulenvDefaultBrowserStateApp -State $state
-    if (Test-CapsulenvDefaultBrowserProgIdsSelected -UrlProgId ([string]$state.UrlProgId) -HtmlProgId ([string]$state.HtmlProgId)) {
+    if (Test-CapsulenvDefaultBrowserProgIdsInUse -UrlProgId ([string]$state.UrlProgId) -HtmlProgId ([string]$state.HtmlProgId)) {
         Open-CapsulenvDefaultAppsSettings -RegisteredName $null
         throw "Capsulenv's portable $app is still the Windows default browser. Choose another default browser in Windows Settings, then run restore-user again; Capsulenv will not forge or replay UserChoice hashes."
     }
@@ -701,14 +744,22 @@ function Assert-CapsulenvDefaultBrowserRestorable {
 
 function Restore-CapsulenvDefaultBrowserRegistration {
     [CmdletBinding()]
-    param()
+    param([switch]$KeepState)
 
     $state = Get-CapsulenvDefaultBrowserState
     if ($null -eq $state) {
         return
     }
     if (-not (Test-CapsulenvWindows)) {
-        Remove-Item -LiteralPath (Get-CapsulenvDefaultBrowserStatePath) -Force
+        if (-not $KeepState) {
+            Remove-Item -LiteralPath (Get-CapsulenvDefaultBrowserStatePath) -Force
+        }
+        return
+    }
+    if (Test-CapsulenvDefaultBrowserAlreadyRestored -State $state) {
+        if (-not $KeepState) {
+            Remove-Item -LiteralPath (Get-CapsulenvDefaultBrowserStatePath) -Force
+        }
         return
     }
 
@@ -729,5 +780,58 @@ function Restore-CapsulenvDefaultBrowserRegistration {
             -Name ([string]$state.RegisteredName)
     }
     Send-CapsulenvAssociationChanged
-    Remove-Item -LiteralPath (Get-CapsulenvDefaultBrowserStatePath) -Force
+    if (-not $KeepState) {
+        Remove-Item -LiteralPath (Get-CapsulenvDefaultBrowserStatePath) -Force
+    }
+}
+
+
+# Snapshot only Capsulenv's registration trees. UserChoice is never included.
+function Get-CapsulenvOwnedRegistryTreeSnapshot {
+    param([Parameter(Mandatory = $true)][string]$SubKey)
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($SubKey, $false)
+    if ($null -eq $key) { return $null }
+    try {
+        $values = @($key.GetValueNames() | Sort-Object | ForEach-Object {
+            [pscustomobject]@{ Name = $_; Kind = [string]$key.GetValueKind($_); Value = $key.GetValue($_, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
+        })
+        $children = @($key.GetSubKeyNames() | Sort-Object | ForEach-Object {
+            [pscustomobject]@{ Name = $_; Tree = Get-CapsulenvOwnedRegistryTreeSnapshot -SubKey ($SubKey + '\' + $_) }
+        })
+        return [pscustomobject]@{ Values = $values; Children = $children }
+    } finally { $key.Dispose() }
+}
+
+function Get-CapsulenvOwnedBrowserRegistrationSnapshot {
+    $state = Get-CapsulenvDefaultBrowserState
+    if ($null -eq $state -or -not (Test-CapsulenvWindows)) { return $null }
+    return [pscustomobject][ordered]@{
+        Client = Get-CapsulenvOwnedRegistryTreeSnapshot -SubKey ([string]$state.ClientPath)
+        Url = Get-CapsulenvOwnedRegistryTreeSnapshot -SubKey ([string]$state.UrlClassPath)
+        Html = Get-CapsulenvOwnedRegistryTreeSnapshot -SubKey ([string]$state.HtmlClassPath)
+        RegisteredApplication = Get-CapsulenvCurrentUserRegistryRawValue -SubKey 'Software\RegisteredApplications' -Name ([string]$state.RegisteredName)
+    }
+}
+
+function Test-CapsulenvOwnedBrowserRegistrationAbsent {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$State)
+
+    if (-not (Test-CapsulenvWindows)) { return $false }
+    if (Test-CapsulenvCurrentUserRegistryKey -SubKey ([string]$State.ClientPath)) { return $false }
+    if (Test-CapsulenvCurrentUserRegistryKey -SubKey ([string]$State.UrlClassPath)) { return $false }
+    if (Test-CapsulenvCurrentUserRegistryKey -SubKey ([string]$State.HtmlClassPath)) { return $false }
+    $registered = Get-CapsulenvCurrentUserRegistryRawValue -SubKey 'Software\RegisteredApplications' -Name ([string]$State.RegisteredName)
+    return -not [bool]$registered.Exists
+}
+
+function Test-CapsulenvDefaultBrowserAlreadyRestored {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$State)
+
+    if (-not (Test-CapsulenvWindows)) { return $false }
+    if (Test-CapsulenvDefaultBrowserProgIdsInUse -UrlProgId ([string]$State.UrlProgId) -HtmlProgId ([string]$State.HtmlProgId)) {
+        return $false
+    }
+    return Test-CapsulenvOwnedBrowserRegistrationAbsent -State $State
 }

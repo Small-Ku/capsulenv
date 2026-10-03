@@ -84,7 +84,7 @@ function Invoke-CapsulenvScoopCommand {
 
     $guardPersistentPath = $false
     $capsuleRootForGuard = $null
-    if ((Test-CapsulenvWindows) -and (Get-CapsulenvInstallMode) -eq 'ShellOnly') {
+    if ((Test-CapsulenvWindows) -and ((Get-CapsulenvInstallMode) -eq 'ShellOnly' -or (Get-CapsulenvUserIntegrationLifetime) -ne 'persistent')) {
         try {
             $capsuleRootForGuard = [string](Get-CapsulenvContext).Root
             $guardPersistentPath = -not [string]::IsNullOrWhiteSpace($capsuleRootForGuard)

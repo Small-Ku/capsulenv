@@ -52,6 +52,7 @@ Describe 'Capsulenv test harness isolation' {
             'Z:\tests\Static.Tests.ps1',
             'Z:\tests\TestHarness.Tests.ps1',
             'Z:\tests\ToolRelocation.Tests.ps1',
+            'Z:\tests\UserIntegrationLifetime.Tests.ps1',
             'Z:\tests\Other.Tests.ps1'
         )
 
@@ -64,7 +65,8 @@ Describe 'Capsulenv test harness isolation' {
             'ProjectCacheLifecycle.Tests.ps1',
             'ScoopReset.Tests.ps1',
             'Static.Tests.ps1',
-            'TestHarness.Tests.ps1'
+            'TestHarness.Tests.ps1',
+            'UserIntegrationLifetime.Tests.ps1'
         )
 
         $concurrency = @(Select-CapsulenvTestPaths -AllTestPaths $paths -Profile Concurrency)

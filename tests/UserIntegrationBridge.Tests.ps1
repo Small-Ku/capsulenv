@@ -11,7 +11,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
 
-    It 'refuses persistent integration on an unknown ephemeral host' {
+    It 'refuses integration on an isolated host regardless of placement' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-user-ephemeral-' + [Guid]::NewGuid().ToString('N'))
         $oldStateRoot = $env:CAPSULENV_HOST_STATE_ROOT
         try {
@@ -31,7 +31,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
                 $env:CAPSULENV_HOST_STATE_ROOT = $oldStateRoot
             }
         }
-        $errorRecord.Exception.Message | Should -Match 'explicit host enrollment'
+        $errorRecord.Exception.Message | Should -Match 'Explicit UserIntegration authority'
     }
 
     It 'fails closed when persistent default-browser registration has no valid bridge' {
@@ -58,6 +58,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
                 param($CapsuleRoot, $PlacementRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                Set-CapsulenvUserIntegrationLifetime -Lifetime persistent
                 $capsuleId = Get-CapsulenvIdentity
                 $binding = [pscustomobject]@{
                     Program = [pscustomobject]@{ Name = 'firefox'; Executable = 'E:\removable\firefox.exe' }
@@ -100,6 +101,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
                 param($CapsuleRoot, $PlacementRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                Set-CapsulenvUserIntegrationLifetime -Lifetime persistent
                 New-CapsulenvUserIntegrationBridge -CapsuleId (Get-CapsulenvIdentity) -BrowserApp 'scoop/firefox'
             } (Join-Path $temporaryRoot 'capsule') (Join-Path $temporaryRoot 'nvme')
 
@@ -122,6 +124,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
                     param($CapsuleRoot, $PlacementRoot)
                     Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                     [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                Set-CapsulenvUserIntegrationLifetime -Lifetime persistent
                     $capsuleId = Get-CapsulenvIdentity
                     Set-Content -LiteralPath (Join-Path $CapsuleRoot 'capsulenv.cmd') -Value '@echo off' -Encoding UTF8
                     [void](New-CapsulenvUserIntegrationBridge -CapsuleId $capsuleId -BrowserApp firefox)
@@ -156,6 +159,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
                 param($CapsuleRoot, $PlacementRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                Set-CapsulenvUserIntegrationLifetime -Lifetime persistent
                 $capsuleId = Get-CapsulenvIdentity
                 Install-CapsulenvUserIntegration -CapsuleId $capsuleId -BrowserApp firefox
             } (Join-Path $temporaryRoot 'capsule') (Join-Path $temporaryRoot 'nvme')
@@ -176,6 +180,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
                 param($CapsuleRoot, $PlacementRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                Set-CapsulenvUserIntegrationLifetime -Lifetime persistent
                 $capsuleId = Get-CapsulenvIdentity
                 Set-Content -LiteralPath (Join-Path $CapsuleRoot 'capsulenv.cmd') -Value '@echo off' -Encoding UTF8
                 $packageBridge = New-CapsulenvUserIntegrationPackageBridge -CapsuleId $capsuleId
@@ -209,6 +214,7 @@ Describe 'Capsulenv host-local UserIntegration bridge' {
                 param($CapsuleRoot, $PlacementRoot)
                 Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
                 [void](Set-CapsulenvHostEnrollment -EnrollmentTag home -Retention persistent -PlacementRoot $PlacementRoot)
+                Set-CapsulenvUserIntegrationLifetime -Lifetime persistent
                 $capsuleId = Get-CapsulenvIdentity
                 [void](New-CapsulenvUserIntegrationBridge -CapsuleId $capsuleId -BrowserApp firefox)
                 Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv

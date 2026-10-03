@@ -49,18 +49,15 @@ function Get-CapsulenvUserIntegrationMode {
     [CmdletBinding()]
     param()
 
+    # A lease is never promoted to persistent ownership by matching User env.
+    if (Test-Path -LiteralPath (Get-CapsulenvUserIntegrationLeasePath)) { return 'ShellOnly' }
+    $state = Get-CapsulenvInstallModeState
+    if ($null -eq $state -or [string]$state.Mode -ne 'User') { return 'ShellOnly' }
     if (Test-CapsulenvWindows) {
-        if (Test-CapsulenvCurrentUserIntegrationOwnership) {
-            return 'User'
-        }
+        if (Test-CapsulenvCurrentUserIntegrationOwnership) { return 'User' }
         return 'ShellOnly'
     }
-
-    $state = Get-CapsulenvInstallModeState
-    if ($null -ne $state -and [string]$state.Mode -eq 'User') {
-        return 'User'
-    }
-    return 'ShellOnly'
+    return 'User'
 }
 
 function Get-CapsulenvInstallMode {

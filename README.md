@@ -4,7 +4,7 @@ English | [繁體中文](README.zh-TW.md)
 
 Capsulenv is a portable Windows development environment that travels on a USB drive. It provides an isolated working shell, package launchers, tool cache storage, and post-relocation repair.
 
-The default **ShellOnly** mode confines environment variables and PATH changes to the Capsulenv process tree. When persistent Windows user integration is required, select **User** mode explicitly.
+The default **ShellOnly** mode confines environment variables and PATH changes to the Capsulenv process tree. Placement retention is independent of User integration. Use `lease-user` for temporary supported integration or `install-user` for deliberate persistent integration.
 
 ## Installation and first launch
 
@@ -52,6 +52,16 @@ Before leaving a shared host, revert Capsulenv user integration:
 ```powershell
 capsulenv restore-user
 ```
+
+To use temporary User environment and browser registration, run:
+
+```powershell
+capsulenv user-integration leased
+capsulenv lease-user
+```
+
+Shell exit or `eject` releases the lease. Use `release-user` for stale lease recovery.
+See [Integration lifetime](docs/ARCHITECTURE.md#placement-retention-and-userintegration-lifetime) for supported surfaces and browser limitations.
 
 A fresh standalone invocation defaults to ShellOnly. Closing a User shell does not automatically revert persistent settings. For session modes and host departure, see [Session modes](docs/USAGE.md#session-modes).
 

@@ -1010,3 +1010,19 @@ function Initialize-CapsulenvIntegrations {
     }
 
 }
+
+Describe 'Placement retention cannot authorize UserIntegration' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot '../scripts/Capsulenv.StaticAnalysis.ps1')
+    }
+    It 'rejects enrollment/retention as bridge authority' {
+        $path = Join-Path $TestDrive 'coupled.ps1'
+        'function New-CapsulenvUserIntegrationBridge { $r = Get-CapsulenvHostRecord; if ($r.Retention -eq "persistent") { New-Item bridge } }' | Set-Content $path
+        @(Get-CapsulenvUserIntegrationRetentionViolations -Paths @($path)).Count | Should -BeGreaterThan 0
+    }
+    It 'accepts explicit lifetime authority and host-local storage' {
+        $path = Join-Path $TestDrive 'independent.ps1'
+        'function New-CapsulenvUserIntegrationBridge { Assert-CapsulenvUserIntegrationAuthority; $r = Get-CapsulenvHostLocalStateRoot; New-Item $r }' | Set-Content $path
+        @(Get-CapsulenvUserIntegrationRetentionViolations -Paths @($path)).Count | Should -Be 0
+    }
+}

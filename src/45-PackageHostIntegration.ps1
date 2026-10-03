@@ -29,6 +29,8 @@ function Sync-CapsulenvPackageStartMenuShortcuts {
         return
     }
 
+    Assert-CapsulenvUserIntegrationAuthority -PersistentOnly
+
     # The whole capsule-specific namespace is Capsulenv-owned. Rebuild it as
     # one projection so shortcuts created by the pre-0.17 Scoop override cannot
     # survive relocation or coexist with the new launcher-based declarations.

@@ -503,6 +503,7 @@ function Set-CapsulenvBitwardenDesktopSshAgent {
         [switch]$NoStart
     )
 
+    Assert-CapsulenvUserIntegrationAuthority -PersistentOnly
     $executable = Get-CapsulenvBitwardenExecutable
     if (-not $executable) {
         throw 'The Scoop-installed Bitwarden desktop executable was not found; refusing to create detached app state.'
@@ -772,6 +773,8 @@ function Restore-CapsulenvBitwardenSshAgentSetup {
             } catch {
                 $errors.Add("Git SSH settings: $($_.Exception.Message)")
             }
+        } else {
+            Write-CapsulenvLegacyBitwardenBackupDiagnostic -Name 'git-ssh-config.json'
         }
 
         $serviceBackup = Get-CapsulenvSshAgentServiceStatePath
@@ -786,6 +789,8 @@ function Restore-CapsulenvBitwardenSshAgentSetup {
             } else {
                 Write-CapsulenvMessage -Level Warning -Message 'The saved Windows ssh-agent service state still requires an elevated restore. Run `capsulenv.cmd bitwarden restore-windows-agent` as Administrator.'
             }
+        } else {
+            Write-CapsulenvLegacyBitwardenBackupDiagnostic -Name 'ssh-agent-service.json'
         }
     } finally {
         if (-not $NoStart) {

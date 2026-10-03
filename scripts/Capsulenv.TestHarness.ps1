@@ -19,7 +19,8 @@ function Get-CapsulenvTestProfileSuiteNames {
                 'ProjectCacheLifecycle.Tests.ps1',
                 'ScoopReset.Tests.ps1',
                 'Static.Tests.ps1',
-                'TestHarness.Tests.ps1'
+                'TestHarness.Tests.ps1',
+                'UserIntegrationLifetime.Tests.ps1'
             )
         }
         'Concurrency' {

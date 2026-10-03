@@ -564,3 +564,25 @@ function Get-CapsulenvLoopArrayAppendViolations {
     }
     return $violations.ToArray()
 }
+
+function Get-CapsulenvUserIntegrationRetentionViolations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string[]]$Paths)
+    foreach ($path in $Paths) {
+        $ast = Get-CapsulenvStaticAst -Path $path
+        foreach ($function in @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -match '^(Get|New|Install|Sync|Assert|Remove)-Capsulenv(UserIntegration(Bridge|Package|Capsule)|RequiredDefaultBrowserBridge|ConfiguredDefaultBrowser|DefaultBrowserRegistration|UserEnvironment)'
+        }, $true))) {
+            foreach ($node in @($function.Body.FindAll({
+                param($item)
+                ($item -is [System.Management.Automation.Language.MemberExpressionAst] -and $item.Member.Extent.Text -match '^[''"]?Retention[''"]?$') -or
+                ($item -is [System.Management.Automation.Language.IndexExpressionAst] -and $item.Index.Extent.Text -match '^[''"]Retention[''"]$') -or
+                ($item -is [System.Management.Automation.Language.CommandAst] -and $item.GetCommandName() -in @('Get-CapsulenvHostRecord', 'Get-CapsulenvHostPlacement'))
+            }, $true))) {
+                [pscustomobject]@{ Rule = 'PlacementDoesNotAuthorizeUserIntegration'; Path = $path; Line = $node.Extent.StartLineNumber; Column = $node.Extent.StartColumnNumber; Detail = 'UserIntegration authority must be independent of placement retention.' }
+            }
+        }
+    }
+}

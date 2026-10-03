@@ -75,6 +75,7 @@ if ($forbiddenRuntimeUses.Count -gt 0) {
 
 $hostIntegrationViolations = @(
     Get-CapsulenvHostIntegrationOwnershipViolations -Paths $runtimePaths
+    Get-CapsulenvUserIntegrationRetentionViolations -Paths $runtimePaths
 )
 if ($hostIntegrationViolations.Count -gt 0) {
     $detail = $hostIntegrationViolations | ForEach-Object {

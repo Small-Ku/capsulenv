@@ -149,6 +149,9 @@ function Invoke-CapsulenvEject {
         throw "Eject blocked because active exclusive state leases remain: $summary. Close the owning binding before removing the capsule."
     }
 
+    if (Test-Path -LiteralPath (Get-CapsulenvUserIntegrationLeasePath)) {
+        Stop-CapsulenvUserIntegrationLease
+    }
     $statePath = Write-CapsulenvEjectState -DirtyRepositories $dirtyRepositories -StoppedProcesses $stopped
 
     $scratch = Get-CapsulenvScratchPath
@@ -385,11 +388,18 @@ function Get-CapsulenvStatus {
     $offline = Get-CapsulenvOfflineReadiness
     $relocationRequired = Test-CapsulenvScoopRehydrationRequired
 
+    $integrationStatus = Get-CapsulenvUserIntegrationStatus
     return [pscustomobject]@{
         Version = Get-CapsulenvRuntimeVersion
         Root = $context.Root
         Mode = Get-CapsulenvInstallMode
-        PersistentUserIntegration = ((Get-CapsulenvUserIntegrationMode) -eq 'User')
+        PlacementRetention = $integrationStatus.PlacementRetention
+        UserIntegration = $integrationStatus.UserIntegration
+        OwnedUserIntegration = $integrationStatus.OwnedUserIntegration
+        IntegrationLease = $integrationStatus.IntegrationLease
+        IntegrationDiagnostic = $integrationStatus.IntegrationDiagnostic
+        DefaultBrowserUserConfirmationRequired = $integrationStatus.DefaultBrowserUserConfirmationRequired
+        PersistentUserIntegration = ($integrationStatus.OwnedUserIntegration -eq 'persistent')
         PortableSafePackages = $portableSafePackages.Count
         ScoopApps = $installedApps.Count
         Relocation = if ($relocationRequired) { 'Pending' } else { 'Ready' }

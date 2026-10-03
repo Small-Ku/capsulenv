@@ -112,6 +112,20 @@ function Invoke-Capsulenv {
             [void](Set-CapsulenvSessionEnvironment)
             [void](Repair-CapsulenvInstalledAppProjections)
         }
+        'user-integration' {
+            if ($remaining.Count -ne 1 -or $remaining[0] -notin @('isolated', 'leased', 'persistent')) {
+                throw 'Usage: user-integration isolated|leased|persistent'
+            }
+            Set-CapsulenvUserIntegrationLifetime -Lifetime $remaining[0]
+        }
+        'lease-user' {
+            if ($remaining.Count -ne 0) { throw 'Usage: lease-user' }
+            Enter-CapsulenvLeasedUserShell
+        }
+        'release-user' {
+            if ($remaining.Count -ne 0) { throw 'Usage: release-user' }
+            Stop-CapsulenvUserIntegrationLease
+        }
         'install-user' {
             $unknown = @($remaining | Where-Object { $_ -ne '--force' })
             if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {

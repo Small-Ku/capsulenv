@@ -28,9 +28,15 @@ function Invoke-CapsulenvDoctor {
     $scoopRoot = Get-CapsulenvScoopRoot
     $scoopGlobalRoot = Get-CapsulenvScoopGlobalRoot
 
+    $integrationStatus = Get-CapsulenvUserIntegrationStatus
+    $results.Add((New-CapsulenvCheckResult -Name 'Placement retention' -Passed $true -Importance Optional -Detail $integrationStatus.PlacementRetention))
+    $results.Add((New-CapsulenvCheckResult -Name 'UserIntegration lifetime' -Passed ($integrationStatus.IntegrationLease -in @('none', 'Active')) -Importance Optional -Detail ($integrationStatus | ConvertTo-Json -Compress)))
     $installMode = Get-CapsulenvUserIntegrationMode
     $modePassed = $true
-    $modeDetail = if ($installMode -eq 'User') {
+    $modeDetail = if ($integrationStatus.OwnedUserIntegration -eq 'leased') {
+        $modePassed = ($integrationStatus.IntegrationLease -eq 'Active')
+        'Leased User environment; lease=' + $integrationStatus.IntegrationLease
+    } elseif ($installMode -eq 'User') {
         try {
             $userScoop = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
             $userGlobal = [Environment]::GetEnvironmentVariable('SCOOP_GLOBAL', 'User')

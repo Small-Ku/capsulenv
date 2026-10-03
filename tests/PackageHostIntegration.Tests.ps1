@@ -40,8 +40,9 @@ Describe 'Capsulenv User package Start Menu integration' {
         $global:CapsulenvPackageShortcutShell = $script:PackageShortcutShell
 
         Mock Test-CapsulenvWindows { $true } -ModuleName Capsulenv
+        Mock Get-CapsulenvUserIntegrationLifetime { 'persistent' } -ModuleName Capsulenv
         Mock Get-CapsulenvUserStartMenuShortcutRoot { $startMenuRoot } -ModuleName Capsulenv
-        Mock Get-CapsulenvContext { [pscustomobject]@{ Root = $capsuleRoot } } -ModuleName Capsulenv
+        Mock Get-CapsulenvContext { [pscustomobject]@{ Root = $capsuleRoot; StateRoot = (Join-Path $capsuleRoot '.capsulenv') } } -ModuleName Capsulenv
         Mock Get-CapsulenvIdentity { '11111111-2222-3333-4444-555555555555' } -ModuleName Capsulenv
         Mock Get-CapsulenvInstalledPackageStates {
             @([pscustomobject]@{ Name = 'demo' })

@@ -107,6 +107,7 @@ function Ensure-CapsulenvUserEnvironmentBackupEntries {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string[]]$Names)
 
+    Assert-CapsulenvUserIntegrationAuthority -PersistentOnly
     $backupPath = Get-CapsulenvUserEnvironmentBackupPath
     if (-not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
         throw "User mode cannot be synchronized without the original environment backup: $backupPath"
@@ -132,7 +133,16 @@ function Ensure-CapsulenvUserEnvironmentBackupEntries {
         $changed = $true
     }
     if ($changed) {
+        $marker = $null
+        $markerPath = Get-CapsulenvPersistentUserIntegrationMarkerPath -Surface environment
+        if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+            $marker = Read-CapsulenvPersistentUserIntegrationMarker -Surface environment
+        }
         Write-CapsulenvUserEnvironmentBackup -Path $backupPath -Backup $backup
+        if ($null -ne $marker) {
+            $backupHash = (Get-FileHash -LiteralPath $backupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            [void](Write-CapsulenvPersistentUserIntegrationMarker -Surface environment -Token $backupHash -Applied $marker.Applied)
+        }
     }
 }
 
@@ -176,6 +186,7 @@ function Sync-CapsulenvUserEnvironment {
     [CmdletBinding()]
     param($RelocationContext)
 
+    Assert-CapsulenvUserIntegrationAuthority -PersistentOnly
     $backupPath = Get-CapsulenvUserEnvironmentBackupPath
     if (-not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
         throw "User mode cannot be synchronized without the original environment backup: $backupPath"
@@ -279,27 +290,39 @@ function Install-CapsulenvUserEnvironment {
         [switch]$RefreshBackup
     )
 
+    $previousLifetime = Get-CapsulenvUserIntegrationLifetime
     $context = Get-CapsulenvContext
     $backupPath = Get-CapsulenvUserEnvironmentBackupPath
     $backupExists = Test-Path -LiteralPath $backupPath -PathType Leaf
     $ledgerState = Get-CapsulenvInstallModeState
     $ledgerWasUser = ($backupExists -and $null -ne $ledgerState -and [string]$ledgerState.Mode -eq 'User')
     $currentMode = Get-CapsulenvUserIntegrationMode
-    if ($currentMode -eq 'User' -and -not $backupExists) {
+    $userEnvironmentPointsHere = (Test-CapsulenvWindows) -and (Test-CapsulenvCurrentUserIntegrationOwnership)
+    if (($currentMode -eq 'User' -or $userEnvironmentPointsHere) -and -not $backupExists) {
         throw "The current Windows user already points at this capsule, but its reversible environment backup is missing: $backupPath"
     }
     $alreadyUser = ($backupExists -and $currentMode -eq 'User')
-    if ($backupExists -and -not $alreadyUser -and $ledgerWasUser -and -not $Force) {
+    $environmentMarkerPath = Get-CapsulenvPersistentUserIntegrationMarkerPath -Surface environment
+    $environmentMarkerExists = Test-Path -LiteralPath $environmentMarkerPath -PathType Leaf
+    if ($environmentMarkerExists) {
+        [void](Get-CapsulenvPersistentEnvironmentOwnership)
+        if (-not $alreadyUser -or $RefreshBackup) {
+            throw 'Persistent environment ownership is still active on this host. Run restore-user before refreshing or reacquiring User integration.'
+        }
+    }
+    if ($backupExists -and -not $alreadyUser -and $ledgerWasUser -and -not $Force -and -not $environmentMarkerExists) {
         # A reset-on-shutdown host erased User environment integration while the
-        # USB retained its host-scoped ledger. Treat a deliberate install-user
-        # on that same host as a fresh takeover and snapshot the now-clean User
-        # environment instead of demanding restore-user first.
+        # USB retained its host-scoped ledger. Only marker loss plus absent live
+        # ownership permits a fresh takeover; an active marker never refreshes
+        # the original rollback snapshot.
         $RefreshBackup = $true
     }
     if ($backupExists -and -not $Force -and -not $RefreshBackup -and -not $alreadyUser) {
         throw "A user-environment backup already exists but this capsule is not recorded as the active User integration: $backupPath. Restore it first or pass -Force to reapply without replacing the original backup."
     }
 
+    # Process/session setup and all reversible-snapshot preflight happen before
+    # publishing persistent UserIntegration authority.
     $plan = Set-CapsulenvSessionEnvironment -IntegrationMode User
     [void](Initialize-CapsulenvScoopBootstrap)
     $configuration = Get-CapsulenvConfiguration
@@ -311,6 +334,7 @@ function Install-CapsulenvUserEnvironment {
     [void](New-Item -ItemType Directory -Path $context.StateRoot -Force)
     $scoopPathEnvironmentVariable = Get-CapsulenvScoopPathEnvironmentVariable
     $names = @($plan.Variables.Keys) + @('PATH', $scoopPathEnvironmentVariable) | Sort-Object -Unique
+    $backupToWrite = $null
     if (-not $backupExists -or ($RefreshBackup -and -not $alreadyUser)) {
         $backup = [ordered]@{}
         foreach ($name in $names) {
@@ -320,7 +344,7 @@ function Install-CapsulenvUserEnvironment {
                 Value = $value
             }
         }
-        Write-CapsulenvUserEnvironmentBackup -Path $backupPath -Backup $backup
+        $backupToWrite = $backup
     } elseif ($Force) {
         # Preserve the original snapshot while extending an older backup with
         # variables introduced by a newer capsulenv/configuration version.
@@ -345,30 +369,63 @@ function Install-CapsulenvUserEnvironment {
             $backupChanged = $true
         }
         if ($backupChanged) {
-            Write-CapsulenvUserEnvironmentBackup -Path $backupPath -Backup $backup
+            $backupToWrite = $backup
         }
     }
 
     $relocationContext = if ($rehydrationRequired) { Get-CapsulenvRelocationContext } else { $null }
     $hadSessionGitIntent = Test-CapsulenvGitOpenSshSessionConfigured
-    [void](Sync-CapsulenvUserEnvironment -RelocationContext $relocationContext)
-    if (-not $rehydrationRequired) {
-        Sync-CapsulenvPackageStartMenuShortcuts
-    }
-    Initialize-CapsulenvGitOpenSshSession
-    if ($hadSessionGitIntent -and -not (Test-Path -LiteralPath (Get-CapsulenvGitConfigBackupPath) -PathType Leaf)) {
-        Write-CapsulenvMessage -Level Warning -Message 'Bitwarden Git/OpenSSH was configured only for ShellOnly sessions. User mode does not silently promote optional Git integration; run `capsulenv.cmd bitwarden configure-git` if you want persistent User Git configuration.'
-    }
+    $policyPublished = $false
+    $persistentEvidenceCommitted = $false
+    try {
+        if ($previousLifetime -ne 'persistent') {
+            Set-CapsulenvUserIntegrationLifetime -Lifetime persistent
+            $policyPublished = $true
+        }
+        Assert-CapsulenvUserIntegrationAuthority -PersistentOnly
 
-    if ($rehydrationRequired) {
-        Invoke-CapsulenvScoopRehydrate -IntegrationMode User
+        if ($null -ne $backupToWrite) {
+            Write-CapsulenvUserEnvironmentBackup -Path $backupPath -Backup $backupToWrite
+        }
+
+        $environmentBackupHash = (Get-FileHash -LiteralPath $backupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        [void](Write-CapsulenvPersistentUserIntegrationMarker -Surface environment -Token $environmentBackupHash -Applied ([ordered]@{
+            Variables = $plan.Variables
+            PathEntries = @($plan.PathEntries)
+        }))
+        $persistentEvidenceCommitted = $true
+        [void](Sync-CapsulenvUserEnvironment -RelocationContext $relocationContext)
+        if (-not $rehydrationRequired) {
+            Sync-CapsulenvPackageStartMenuShortcuts
+        }
+        Initialize-CapsulenvGitOpenSshSession
+        if ($hadSessionGitIntent -and -not (Test-Path -LiteralPath (Get-CapsulenvGitConfigBackupPath) -PathType Leaf)) {
+            Write-CapsulenvMessage -Level Warning -Message 'Bitwarden Git/OpenSSH was configured only for ShellOnly sessions. User mode does not silently promote optional Git integration; run `capsulenv.cmd bitwarden configure-git` if you want persistent User Git configuration.'
+        }
+
+        if ($rehydrationRequired) {
+            Invoke-CapsulenvScoopRehydrate -IntegrationMode User
+        }
+        $defaultBrowser = Get-CapsulenvConfiguredDefaultBrowser
+        if (-not [string]::IsNullOrWhiteSpace([string]$defaultBrowser)) {
+            [void](Install-CapsulenvUserIntegration -CapsuleId (Get-CapsulenvIdentity) -BrowserApp $defaultBrowser)
+        }
+        Sync-CapsulenvConfiguredDefaultBrowser
+        Write-CapsulenvMessage -Level Success -Message $(if ($alreadyUser) { "User environment synchronized. Backup: $backupPath" } else { "User environment enabled. Backup: $backupPath" })
+    } catch {
+        $failure = $_
+        if ($policyPublished) {
+            try {
+                $ownedSurfaces = @(Get-CapsulenvPersistentUserIntegrationSurfaces)
+                if (-not $persistentEvidenceCommitted -and $ownedSurfaces.Count -eq 0) {
+                    Set-CapsulenvUserIntegrationLifetime -Lifetime $previousLifetime
+                }
+            } catch {
+                Write-CapsulenvMessage -Level Warning -Message "Persistent UserIntegration setup failed and requested-lifetime rollback also failed: $($_.Exception.Message)"
+            }
+        }
+        throw $failure
     }
-    $defaultBrowser = Get-CapsulenvConfiguredDefaultBrowser
-    if (-not [string]::IsNullOrWhiteSpace([string]$defaultBrowser)) {
-        [void](Install-CapsulenvUserIntegration -CapsuleId (Get-CapsulenvIdentity) -BrowserApp $defaultBrowser)
-    }
-    Sync-CapsulenvConfiguredDefaultBrowser
-    Write-CapsulenvMessage -Level Success -Message $(if ($alreadyUser) { "User environment synchronized. Backup: $backupPath" } else { "User environment enabled. Backup: $backupPath" })
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Install-CapsulenvUserEnvironment

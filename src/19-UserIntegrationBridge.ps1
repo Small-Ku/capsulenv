@@ -5,10 +5,6 @@ function Get-CapsulenvUserIntegrationBridgeRoot {
     if ($CapsuleId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
         throw 'CapsuleId must be a safe host-local bridge path component.'
     }
-    $record = Get-CapsulenvHostRecord
-    if (-not [bool]$record.Enrolled -or [string]$record.Retention -ne 'persistent') {
-        return $null
-    }
     return Join-Path (Join-Path (Get-CapsulenvHostLocalStateRoot) 'user-bridges') $CapsuleId
 }
 
@@ -38,10 +34,8 @@ function New-CapsulenvUserIntegrationCapsuleLocator {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$CapsuleId)
 
+    Assert-CapsulenvUserIntegrationAuthority -LeaseApplyOnly
     $root = Get-CapsulenvUserIntegrationBridgeRoot -CapsuleId $CapsuleId
-    if ([string]::IsNullOrWhiteSpace($root)) {
-        throw 'Persistent UserIntegration requires explicit host enrollment with retention=persistent; ephemeral hosts do not publish a capsule locator.'
-    }
     [void](New-Item -ItemType Directory -Path $root -Force)
     $context = Get-CapsulenvContext
     $rootReference = [System.IO.Path]::GetFullPath($context.Root)
@@ -57,6 +51,9 @@ function New-CapsulenvUserIntegrationCapsuleLocator {
         CapsuleRoots = @($rootReference)
         CapsuleLocators = @([ordered]@{ RelativePath = $relativePath })
         LauncherName = 'capsulenv.cmd'
+        Lifetime = Get-CapsulenvUserIntegrationLifetime
+        HostIntegrationKey = Get-CapsulenvHostIntegrationKey
+        LeaseId = [string]$env:CAPSULENV_USER_LEASE_ID
         CreatedAtUtc = [DateTime]::UtcNow.ToString('o')
     }
     Write-CapsulenvHostJsonAtomically -Path (Get-CapsulenvUserIntegrationCapsuleLocatorPath -CapsuleId $CapsuleId) -Value $locator
@@ -76,7 +73,7 @@ function Get-CapsulenvUserIntegrationCapsuleLocator {
         if (
             [int]$locator.SchemaVersion -ne 1 -or
             -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$locator.CapsuleId, $CapsuleId) -or
-            [string]::IsNullOrWhiteSpace([string]$locator.HostKey)
+            [string]$locator.HostKey -ne [string](Get-CapsulenvHostKey)
         ) {
             return $null
         }
@@ -205,10 +202,8 @@ function New-CapsulenvUserIntegrationBridge {
         $BrowserBinding
     )
 
+    Assert-CapsulenvUserIntegrationAuthority -LeaseApplyOnly
     $root = Get-CapsulenvUserIntegrationBridgeRoot -CapsuleId $CapsuleId
-    if ([string]::IsNullOrWhiteSpace($root)) {
-        throw 'Persistent UserIntegration requires explicit host enrollment with retention=persistent; ephemeral hosts do not install a bridge.'
-    }
     [void](New-Item -ItemType Directory -Path $root -Force)
     $bridgePath = Join-Path $root 'capsulenv-bridge.ps1'
     $manifestPath = Join-Path $root 'bridge.json'
@@ -254,6 +249,21 @@ foreach ($candidate in @($locator.CapsuleRoots) + @($locator.CapsuleLocators | F
 if ([string]::IsNullOrWhiteSpace($capsuleRoot)) {
     throw "Capsule '$CapsuleId' is absent. Attach the intended capsule and retry; no drive letter or unrelated profile will be guessed."
 }
+if ($null -ne $locator.PSObject.Properties['Lifetime'] -and [string]$locator.Lifetime -eq 'leased') {
+    $leasePath = Join-Path $capsuleRoot ('.capsulenv/user-integrations/{0}/lease.json' -f [string]$locator.HostIntegrationKey)
+    if (-not (Test-Path -LiteralPath $leasePath -PathType Leaf)) { throw 'UserIntegration lease is absent; refusing to use a released bridge.' }
+    $lease = Get-Content -LiteralPath $leasePath -Raw | ConvertFrom-Json
+    $machineUser = ('{0}|{1}\{2}' -f [Environment]::MachineName, [Environment]::UserDomainName, [Environment]::UserName).ToLowerInvariant()
+    if ([string]$lease.CapsuleId -ne $CapsuleId -or [string]$lease.LeaseId -ne [string]$locator.LeaseId -or
+        [string]$lease.HostIntegrationKey -ne [string]$locator.HostIntegrationKey -or
+        [string]$lease.MachineUser -ne $machineUser -or [string]$lease.Phase -ne 'Active') {
+        throw 'UserIntegration lease is incomplete or belongs to another capsule/host/user.'
+    }
+    try { $owner = Get-Process -Id ([int]$lease.ProcessId) -ErrorAction Stop } catch { throw 'UserIntegration lease is stale; run release-user.' }
+    if ($owner.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) -ne [string]$lease.ProcessStartIdentity) {
+        throw 'UserIntegration lease owner no longer matches; run release-user.'
+    }
+}
 $launcher = Join-Path $capsuleRoot 'capsulenv.cmd'
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
     throw "Capsule '$CapsuleId' is attached but its host launcher is unavailable."
@@ -267,7 +277,9 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
         HostKey = Get-CapsulenvHostKey
         BrowserApp = $BrowserApp
         BridgePath = $bridgePath
-        Persistent = $true
+        Persistent = ((Get-CapsulenvUserIntegrationLifetime) -eq 'persistent')
+        Lifetime = Get-CapsulenvUserIntegrationLifetime
+        LeaseId = [string]$env:CAPSULENV_USER_LEASE_ID
         ProfileBinding = 'capsulenv-browser-binding'
         BrowserStateIdentity = $browserIdentity.Trim().ToLowerInvariant()
         CapsuleRoots = @($locator.CapsuleRoots)
@@ -283,10 +295,8 @@ function New-CapsulenvUserIntegrationPackageBridge {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$CapsuleId)
 
+    Assert-CapsulenvUserIntegrationAuthority -LeaseApplyOnly
     $root = Get-CapsulenvUserIntegrationBridgeRoot -CapsuleId $CapsuleId
-    if ([string]::IsNullOrWhiteSpace($root)) {
-        throw 'Persistent package integration requires explicit host enrollment with retention=persistent.'
-    }
     [void](New-Item -ItemType Directory -Path $root -Force)
     [void](New-CapsulenvUserIntegrationCapsuleLocator -CapsuleId $CapsuleId)
     $path = Join-Path $root 'capsulenv-package-bridge.ps1'
@@ -322,6 +332,21 @@ foreach ($candidate in @($locator.CapsuleRoots) + @($locator.CapsuleLocators | F
 if ([string]::IsNullOrWhiteSpace($capsuleRoot)) {
     throw "Capsule '$CapsuleId' is absent. The host-local package bridge will not guess a drive letter."
 }
+if ($null -ne $locator.PSObject.Properties['Lifetime'] -and [string]$locator.Lifetime -eq 'leased') {
+    $leasePath = Join-Path $capsuleRoot ('.capsulenv/user-integrations/{0}/lease.json' -f [string]$locator.HostIntegrationKey)
+    if (-not (Test-Path -LiteralPath $leasePath -PathType Leaf)) { throw 'UserIntegration lease is absent; refusing to use a released bridge.' }
+    $lease = Get-Content -LiteralPath $leasePath -Raw | ConvertFrom-Json
+    $machineUser = ('{0}|{1}\{2}' -f [Environment]::MachineName, [Environment]::UserDomainName, [Environment]::UserName).ToLowerInvariant()
+    if ([string]$lease.CapsuleId -ne $CapsuleId -or [string]$lease.LeaseId -ne [string]$locator.LeaseId -or
+        [string]$lease.HostIntegrationKey -ne [string]$locator.HostIntegrationKey -or
+        [string]$lease.MachineUser -ne $machineUser -or [string]$lease.Phase -ne 'Active') {
+        throw 'UserIntegration lease is incomplete or belongs to another capsule/host/user.'
+    }
+    try { $owner = Get-Process -Id ([int]$lease.ProcessId) -ErrorAction Stop } catch { throw 'UserIntegration lease is stale; run release-user.' }
+    if ($owner.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) -ne [string]$lease.ProcessStartIdentity) {
+        throw 'UserIntegration lease owner no longer matches; run release-user.'
+    }
+}
 $launcher = Join-Path $capsuleRoot 'capsulenv.cmd'
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
     throw "Capsule '$CapsuleId' is attached but its host launcher is unavailable."
@@ -341,7 +366,10 @@ function Get-CapsulenvUserIntegrationBridge {
         return $null
     }
     try {
-        return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        $bridge = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        if ([int]$bridge.SchemaVersion -ne 1 -or [string]$bridge.CapsuleId -ne $CapsuleId -or
+            [string]$bridge.HostKey -ne [string](Get-CapsulenvHostKey)) { return $null }
+        return $bridge
     } catch {
         return $null
     }
@@ -357,6 +385,14 @@ function Invoke-CapsulenvUserIntegrationBridge {
     $bridge = Get-CapsulenvUserIntegrationBridge -CapsuleId $CapsuleId
     if ($null -eq $bridge) {
         throw "No host-local UserIntegration bridge is registered for capsule '$CapsuleId'."
+    }
+    if (-not [bool]$bridge.Persistent) {
+        $lease = Get-CapsulenvUserIntegrationLease
+        if ($null -eq $lease -or $lease.Phase -ne 'Active' -or
+            [string]$lease.LeaseId -ne [string]$bridge.LeaseId -or
+            -not (Test-CapsulenvUserIntegrationLeaseOwner -Lease $lease)) {
+            throw 'UserIntegration browser bridge lease is stale or incomplete; run release-user.'
+        }
     }
     $capsuleRoot = Resolve-CapsulenvUserIntegrationCapsuleRoot -CapsuleId $CapsuleId
     $launcher = Join-Path $capsuleRoot 'capsulenv.cmd'
@@ -397,9 +433,13 @@ function Remove-CapsulenvUserIntegrationBridge {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory = $true)][string]$CapsuleId)
 
+    if ($CapsuleId -ne [string](Get-CapsulenvIdentity)) { throw 'Cannot remove UserIntegration for a different capsule identity.' }
+    if (Test-Path -LiteralPath (Get-CapsulenvUserIntegrationLeasePath)) {
+        throw 'Use release-user to remove leased integration with ownership validation.'
+    }
     $root = Get-CapsulenvUserIntegrationBridgeRoot -CapsuleId $CapsuleId
     if ([string]::IsNullOrWhiteSpace($root)) {
-        return [pscustomobject]@{ Removed = $false; Reason = 'host is not explicitly enrolled as persistent' }
+        return [pscustomobject]@{ Removed = $false; Reason = 'bridge root is unavailable' }
     }
     if (-not (Test-Path -LiteralPath $root -PathType Container)) {
         return [pscustomobject]@{ Removed = $false; Reason = 'bridge does not exist' }

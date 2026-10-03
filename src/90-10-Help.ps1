@@ -97,6 +97,21 @@ browser commands
         'user' {
 @'
 user integration commands
+  capsulenv.cmd user-integration isolated|leased|persistent
+      Select this capsule's lifetime for the validated current host/user.
+      Placement retention remains independent. The default is isolated.
+
+  capsulenv.cmd lease-user
+      Require leased policy, snapshot supported User environment changes and
+      browser registration, and open a ShellOnly session shell. Shell exit or
+      eject releases the lease. Git, Bitwarden settings, services, and Start Menu
+      changes require separate persistent authority.
+
+  capsulenv.cmd release-user
+      Restore owned reversible lease state, including explicit stale recovery.
+      Preserve concurrent user changes. If the Capsulenv browser is selected,
+      choose another default in Windows Settings and retry release-user.
+
   capsulenv.cmd user-shell [--force]
       Explicitly take over/synchronize persistent current-user integration and
       open a User-mode shell. Nested Capsulenv commands inherit User mode.
@@ -125,8 +140,8 @@ eject
       eject state, and remove host-local scratch. If processes remain, eject is
       blocked unless --force is used.
 
-      Eject never changes install mode. In User mode, run restore-user before
-      removing the capsule from a host that will continue to be used.
+      Eject releases leased User integration. Persistent integration remains
+      until restore-user. Isolated integration requires session cleanup only.
 '@ | Write-Host
         }
         'seed' {

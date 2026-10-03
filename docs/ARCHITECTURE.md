@@ -19,7 +19,7 @@ the provider that owns the selected executable.
 
 The resulting installed state is published into a generation. A session then
 activates that generation and creates process-local effects. Persistent User
-integration is a separate, host-scoped authority with its own enrollment,
+integration is a separate, host-scoped authority with explicit lifetime policy,
 backup, and restore evidence:
 
 ```text
@@ -240,6 +240,106 @@ ShellOnly establishes process-scoped environments. Manifest environment variable
 `user-shell` and `install-user` apply explicit, reversible HostIntegration. Backup and restore authority resides in `.capsulenv/user-integrations/<machine-user-hash>/`.
 
 The ledger records restore evidence; it does not select future session modes. If original host state cannot be proven, Capsulenv does not invent speculative undo operations.
+
+## Placement retention and UserIntegration lifetime
+
+Placement retention controls depot, generation, cache, scratch, and host runtime
+reuse only. Host enrollment never authorizes UserIntegration. Session modes
+(`ShellOnly` and `User`) select process behavior independently of both axes.
+
+| Placement retention | UserIntegration lifetime | Supported use |
+|---|---|---|
+| persistent | isolated | Development Desktop with reusable depot and unchanged User environment |
+| ephemeral | leased | Reset/reimage host with temporary User integration |
+| persistent | leased | Shared trusted host with reusable depot and temporary User integration |
+| persistent | persistent | Explicitly managed User environment |
+| ephemeral | isolated | Minimal unknown-host use |
+| ephemeral | persistent | Explicit persistent integration; disposable depot does not become persistent |
+
+`user-integration isolated|leased|persistent` stores policy under
+`.capsulenv/user-integrations/<machine-user-hash>/policy.json` on the capsule.
+The record validates capsule identity, host/user digest, machine/user evidence,
+and recorded strong GDID evidence when available. A changed or unavailable
+previously recorded strong identity fails closed. Hostname, caches, environment
+residue, and placement records never grant integration permission.
+
+The default is `isolated`. This permits session environment and attach-only
+Bitwarden integration. Persistent User environment, Git, Bitwarden settings,
+Windows services, Start Menu, bridge publication, and browser registration
+require separate authority. `install-user` and `user-shell` deliberately select
+`persistent`; ordinary activation and deployment never select it.
+
+A validated legacy User ownership ledger with its original environment backup
+is a narrow migration adapter for existing persistent installations. A matching
+User SCOOP value or an old bridge alone grants no permission. An explicit policy
+record takes precedence. Fresh invocations still default to ShellOnly.
+
+Persistent recovery evidence is not itself proof that a host-specific mutation is
+still active. User environment and Windows ssh-agent service mutations pair their
+portable rollback record with a host-local ownership marker for the current host
+incarnation. Normal reboot preserves that marker; reset/reimage that removes
+host-local state removes active ownership proof. Stale portable snapshots are
+preserved for diagnosis/recovery but are not replayed onto the fresh host, and a
+new persistent takeover snapshots the fresh host state before mutation. Browser
+ownership is instead proven from the live Capsulenv registration/UserChoice state.
+
+Git is different: Capsulenv persistent Git/OpenSSH integration is bound explicitly
+to the capsule-owned portable `GIT_CONFIG_GLOBAL` target rather than whichever
+`--global` file the invoking process happens to select. Its rollback record binds
+the capsule target and preserves complete multi-value settings, so restore cannot
+silently target an unrelated host/user Git config. Bitwarden desktop settings are
+also deliberately capsule-wide because the Scoop-persisted application state
+itself travels with the capsule; `restore-user` restores these portable mutations
+before returning to `isolated`.
+
+### Leased integration
+
+`lease-user` requires an explicitly selected `leased` policy. It writes a portable
+recovery journal before mutation, then applies User environment and optional
+configured browser registration. Its child shell retains ShellOnly process
+semantics. No lease invokes persistent Git, Bitwarden setting/service, or Start
+Menu mutations. These surfaces are deliberately outside the supported lease.
+
+The journal records capsule/host/user identity, unique lease/session IDs, boot
+epoch, PID and exact process start identity, original/applied environment values,
+new PATH entries, and owned bridge/browser registration snapshots. Acquisition
+and release serialize through an OS-held file lock. File existence alone does
+not authorize application. The process lease ID and live exact owner must match.
+An existing stale or incomplete journal blocks reacquisition and is diagnosed.
+
+Normal shell exit and eject release the lease. `release-user` explicitly recovers
+a stale owner; `restore-user` also routes leased ownership to this recovery path.
+Recovery validates capsule/host/user identity and compares current owned state.
+Environment values restore only while equal to the applied values. PATH removes
+only newly introduced entries when concurrent changes exist; preexisting entries
+and unrelated additions remain. Changed registration or bridge contents block
+release, preserving the recovery journal and current handler.
+
+Prepared, Active, Releasing, and Blocked phases describe recovery progress.
+Partial application never becomes persistent ownership. Missing or invalid
+snapshots fail closed for affected browser/bridge surfaces. The journal and
+policy survive host-local reimage; a lost host depot is not integration authority.
+
+### Browser registration and Windows selection
+
+Bridge files and Capsulenv-owned HKCU browser registration are distinct from
+Windows default-app selection. No lease snapshots, copies, forges, or replays
+UserChoice hashes. Windows Settings confirmation remains user-owned.
+
+A lease publishes its host-local bridge before registration. The bridge uses
+capsule identity to find the attached launcher, never a removable executable or
+profile as the persistent handler. Integration lifetime authorizes publication;
+placement retention does not. Leased bridge manifests carry the lease identity.
+
+Release checks current UserChoice before deleting registration or bridge files.
+If a Capsulenv ProgID remains selected, release is Blocked. Choose another default
+browser through Windows Settings, then retry `release-user`. No automatic previous
+UserChoice restoration is claimed. Concurrent changes to registration also block
+release instead of overwriting the user's edits.
+
+`status` and `doctor` report placement retention, requested lifetime, currently
+owned persistent/leased integration, lease health and blocked diagnostics, and
+browser user-confirmation requirements independently.
 
 ## Start Menu HostIntegration
 

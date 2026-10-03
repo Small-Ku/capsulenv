@@ -189,6 +189,8 @@ Run `capsulenv install-user`, then confirm the choice in Windows Settings. Confi
 
 Install compatible Bitwarden Desktop first. If the app name differs, set `Bitwarden.App` to your selector.
 
+For persistent settings/service setup, enter `capsulenv user-shell` first. Session attachment to trusted running Bitwarden needs no persistent setup.
+
 ```powershell
 capsulenv bitwarden setup
 capsulenv bitwarden status
