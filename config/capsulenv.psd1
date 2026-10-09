@@ -250,6 +250,8 @@
         # }
     }
 
+    # ProfilePath is used only by explicit migration from a legacy Scoop persist profile.
+    # Normal browser launches use portable State under state/portable/browser/.
     Browsers = @{
         Firefox = @{
             Enabled = $true

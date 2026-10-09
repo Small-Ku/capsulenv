@@ -24,6 +24,24 @@ Describe 'Capsulenv Gecko browser configuration selection' {
         $definition.ProfilePath | Should -Be 'Profiles\Default'
     }
 
+    It 'allows a browser without a legacy Scoop profile path' {
+        $configPath = Join-Path $script:Root 'config/capsulenv.psd1'
+        $configuration = & $script:Module { param($path) Import-CapsulenvPowerShellDataFile -LiteralPath $path } $configPath
+        [void]$configuration.Browsers.LibreWolf.Remove('ProfilePath')
+
+        { & $script:Module { param($config) Assert-CapsulenvConfiguration -Configuration $config } $configuration } |
+            Should -Not -Throw
+
+        $definition = & $script:Module {
+            param($config)
+            Get-CapsulenvBrowserDefinitionFromConfiguration -Configuration $config -App 'scoop/librewolf'
+        } $configuration
+        $definition.ContainsKey('ProfilePath') | Should -BeFalse
+
+        $configuration.Browsers.LibreWolf.ProfilePath = '../other-profile'
+        { & $script:Module { param($config) Assert-CapsulenvConfiguration -Configuration $config } $configuration } |
+            Should -Throw
+    }
     It 'prefers an exact scoped definition over an unscoped same-app fallback' {
         $configuration = @{
             Browsers = @{

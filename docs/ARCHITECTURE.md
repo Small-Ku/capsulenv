@@ -411,16 +411,18 @@ ShellOnly mode prevents loading host CurrentUser profiles. Private modules are e
 
 ## Browser ownership
 
-The browser resolver identifies executables and profile storage from installed
-application selectors. `Browsers` configuration specifies Gecko profile
-relative paths, arguments, and narrowly scoped compatibility overrides.
+Browser Program resolution uses installed application selectors and the normal
+trusted provider order. Browser State is independent: normal launch and doctor
+use `state/portable/browser/<SHA256(app-name)[0:24]>/profile`, with explicit
+Gecko compatibility evidence and an exclusive State lease. Host and capsule
+executables must never fall back to Scoop `persist` or a host profile.
 
-Normal browser commands use the installed selector and the same provider
-resolution rules as other applications. A host executable override is a
-legacy compatibility surface, not a second provider model and not a reason to
-borrow an unrelated profile. Default browser registration represents
-HostIntegration backed by registry backups; Capsulenv does not forge Windows
-`UserChoice` hashes.
+`Browsers.ProfilePath` describes the old Scoop persist path only for an
+explicit `migrate --browser <app>` operation. It does not select runtime
+browser State. A host executable override remains a legacy compatibility
+option, not a second provider model. Default browser registration uses a
+host-local bridge to the normal browser command; Capsulenv does not forge
+Windows `UserChoice` hashes.
 
 ## Bitwarden SSH ownership
 

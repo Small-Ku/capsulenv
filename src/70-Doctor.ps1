@@ -254,12 +254,40 @@ function Invoke-CapsulenvDoctor {
         }
 
         try {
-            $profile = Get-CapsulenvBrowserProfilePath -App $app
+            $profile = Get-CapsulenvPortableBrowserProfilePath -App $app
+            $profileExists = Test-Path -LiteralPath $profile -PathType Container
+            $evidencePath = Get-CapsulenvBrowserCompatibilityPath -ProfilePath $profile
+            $evidenceExists = $profileExists -and (Test-Path -LiteralPath $evidencePath -PathType Leaf)
+            $evidenceValid = $false
+            $geckoMajor = 0
+            if ($evidenceExists) {
+                try {
+                    $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+                    $geckoMajor = [int]$evidence.GeckoMajor
+                    $evidenceValid = (
+                        [System.StringComparer]::OrdinalIgnoreCase.Equals(
+                            [string]$evidence.ProductId,
+                            (Get-CapsulenvBrowserStateIdentity -App $app)
+                        ) -and $geckoMajor -gt 0
+                    )
+                } catch {
+                    $evidenceValid = $false
+                }
+            }
+            $detail = if (-not $profileExists) {
+                "No portable browser profile found for '$app': $profile"
+            } elseif (-not $evidenceExists) {
+                "Portable browser profile has no compatibility evidence: $profile"
+            } elseif (-not $evidenceValid) {
+                "Portable browser profile has invalid compatibility evidence: $profile"
+            } else {
+                "Portable browser profile: $profile; Gecko major=$geckoMajor"
+            }
             $results.Add((New-CapsulenvCheckResult `
                 -Name "$displayName capsule profile" `
-                -Passed ($null -ne $profile) `
+                -Passed $evidenceValid `
                 -Importance Optional `
-                -Detail $(if ($profile) { $profile } else { "No Scoop-persisted profile found for '$app'" })))
+                -Detail $detail))
         } catch {
             $results.Add((New-CapsulenvCheckResult `
                 -Name "$displayName capsule profile" `

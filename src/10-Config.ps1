@@ -249,10 +249,14 @@ function Assert-CapsulenvConfiguration {
         }
         $browserApp = if ($browser.ContainsKey('App')) { [string]$browser.App } else { [string]$browserName }
         [void](Split-CapsulenvInstalledAppSelector -Selector $browserApp)
-        if (-not $browser.ContainsKey('ProfilePath') -or [string]::IsNullOrWhiteSpace([string]$browser.ProfilePath)) {
-            throw "Browsers.$browserName.ProfilePath must be a non-empty path relative to the selected Scoop app persist root."
+        # Legacy Scoop profile paths are only needed for explicit migration.
+        # Runtime browser binding uses the independent portable State identity.
+        if ($browser.ContainsKey('ProfilePath')) {
+            if ([string]::IsNullOrWhiteSpace([string]$browser.ProfilePath)) {
+                throw "Browsers.$browserName.ProfilePath must be non-empty when provided."
+            }
+            Assert-CapsulenvScoopIntegrationRelativePath -Name "Browsers.$browserName.ProfilePath" -Path ([string]$browser.ProfilePath)
         }
-        Assert-CapsulenvScoopIntegrationRelativePath -Name "Browsers.$browserName.ProfilePath" -Path ([string]$browser.ProfilePath)
         if (-not $browser.ContainsKey('ProfileArgument') -or [string]::IsNullOrWhiteSpace([string]$browser.ProfileArgument)) {
             throw "Browsers.$browserName.ProfileArgument must be a non-empty Gecko profile command-line argument."
         }

@@ -959,15 +959,31 @@ Describe 'Independent placement and UserIntegration lifetime' {
         Start-CapsulenvUserIntegrationLease | Out-Null
         # Isolate diagnostic data from platform/report formatting and required host checks.
         Mock New-CapsulenvCheckResult {
-            param($Name, $Detail)
-            [pscustomobject]@{ Name=$Name; Status='Skipped'; Importance='Optional'; Detail=$Detail }
+            param($Name, $Detail, $Passed)
+            [pscustomobject]@{ Name=$Name; Status='Skipped'; Importance='Optional'; Detail=$Detail; Passed=[bool]$Passed }
         } -ModuleName Capsulenv
         Mock Invoke-CapsulenvDoctorChecks { @() } -ModuleName Capsulenv
         Mock Write-CapsulenvDoctorReport {} -ModuleName Capsulenv
         Mock Get-CapsulenvBitwardenExecutable { $null } -ModuleName Capsulenv
         Mock Get-CapsulenvBrowserExecutable { $null } -ModuleName Capsulenv
-        Mock Get-CapsulenvBrowserProfilePath { $null } -ModuleName Capsulenv
+
+        $script:DoctorPortableProfilePath = Join-Path $TestDrive 'doctor-portable-librewolf-profile'
+        [void](New-Item -ItemType Directory -Path $script:DoctorPortableProfilePath -Force)
+        [pscustomobject]@{ SchemaVersion=1; ProductId='librewolf'; GeckoMajor=130; ProgramVersion='130.0' } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:DoctorPortableProfilePath '.capsulenv-gecko-compatibility.json') -Encoding UTF8
+        Mock Get-CapsulenvPortableBrowserProfilePath {
+            param($App)
+            if ($App -eq 'librewolf') { return $script:DoctorPortableProfilePath }
+            return ($script:DoctorPortableProfilePath + '-missing')
+        } -ModuleName Capsulenv
+
         $checks = @(& $script:Module { Invoke-CapsulenvDoctor })
+        $librewolfProfile = $checks | Where-Object Name -eq 'LibreWolf capsule profile'
+        $librewolfProfile.Passed | Should -BeTrue
+        $librewolfProfile.Detail | Should -Match ([regex]::Escape($script:DoctorPortableProfilePath))
+        $librewolfProfile.Detail | Should -Match 'Gecko major=130'
+        Should -Invoke Get-CapsulenvPortableBrowserProfilePath -ModuleName Capsulenv -Times 1 -Exactly -ParameterFilter { $App -eq 'librewolf' }
+        Remove-Variable DoctorPortableProfilePath -Scope Script -ErrorAction SilentlyContinue
         ($checks | Where-Object Name -eq 'Placement retention').Detail | Should -Be ephemeral
         $detail = ($checks | Where-Object Name -eq 'UserIntegration lifetime').Detail | ConvertFrom-Json
         $detail.PlacementRetention | Should -Be ephemeral
