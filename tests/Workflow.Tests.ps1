@@ -125,6 +125,34 @@ Describe 'Capsulenv portable workflow contracts' {
         }
     }
 
+    It 'reports a Scoop app with missing installed metadata as not ready' {
+        $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-missing-scoop-metadata-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
+            Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
+            [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'scoop/apps/orphan/current') -Force)
+
+            & $script:Module {
+                param($CapsuleRoot)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                [void](Get-CapsulenvConfiguration -Refresh)
+
+                $apps = @(Get-CapsulenvInstalledScoopApps)
+                $apps.Count | Should -Be 1
+                $apps[0].Name | Should -Be 'orphan'
+                $apps[0].ManifestPath | Should -BeNullOrEmpty
+                $apps[0].Ready | Should -BeFalse
+
+                $status = Get-CapsulenvStatus
+                $status.ScoopApps | Should -Be 1
+                $status.OfflineRunReady | Should -BeFalse
+            } $temporaryRoot
+        } finally {
+            if (Test-Path -LiteralPath $temporaryRoot) {
+                Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+            }
+        }
+    }
     It 'defaults a fresh invocation to ShellOnly even when persistent User ownership exists' {
         $oldMode = $env:CAPSULENV_MODE
         Mock Test-CapsulenvCurrentUserIntegrationOwnership { $true } -ModuleName Capsulenv

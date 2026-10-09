@@ -234,7 +234,10 @@ function Get-CapsulenvInstalledScoopApps {
                 Version = $version
                 Bucket = $bucket
                 ManifestPath = $manifestPath
-                Ready = (Test-Path -LiteralPath $manifestPath -PathType Leaf)
+                Ready = (
+                    -not [string]::IsNullOrWhiteSpace([string]$manifestPath) -and
+                    (Test-Path -LiteralPath $manifestPath -PathType Leaf)
+                )
             })
         }
     }
