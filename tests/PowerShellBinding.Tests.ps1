@@ -7,6 +7,11 @@ Describe 'Capsulenv host-local PowerShell binding' {
         $script:Module = @(Get-Module Capsulenv)[-1]
     }
 
+    BeforeEach {
+        # Tests supply host evidence explicitly; never discover the developer's Scoop.
+        Mock Find-CapsulenvHostScoop { $null } -ModuleName Capsulenv
+    }
+
     AfterAll {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }

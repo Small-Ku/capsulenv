@@ -499,6 +499,23 @@ Scoop is preferred, followed by a compatible Capsulenv-local realization, seed,
 and finally an explicitly supplied provider deployment. Arbitrary PATH entries
 are not package satisfaction.
 
+Foreign Scoop discovery uses environment roots, standard Scoop command paths,
+and the user-profile default. PATH command evidence identifies a candidate root;
+it does not establish Program trust. Discovery accepts external Scoop scripts
+or applications under `shims` or `apps/scoop/current/bin` and requires a live
+canonical Scoop script. Configured and default capsule Scoop roots are excluded,
+including global roots supplied by host configuration or environment variables.
+Minimal capsule contexts use the default root exclusions without requiring a
+complete configuration.
+
+Host Programs read `apps/<name>/current` and its installed manifest/install
+metadata from the discovered foreign root. App names must be valid path
+components. Metadata must be JSON objects with a nonempty manifest version.
+Bin aliases, architecture entries, and shortcuts use the installed-manifest
+parsers. Trust still requires an explicit Scoop selector, a live executable,
+and executable containment within the installed app root. Discovery does not
+execute Scoop or its manifests.
+
 The selected record carries the concrete executable, root, provider, scope,
 version, provenance, trust, and lifecycle ownership. Reusing a trusted host
 Scoop app does not upgrade, rewrite, or take ownership of the host

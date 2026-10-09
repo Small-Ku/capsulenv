@@ -7,6 +7,11 @@ Describe 'Capsulenv PowerShell and seed ownership' {
         $script:Module = @(Get-Module Capsulenv)[-1]
     }
 
+    BeforeEach {
+        # Tests supply host evidence explicitly; never discover the developer's Scoop.
+        Mock Find-CapsulenvHostScoop { $null } -ModuleName Capsulenv
+    }
+
     AfterAll {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
@@ -96,17 +101,34 @@ Describe 'Capsulenv PowerShell and seed ownership' {
         }
     }
 
-    It 'selects capsule pwsh for the interactive shell independently from the Windows PowerShell control host' {
+    It 'prefers trusted host pwsh over legacy capsule Scoop and the control host' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-interactive-pwsh-' + [Guid]::NewGuid().ToString('N'))
         try {
             [void](New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'config') -Force)
             Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $temporaryRoot 'config/capsulenv.psd1')
-            $currentHome = Join-Path $temporaryRoot 'scoop/apps/pwsh/current'
-            [void](New-Item -ItemType Directory -Path $currentHome -Force)
-            $portablePwsh = Join-Path $currentHome 'pwsh.exe'
-            '' | Set-Content -LiteralPath $portablePwsh -Encoding UTF8
-            '{"version":"7.6.4","bin":"pwsh.exe"}' | Set-Content -LiteralPath (Join-Path $currentHome 'manifest.json') -Encoding UTF8
-            '{"bucket":"main"}' | Set-Content -LiteralPath (Join-Path $currentHome 'install.json') -Encoding UTF8
+
+            $legacyCurrent = Join-Path $temporaryRoot 'scoop/apps/pwsh/current'
+            [void](New-Item -ItemType Directory -Path $legacyCurrent -Force)
+            '' | Set-Content -LiteralPath (Join-Path $legacyCurrent 'pwsh.exe') -Encoding UTF8
+            '{"version":"7.6.4","bin":"pwsh.exe"}' | Set-Content -LiteralPath (Join-Path $legacyCurrent 'manifest.json') -Encoding UTF8
+            '{"bucket":"main"}' | Set-Content -LiteralPath (Join-Path $legacyCurrent 'install.json') -Encoding UTF8
+
+            $hostRoot = Join-Path $temporaryRoot 'foreign-host-scoop'
+            $hostCurrent = Join-Path $hostRoot 'apps/pwsh/current'
+            [void](New-Item -ItemType Directory -Path $hostCurrent -Force)
+            $hostPwsh = Join-Path $hostCurrent 'pwsh.exe'
+            '' | Set-Content -LiteralPath $hostPwsh -Encoding UTF8
+            '{"version":"7.6.5","bin":"pwsh.exe"}' | Set-Content -LiteralPath (Join-Path $hostCurrent 'manifest.json') -Encoding UTF8
+            '{"bucket":"main"}' | Set-Content -LiteralPath (Join-Path $hostCurrent 'install.json') -Encoding UTF8
+
+            $script:InteractivePwshHostRoot = $hostRoot
+            Mock Find-CapsulenvHostScoop {
+                [pscustomobject]@{
+                    Root = $script:InteractivePwshHostRoot
+                    GlobalRoot = (Join-Path $script:InteractivePwshHostRoot 'global')
+                    Command = (Join-Path $script:InteractivePwshHostRoot 'shims/scoop.ps1')
+                }
+            } -ModuleName Capsulenv
 
             $selected = & $script:Module {
                 param($CapsuleRoot)
@@ -115,14 +137,14 @@ Describe 'Capsulenv PowerShell and seed ownership' {
                 Get-CapsulenvInteractivePowerShellExecutable
             } $temporaryRoot
 
-            [System.IO.Path]::GetFullPath([string]$selected) | Should -Be ([System.IO.Path]::GetFullPath($portablePwsh))
+            [System.IO.Path]::GetFullPath([string]$selected) | Should -Be ([System.IO.Path]::GetFullPath($hostPwsh))
         } finally {
+            Remove-Variable -Name InteractivePwshHostRoot -Scope Script -ErrorAction SilentlyContinue
             if (Test-Path -LiteralPath $temporaryRoot) {
                 Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
             }
         }
     }
-
     It 'seeds CurrentUser PowerShell profiles into the Scoop pwsh persist contract' {
         $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('capsulenv-pwsh-seed-' + [Guid]::NewGuid().ToString('N'))
         try {

@@ -411,6 +411,145 @@ function Get-CapsulenvLocalRealizationCandidates {
     return @($candidates.ToArray())
 }
 
+function Get-CapsulenvDiscoveredHostScoopApp {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$HostScoop,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('User', 'Global')]
+        [string]$Scope
+    )
+
+    if (-not (Test-CapsulenvPortableFileNameComponent -Value $Name)) {
+        return $null
+    }
+
+    $root = if ($Scope -eq 'Global') { [string]$HostScoop.GlobalRoot } else { [string]$HostScoop.Root }
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        return $null
+    }
+    try {
+        $root = [System.IO.Path]::GetFullPath($root)
+    } catch {
+        return $null
+    }
+
+    $appRoot = Join-Path (Join-Path $root 'apps') $Name
+    $current = Join-Path $appRoot 'current'
+    if (-not (Test-Path -LiteralPath $current -PathType Container)) {
+        return $null
+    }
+    $manifestPath = Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $current -Kind Manifest -AllowMissing
+    $installPath = Get-CapsulenvScoopInstalledMetadataPath -VersionRoot $current -Kind Install -AllowMissing
+    if ([string]::IsNullOrWhiteSpace([string]$manifestPath) -or [string]::IsNullOrWhiteSpace([string]$installPath)) {
+        return $null
+    }
+    try {
+        $manifestJson = Get-Content -LiteralPath $manifestPath -Raw
+        $installJson = Get-Content -LiteralPath $installPath -Raw
+        # Reject top-level arrays before PowerShell can enumerate a singleton
+        # array into an object that resembles installed metadata.
+        if (-not $manifestJson.TrimStart().StartsWith('{') -or -not $installJson.TrimStart().StartsWith('{')) {
+            return $null
+        }
+        $manifest = $manifestJson | ConvertFrom-Json
+        $install = $installJson | ConvertFrom-Json
+        if ($manifest -isnot [pscustomobject] -or $install -isnot [pscustomobject]) {
+            return $null
+        }
+        $versionProperty = Get-CapsulenvJsonPropertyRecord -Object $manifest -Name 'version'
+        if ($null -eq $versionProperty -or $versionProperty.Value -isnot [string] -or
+            [string]::IsNullOrWhiteSpace([string]$versionProperty.Value)) {
+            return $null
+        }
+    } catch {
+        return $null
+    }
+
+    return [pscustomobject][ordered]@{
+        Provider = 'Scoop'
+        ProviderScope = $Scope
+        Ownership = 'Upstream'
+        Scope = $Scope
+        Name = $Name
+        Selector = 'scoop:{0}/{1}' -f $Scope.ToLowerInvariant(), $Name
+        DisplaySelector = 'scoop/{0}' -f $Name
+        LegacySelector = '{0}/{1}' -f $Scope.ToLowerInvariant(), $Name
+        Root = $root
+        AppRoot = $appRoot
+        Current = $current
+        Persist = Join-Path (Join-Path $root 'persist') $Name
+        ManifestPath = $manifestPath
+        InstallPath = $installPath
+        Manifest = $manifest
+        Install = $install
+    }
+}
+
+function Resolve-CapsulenvDiscoveredHostScoopExecutable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Installed,
+        [Parameter(Mandatory = $true)]$Requirement
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$Requirement.RelativePath)) {
+        $target = Resolve-CapsulenvScoopAppRelativePath -Root ([string]$Installed.Current) -RelativePath ([string]$Requirement.RelativePath)
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            throw "Configured host executable is missing: $target"
+        }
+        return $target
+    }
+
+    $bins = New-Object System.Collections.Generic.List[object]
+    $binEntries = Get-CapsulenvInstalledBinEntries -App $Installed
+    foreach ($entry in @($binEntries.Entries)) {
+        $bins.Add((ConvertTo-CapsulenvInstalledBin -App $Installed -Entry $entry))
+    }
+    $shortcuts = New-Object System.Collections.Generic.List[object]
+    $shortcutEntries = Get-CapsulenvInstalledShortcutEntries -App $Installed
+    foreach ($entry in @($shortcutEntries.Entries)) {
+        $shortcuts.Add((ConvertTo-CapsulenvInstalledShortcut -App $Installed -Entry $entry))
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$Requirement.BinName)) {
+        $matches = @(
+            $bins.ToArray() | Where-Object {
+                [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.Name, [string]$Requirement.BinName) -or
+                [System.StringComparer]::OrdinalIgnoreCase.Equals([System.IO.Path]::GetFileName([string]$_.Target), [string]$Requirement.BinName)
+            }
+        )
+        if ($matches.Count -ne 1 -or -not (Test-Path -LiteralPath ([string]$matches[0].Target) -PathType Leaf)) {
+            throw "Host Scoop app '$([string]$Installed.Selector)' does not expose exactly one live bin named '$([string]$Requirement.BinName)'."
+        }
+        return [string]$matches[0].Target
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$Requirement.ShortcutName)) {
+        $matches = @($shortcuts.ToArray() | Where-Object { [string]$_.Name -eq [string]$Requirement.ShortcutName })
+        if ($matches.Count -ne 1 -or -not (Test-Path -LiteralPath ([string]$matches[0].Target) -PathType Leaf)) {
+            throw "Host Scoop app '$([string]$Installed.Selector)' does not expose exactly one live shortcut named '$([string]$Requirement.ShortcutName)'."
+        }
+        return [string]$matches[0].Target
+    }
+
+    $targets = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($bins.ToArray() + $shortcuts.ToArray())) {
+        if (Test-Path -LiteralPath ([string]$entry.Target) -PathType Leaf) {
+            $targets.Add([string]$entry.Target)
+        }
+    }
+    $unique = @($targets.ToArray() | Sort-Object -Unique)
+    if ($unique.Count -eq 1) {
+        return [string]$unique[0]
+    }
+    if ($unique.Count -eq 0) {
+        throw "Host Scoop app '$([string]$Installed.Selector)' has no resolvable bin or shortcut executable."
+    }
+    throw "Host Scoop app '$([string]$Installed.Selector)' exposes multiple executable targets. Configure RelativePath, BinName, or ShortcutName."
+}
+
 function Get-CapsulenvProgramCandidates {
     [CmdletBinding()]
     param(
@@ -418,34 +557,31 @@ function Get-CapsulenvProgramCandidates {
     )
 
     $candidates = New-Object System.Collections.Generic.List[object]
-    $selectors = @(
-        [pscustomobject]@{ Selector = 'scoop:user/{0}' -f $Requirement.Name; Provider = 'host-scoop'; Scope = 'user' },
-        [pscustomobject]@{ Selector = 'scoop:global/{0}' -f $Requirement.Name; Provider = 'host-scoop'; Scope = 'global' }
-    )
-    foreach ($selector in $selectors) {
-        try {
-            $installed = Get-CapsulenvInstalledApp -Selector $selector.Selector -AllowMissing
-        } catch {
-            $installed = $null
+    $hostScoop = Find-CapsulenvHostScoop
+    if ($null -ne $hostScoop) {
+        foreach ($scope in @('User', 'Global')) {
+            $installed = Get-CapsulenvDiscoveredHostScoopApp -HostScoop $hostScoop -Name ([string]$Requirement.Name) -Scope $scope
+            if ($null -eq $installed) {
+                continue
+            }
+            try {
+                $executable = Resolve-CapsulenvDiscoveredHostScoopExecutable -Installed $installed -Requirement $Requirement
+            } catch {
+                continue
+            }
+            $trust = Get-CapsulenvDiscoveredProgramTrustDecision -Requirement $Requirement -Installed $installed -Executable $executable
+            $capabilities = switch ([string]$Requirement.Name) {
+                'pwsh' { @('interactive'); break }
+                'sing-box' { @('proxy'); break }
+                default { @() }
+            }
+            $candidate = New-CapsulenvProgramCandidate -Name $Requirement.Name -Executable $executable -Root $installed.Current -Provider 'host-scoop' -Scope $scope.ToLowerInvariant() -Version ([string]$installed.Manifest.version) -Capabilities $capabilities -Trusted:$trust.Trusted -OwnsLifecycle:$false -Provenance ([string]$installed.Selector)
+            $candidate | Add-Member -NotePropertyName TrustPolicy -NotePropertyValue $trust.Policy -Force
+            $candidate | Add-Member -NotePropertyName TrustReason -NotePropertyValue $trust.Reason -Force
+            $candidates.Add($candidate)
         }
-        if ($null -eq $installed) { continue }
-        try {
-            $executable = Resolve-CapsulenvScoopAppExecutable -App $installed.Selector -RelativePath $Requirement.RelativePath -BinName $Requirement.BinName -ShortcutName $Requirement.ShortcutName
-        } catch {
-            continue
-        }
-        $provider = [string]$selector.Provider
-        $trust = Get-CapsulenvDiscoveredProgramTrustDecision -Requirement $Requirement -Installed $installed -Executable $executable
-        $capabilities = switch ([string]$Requirement.Name) {
-            'pwsh' { @('interactive'); break }
-            'sing-box' { @('proxy'); break }
-            default { @() }
-        }
-        $candidate = New-CapsulenvProgramCandidate -Name $Requirement.Name -Executable $executable -Root $installed.Current -Provider $provider -Scope ([string]$selector.Scope) -Version ([string]$installed.Manifest.version) -Capabilities $capabilities -Trusted:$trust.Trusted -OwnsLifecycle:($provider -eq 'capsulenv-local') -Provenance ([string]$installed.Selector)
-        $candidate | Add-Member -NotePropertyName TrustPolicy -NotePropertyValue $trust.Policy -Force
-        $candidate | Add-Member -NotePropertyName TrustReason -NotePropertyValue $trust.Reason -Force
-        $candidates.Add($candidate)
     }
+
     if ($null -ne (Get-Command Get-CapsulenvLocalRealizationCandidates -ErrorAction SilentlyContinue)) {
         foreach ($candidate in @(Get-CapsulenvLocalRealizationCandidates -Requirement $Requirement)) {
             $candidates.Add($candidate)

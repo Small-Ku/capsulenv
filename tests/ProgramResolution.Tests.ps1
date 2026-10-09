@@ -7,6 +7,11 @@ Describe 'Capsulenv program requirement and provider resolution' {
         $script:Module = @(Get-Module Capsulenv)[-1]
     }
 
+    BeforeEach {
+        # Tests supply host evidence explicitly; never discover the developer's Scoop.
+        Mock Find-CapsulenvHostScoop { $null } -ModuleName Capsulenv
+    }
+
     AfterAll {
         Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
     }
@@ -94,27 +99,130 @@ Describe 'Capsulenv program requirement and provider resolution' {
     }
 
     It 'does not expose legacy portable capsule apps as host-local candidates' {
-        Mock Get-CapsulenvInstalledApp { $null } -ModuleName Capsulenv
+        Mock Find-CapsulenvHostScoop { $null } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstalledApp { throw 'portable Scoop resolver must not supply host candidates' } -ModuleName Capsulenv
+        Mock Get-CapsulenvLocalRealizationCandidates { @() } -ModuleName Capsulenv
+
         $result = & $script:Module {
             $requirement = New-CapsulenvProgramRequirement -Name demo
             Get-CapsulenvProgramCandidates -Requirement $requirement
         }
 
         @($result).Count | Should -Be 0
-        Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 2 -Exactly
+        Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
+    It 'resolves a trusted host Scoop app from the discovered foreign root' {
+        $hostRoot = Join-Path $TestDrive 'foreign-scoop'
+        $current = Join-Path $hostRoot 'apps/pwsh/current'
+        New-Item -ItemType Directory -Path $current -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Value '{"version":"7.6.5","bin":"pwsh.exe"}' -Encoding utf8
+        Set-Content -LiteralPath (Join-Path $current 'install.json') -Value '{"bucket":"main","architecture":"64bit"}' -Encoding utf8
+        New-Item -ItemType File -Path (Join-Path $current 'pwsh.exe') -Force | Out-Null
+
+        $script:ForeignHostScoopRoot = $hostRoot
+        Mock Find-CapsulenvHostScoop {
+            [pscustomobject]@{
+                Root = $script:ForeignHostScoopRoot
+                GlobalRoot = (Join-Path $script:ForeignHostScoopRoot 'global')
+                Command = (Join-Path $script:ForeignHostScoopRoot 'shims/scoop.ps1')
+            }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstalledApp { throw 'capsule Scoop resolver must not be used for host discovery' } -ModuleName Capsulenv
+        Mock Get-CapsulenvLocalRealizationCandidates { @() } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name pwsh -RequiredCapabilities @('interactive')
+            $candidates = @(Get-CapsulenvProgramCandidates -Requirement $requirement)
+            [pscustomobject]@{
+                Candidates = $candidates
+                Resolution = Resolve-CapsulenvProgram -Requirement $requirement -Candidates $candidates
+            }
+        }
+
+        $result.Candidates.Count | Should -Be 1
+        $candidate = $result.Candidates[0]
+        $candidate.Provider | Should -Be 'host-scoop'
+        $candidate.Scope | Should -Be 'user'
+        $candidate.Version | Should -Be '7.6.5'
+        $candidate.Executable | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $current 'pwsh.exe')))
+        $candidate.Root | Should -Be ([System.IO.Path]::GetFullPath($current))
+        $candidate.Trusted | Should -BeTrue
+        $candidate.OwnsLifecycle | Should -BeFalse
+        $candidate.Provenance | Should -Be 'scoop:user/pwsh'
+        $result.Resolution.Succeeded | Should -BeTrue
+        $result.Resolution.Selected.Provider | Should -Be 'host-scoop'
+        Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
+    It 'rejects unusable host metadata: <Case>' -ForEach @(
+        @{ Case = 'missing manifest'; Manifest = $null; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'missing install'; Manifest = '{"version":"7.6.5","bin":"pwsh.exe"}'; Install = $null; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'malformed manifest'; Manifest = '{'; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'malformed install'; Manifest = '{"version":"7.6.5","bin":"pwsh.exe"}'; Install = '{'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'missing version'; Manifest = '{"bin":"pwsh.exe"}'; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'nonscalar version'; Manifest = '{"version":["7.6.5"],"bin":"pwsh.exe"}'; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'nonobject install'; Manifest = '{"version":"7.6.5","bin":"pwsh.exe"}'; Install = '[]'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'singleton manifest array'; Manifest = '[{"version":"7.6.5","bin":"pwsh.exe"}]'; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'singleton install array'; Manifest = '{"version":"7.6.5","bin":"pwsh.exe"}'; Install = '[{}]'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'missing executable'; Manifest = '{"version":"7.6.5","bin":"missing.exe"}'; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'relative traversal'; Manifest = '{"version":"7.6.5","bin":"../outside.exe"}'; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 0 },
+        @{ Case = 'rooted outside executable'; Manifest = 'outside'; Install = '{}'; Bin = 'pwsh.exe'; ExpectedCount = 1 }
+    ) {
+        $hostRoot = Join-Path $TestDrive ('metadata-host-' + [Guid]::NewGuid().ToString('N'))
+        $current = Join-Path $hostRoot 'apps/pwsh/current'
+        New-Item -ItemType Directory -Path $current -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $current $Bin) -Force | Out-Null
+        $outside = Join-Path $hostRoot 'apps/pwsh/outside.exe'
+        New-Item -ItemType File -Path $outside -Force | Out-Null
+        if ($Manifest -eq 'outside') {
+            $Manifest = @{ version = '7.6.5'; bin = $outside } | ConvertTo-Json -Compress
+        }
+        if ($null -ne $Manifest) { Set-Content -LiteralPath (Join-Path $current 'manifest.json') -Value $Manifest -Encoding utf8 }
+        if ($null -ne $Install) { Set-Content -LiteralPath (Join-Path $current 'install.json') -Value $Install -Encoding utf8 }
+        $script:MetadataHostRoot = $hostRoot
+        Mock Find-CapsulenvHostScoop {
+            [pscustomobject]@{ Root = $script:MetadataHostRoot; GlobalRoot = $null }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvLocalRealizationCandidates { @() } -ModuleName Capsulenv
+        $result = & $script:Module {
+            $requirement = New-CapsulenvProgramRequirement -Name pwsh
+            $candidates = @(Get-CapsulenvProgramCandidates -Requirement $requirement)
+            [pscustomobject]@{ Candidates = $candidates; Resolution = Resolve-CapsulenvProgram -Requirement $requirement -Candidates $candidates }
+        }
+        $result.Candidates.Count | Should -Be $ExpectedCount
+        $result.Resolution.Succeeded | Should -BeFalse
+        if ($ExpectedCount -eq 1) {
+            $result.Candidates[0].Trusted | Should -BeFalse
+            $result.Candidates[0].OwnsLifecycle | Should -BeFalse
+            $result.Candidates[0].TrustReason | Should -Match 'outside'
+        }
+    }
+
+    It 'rejects app names that could escape the standard apps directory' {
+        $result = & $script:Module {
+            param($HostRoot)
+            $hostScoop = [pscustomobject]@{ Root = $HostRoot; GlobalRoot = $null }
+            Get-CapsulenvDiscoveredHostScoopApp -HostScoop $hostScoop -Name '../outside' -Scope User
+        } $TestDrive
+        $result | Should -BeNullOrEmpty
     }
 
     It 'derives the trusted sing-box proxy capability during host discovery' {
         $executable = Join-Path $TestDrive 'sing-box.exe'
         New-Item -ItemType File -Path $executable -Force | Out-Null
-        Mock Get-CapsulenvInstalledApp {
+        Mock Find-CapsulenvHostScoop {
+            [pscustomobject]@{ Root = $TestDrive; GlobalRoot = (Join-Path $TestDrive 'global'); Command = 'unused' }
+        } -ModuleName Capsulenv
+        Mock Get-CapsulenvDiscoveredHostScoopApp {
+            if ($Scope -ne 'User') { return $null }
             [pscustomobject]@{
-                Selector = $Selector
+                Selector = 'scoop:user/sing-box'
                 Current = (Split-Path -Parent $executable)
                 Manifest = [pscustomobject]@{ version = '1.0.0' }
             }
         } -ModuleName Capsulenv
-        Mock Resolve-CapsulenvScoopAppExecutable { $executable } -ModuleName Capsulenv
+        Mock Resolve-CapsulenvDiscoveredHostScoopExecutable { $executable } -ModuleName Capsulenv
         Mock Get-CapsulenvDiscoveredProgramTrustDecision {
             [pscustomobject]@{ Trusted = $true; Policy = 'test'; Reason = 'verified test host' }
         } -ModuleName Capsulenv
@@ -132,7 +240,6 @@ Describe 'Capsulenv program requirement and provider resolution' {
         $result.Candidate.Capabilities | Should -Contain 'proxy'
         $result.Resolution.Succeeded | Should -BeTrue
     }
-
     It 'uses SemVer prerelease precedence for minimum and maximum ranges' {
         $executable = Join-Path $TestDrive 'semver-range.exe'
         New-Item -ItemType File -Path $executable -Force | Out-Null
@@ -210,4 +317,157 @@ Describe 'Capsulenv program requirement and provider resolution' {
         $result.OwnsLifecycle | Should -BeTrue
     }
 
+}
+
+Describe 'Capsulenv foreign Scoop root discovery' {
+    BeforeAll {
+        $script:Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+        $script:Build = Get-CapsulenvTestModuleBuild -Root $script:Root
+        Import-Module $script:Build.ModulePath -Force
+        $script:Module = @(Get-Module Capsulenv)[-1]
+    }
+
+    BeforeEach {
+        $script:DiscoveryFixtureRoot = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        $script:DiscoveryCapsuleRoot = Join-Path $script:DiscoveryFixtureRoot 'capsule'
+        $script:DiscoveryHostRoot = Join-Path $script:DiscoveryFixtureRoot 'host-scoop'
+        $script:DiscoveryCommandPath = Join-Path $script:DiscoveryHostRoot 'shims/scoop.ps1'
+        & $script:Module { param($Root) Initialize-CapsulenvContext -Root $Root | Out-Null } $script:DiscoveryCapsuleRoot
+        Mock Get-CapsulenvScoopRoot { throw 'minimal capsule context has no configured Scoop root' } -ModuleName Capsulenv
+        Mock Get-CapsulenvScoopGlobalRoot { throw 'minimal capsule context has no configured global root' } -ModuleName Capsulenv
+        Mock Get-Command { Microsoft.PowerShell.Core\Get-Command -Name $Name -ErrorAction SilentlyContinue } -ModuleName Capsulenv
+        Mock Get-Command {
+            [pscustomobject]@{ Path = $script:DiscoveryCommandPath; Definition = $script:DiscoveryCommandPath }
+        } -ModuleName Capsulenv -ParameterFilter { $Name -eq 'scoop' }
+        # Hide all host filesystem evidence outside this fixture, including roots
+        # supplied by User/Machine environment variables and USERPROFILE.
+        Mock Test-Path {
+            if ($PathType -eq 'Container') { return [System.IO.Directory]::Exists($LiteralPath) }
+            if ($PathType -eq 'Leaf') { return [System.IO.File]::Exists($LiteralPath) }
+            return ([System.IO.Directory]::Exists($LiteralPath) -or [System.IO.File]::Exists($LiteralPath))
+        } -ModuleName Capsulenv
+        Mock Test-Path { $false } -ModuleName Capsulenv -ParameterFilter {
+            -not ([System.IO.Path]::GetFullPath([string]$LiteralPath)).StartsWith(
+                $script:DiscoveryFixtureRoot + [System.IO.Path]::DirectorySeparatorChar,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
+        }
+    }
+
+    AfterAll {
+        Remove-Module Capsulenv -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'discovers and resolves foreign user and global apps from <CommandPath> with minimal capsule context' -ForEach @(
+        @{ CommandPath = 'shims/scoop.ps1' },
+        @{ CommandPath = 'shims/scoop.cmd' },
+        @{ CommandPath = 'apps/scoop/current/bin/scoop.ps1' }
+    ) {
+        $script:DiscoveryCommandPath = Join-Path $script:DiscoveryHostRoot $CommandPath
+        $canonical = Join-Path $script:DiscoveryHostRoot 'apps/scoop/current/bin/scoop.ps1'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $canonical) -Force | Out-Null
+        Set-Content -LiteralPath $canonical -Value "throw 'discovery must not execute Scoop'" -Encoding utf8
+        New-Item -ItemType Directory -Path (Split-Path -Parent $script:DiscoveryCommandPath) -Force | Out-Null
+        Set-Content -LiteralPath $script:DiscoveryCommandPath -Value "throw 'discovery must not execute the command shim'" -Encoding utf8
+        $globalRoot = Join-Path $script:DiscoveryFixtureRoot 'host-global'
+        @{ global_path = $globalRoot } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:DiscoveryHostRoot 'config.json') -Encoding utf8
+        $pwshCurrent = Join-Path $script:DiscoveryHostRoot 'apps/pwsh/current'
+        $browserCurrent = Join-Path $globalRoot 'apps/skykakapo/current'
+        foreach ($current in @($pwshCurrent, $browserCurrent)) {
+            New-Item -ItemType Directory -Path $current -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $current 'scoop-install.json') -Value '{"bucket":"main","architecture":"64bit"}' -Encoding utf8
+        }
+        Set-Content -LiteralPath (Join-Path $pwshCurrent 'scoop-manifest.json') -Value '{"version":"7.6.5","architecture":{"64bit":{"bin":[["pwsh.exe","pwsh"]]}}}' -Encoding utf8
+        Set-Content -LiteralPath (Join-Path $browserCurrent 'manifest.json') -Value '{"version":"156.0.1","shortcuts":[["skykakapo.exe","SkyKakapo"]]}' -Encoding utf8
+        New-Item -ItemType File -Path (Join-Path $pwshCurrent 'pwsh.exe') -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $browserCurrent 'skykakapo.exe') -Force | Out-Null
+        Mock Get-CapsulenvLocalRealizationCandidates { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstalledApp { throw 'capsule installed-app resolver must not be used' } -ModuleName Capsulenv
+
+        $result = & $script:Module {
+            $hostScoop = Find-CapsulenvHostScoop
+            [pscustomobject]@{
+                Host = $hostScoop
+                Pwsh = Get-CapsulenvProgramResolution -Requirement (New-CapsulenvProgramRequirement -Name pwsh -BinName pwsh -RequiredCapabilities @('interactive'))
+                Browser = Get-CapsulenvProgramResolution -Requirement (New-CapsulenvProgramRequirement -Name skykakapo -ShortcutName SkyKakapo)
+            }
+        }
+        $result.Host.Root | Should -Be $script:DiscoveryHostRoot
+        $result.Host.GlobalRoot | Should -Be $globalRoot
+        $result.Pwsh.Selected.Executable | Should -Be (Join-Path $pwshCurrent 'pwsh.exe')
+        $result.Browser.Selected.Executable | Should -Be (Join-Path $browserCurrent 'skykakapo.exe')
+        $result.Pwsh.Selected.Provenance | Should -Be 'scoop:user/pwsh'
+        $result.Browser.Selected.Provenance | Should -Be 'scoop:global/skykakapo'
+        foreach ($resolution in @($result.Pwsh, $result.Browser)) {
+            $resolution.Succeeded | Should -BeTrue
+            $resolution.Selected.Provider | Should -Be 'host-scoop'
+            $resolution.Selected.Trusted | Should -BeTrue
+            $resolution.Selected.OwnsLifecycle | Should -BeFalse
+        }
+        Should -Invoke Get-Command -ModuleName Capsulenv -ParameterFilter {
+            $Name -eq 'scoop' -and $All -and
+            ($CommandType -band [System.Management.Automation.CommandTypes]::ExternalScript) -and
+            ($CommandType -band [System.Management.Automation.CommandTypes]::Application)
+        }
+        Should -Invoke Get-CapsulenvInstalledApp -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
+    It 'does not infer a Scoop root from an arbitrary PATH executable' {
+        $script:DiscoveryCommandPath = Join-Path $script:DiscoveryHostRoot 'scoop.ps1'
+        New-Item -ItemType Directory -Path $script:DiscoveryHostRoot -Force | Out-Null
+        New-Item -ItemType File -Path $script:DiscoveryCommandPath -Force | Out-Null
+        & $script:Module { Find-CapsulenvHostScoop } | Should -BeNullOrEmpty
+    }
+
+    It 'requires a live canonical Scoop command under a standard discovered root' {
+        & $script:Module { Find-CapsulenvHostScoop } | Should -BeNullOrEmpty
+    }
+
+    It 'excludes default capsule <Directory> even when configuration is unavailable' -ForEach @(
+        @{ Directory = 'scoop' },
+        @{ Directory = 'scoop-global' }
+    ) {
+        $script:DiscoveryCommandPath = Join-Path $script:DiscoveryCapsuleRoot "$Directory/shims/scoop.ps1"
+        New-Item -ItemType Directory -Path (Split-Path -Parent $script:DiscoveryCommandPath) -Force | Out-Null
+        New-Item -ItemType File -Path $script:DiscoveryCommandPath -Force | Out-Null
+        & $script:Module { Find-CapsulenvHostScoop } | Should -BeNullOrEmpty
+    }
+
+    It 'excludes configured capsule <Scope> roots outside the default capsule tree' -ForEach @(
+        @{ Scope = 'User' },
+        @{ Scope = 'Global' }
+    ) {
+        if ($Scope -eq 'User') {
+            Mock Get-CapsulenvScoopRoot { $script:DiscoveryHostRoot } -ModuleName Capsulenv
+        } else {
+            Mock Get-CapsulenvScoopGlobalRoot { $script:DiscoveryHostRoot } -ModuleName Capsulenv
+        }
+        New-Item -ItemType Directory -Path (Split-Path -Parent $script:DiscoveryCommandPath) -Force | Out-Null
+        New-Item -ItemType File -Path $script:DiscoveryCommandPath -Force | Out-Null
+        & $script:Module { Find-CapsulenvHostScoop } | Should -BeNullOrEmpty
+    }
+
+    It 'rejects capsule <Directory> nominated by foreign global configuration' -ForEach @(
+        @{ Directory = 'scoop' },
+        @{ Directory = 'scoop-global' }
+    ) {
+        $capsuleScoop = Join-Path $script:DiscoveryCapsuleRoot $Directory
+        New-Item -ItemType Directory -Path $script:DiscoveryHostRoot -Force | Out-Null
+        @{ global_path = $capsuleScoop } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:DiscoveryHostRoot 'config.json') -Encoding utf8
+        $result = & $script:Module { param($Root) Get-CapsulenvHostScoopGlobalRoot -HostRoot $Root } $script:DiscoveryHostRoot
+        $result | Should -Not -Be $capsuleScoop
+    }
+
+    It 'rejects excluded global environment roots and the ProgramData fallback' {
+        $script:ExcludedGlobalRoots = @(
+            foreach ($target in @('User', 'Machine', 'Process')) {
+                $value = [Environment]::GetEnvironmentVariable('SCOOP_GLOBAL', $target)
+                if (-not [string]::IsNullOrWhiteSpace($value)) { [System.IO.Path]::GetFullPath($value).TrimEnd('\', '/') }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) { Join-Path $env:ProgramData 'scoop' }
+        )
+        Mock Get-CapsulenvScoopRootExclusions { $script:ExcludedGlobalRoots } -ModuleName Capsulenv
+        & $script:Module { param($Root) Get-CapsulenvHostScoopGlobalRoot -HostRoot $Root } $script:DiscoveryHostRoot | Should -BeNullOrEmpty
+    }
 }

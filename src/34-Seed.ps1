@@ -204,10 +204,53 @@ function Seed-CapsulenvGitConfig {
     }
 }
 
+function Get-CapsulenvScoopRootExclusions {
+    [CmdletBinding()]
+    param()
+
+    $roots = New-Object System.Collections.Generic.List[string]
+    foreach ($getRoot in @('Get-CapsulenvScoopRoot', 'Get-CapsulenvScoopGlobalRoot')) {
+        try {
+            $value = & $getRoot
+            if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+                $roots.Add([string]$value)
+            }
+        } catch {
+            # Host discovery must also work before a complete capsule configuration exists.
+        }
+    }
+    try {
+        $contextRoot = [string](Get-CapsulenvContext).Root
+        if (-not [string]::IsNullOrWhiteSpace($contextRoot)) {
+            $roots.Add((Join-Path $contextRoot 'scoop'))
+            $roots.Add((Join-Path $contextRoot 'scoop-global'))
+        }
+    } catch {
+        # Host discovery can run before context initialization.
+    }
+
+    $seen = @{}
+    $normalized = New-Object System.Collections.Generic.List[string]
+    foreach ($root in $roots) {
+        try {
+            $full = [System.IO.Path]::GetFullPath([string]$root).TrimEnd('\', '/')
+        } catch {
+            continue
+        }
+        $key = $full.ToLowerInvariant()
+        if (-not $seen.ContainsKey($key)) {
+            $seen[$key] = $true
+            $normalized.Add($full)
+        }
+    }
+    return @($normalized.ToArray())
+}
+
 function Get-CapsulenvHostScoopGlobalRoot {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$HostRoot)
 
+    $capsuleRoots = @(Get-CapsulenvScoopRootExclusions)
     $hostConfig = Join-Path $HostRoot 'config.json'
     if (Test-Path -LiteralPath $hostConfig -PathType Leaf) {
         try {
@@ -215,7 +258,10 @@ function Get-CapsulenvHostScoopGlobalRoot {
             foreach ($name in @('global_path', 'globalPath')) {
                 $property = $config.PSObject.Properties[$name]
                 if ($null -ne $property -and -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
-                    return [System.IO.Path]::GetFullPath([string]$property.Value)
+                    $candidate = [System.IO.Path]::GetFullPath([string]$property.Value).TrimEnd('\', '/')
+                    if (-not ($capsuleRoots | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals($_, $candidate) })) {
+                        return $candidate
+                    }
                 }
             }
         } catch {
@@ -223,7 +269,6 @@ function Get-CapsulenvHostScoopGlobalRoot {
         }
     }
 
-    $capsuleGlobal = [System.IO.Path]::GetFullPath((Get-CapsulenvScoopGlobalRoot)).TrimEnd('\', '/')
     foreach ($target in @('User', 'Machine', 'Process')) {
         try {
             $value = [Environment]::GetEnvironmentVariable('SCOOP_GLOBAL', $target)
@@ -231,7 +276,7 @@ function Get-CapsulenvHostScoopGlobalRoot {
                 continue
             }
             $candidate = [System.IO.Path]::GetFullPath($value).TrimEnd('\', '/')
-            if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($candidate, $capsuleGlobal)) {
+            if (-not ($capsuleRoots | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals($_, $candidate) })) {
                 return $candidate
             }
         } catch {
@@ -240,7 +285,10 @@ function Get-CapsulenvHostScoopGlobalRoot {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
-        return [System.IO.Path]::GetFullPath((Join-Path $env:ProgramData 'scoop'))
+        $candidate = [System.IO.Path]::GetFullPath((Join-Path $env:ProgramData 'scoop')).TrimEnd('\', '/')
+        if (-not ($capsuleRoots | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Equals($_, $candidate) })) {
+            return $candidate
+        }
     }
     return $null
 }
@@ -249,10 +297,7 @@ function Find-CapsulenvHostScoop {
     [CmdletBinding()]
     param()
 
-    $capsuleRoots = @(
-        [System.IO.Path]::GetFullPath((Get-CapsulenvScoopRoot)).TrimEnd('\', '/'),
-        [System.IO.Path]::GetFullPath((Get-CapsulenvScoopGlobalRoot)).TrimEnd('\', '/')
-    )
+    $capsuleRoots = @(Get-CapsulenvScoopRootExclusions)
     $candidates = New-Object System.Collections.Generic.List[string]
     foreach ($target in @('Process', 'User', 'Machine')) {
         try {
@@ -263,6 +308,33 @@ function Find-CapsulenvHostScoop {
         } catch {
             # User/Machine environment targets are not available on every host.
         }
+    }
+    try {
+        foreach ($command in @(Get-Command scoop -All -CommandType Application, ExternalScript -ErrorAction SilentlyContinue)) {
+            $commandPath = [string]$command.Path
+            if ([string]::IsNullOrWhiteSpace($commandPath)) {
+                $commandPath = [string]$command.Definition
+            }
+            if ([string]::IsNullOrWhiteSpace($commandPath)) {
+                continue
+            }
+            try {
+                $fullCommandPath = [System.IO.Path]::GetFullPath($commandPath)
+            } catch {
+                continue
+            }
+            $shimMatch = [regex]::Match($fullCommandPath, '^(?<root>.+)[\\/]shims[\\/]scoop(?:\.ps1|\.cmd)?$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($shimMatch.Success) {
+                $candidates.Add([string]$shimMatch.Groups['root'].Value)
+                continue
+            }
+            $binMatch = [regex]::Match($fullCommandPath, '^(?<root>.+)[\\/]apps[\\/]scoop[\\/]current[\\/]bin[\\/]scoop\.ps1$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($binMatch.Success) {
+                $candidates.Add([string]$binMatch.Groups['root'].Value)
+            }
+        }
+    } catch {
+        # Command discovery is optional host evidence.
     }
     if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
         $candidates.Add((Join-Path $env:USERPROFILE 'scoop'))
