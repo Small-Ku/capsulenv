@@ -454,6 +454,69 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.StagingResidue | Should -Be 0
     }
 
+    It 'initializes the provider ZIP extraction runtime before materialization' {
+        $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-zip-' + [Guid]::NewGuid().ToString('N'))
+        $capsuleRoot = Join-Path $temporaryRoot 'capsule'
+        $providerRoot = Join-Path $temporaryRoot 'provider-source'
+        $archive = Join-Path $temporaryRoot 'demo.zip'
+        [void](New-Item -ItemType Directory -Path (Join-Path $capsuleRoot 'config') -Force)
+        Copy-Item -LiteralPath (Join-Path $script:Root 'config/capsulenv.psd1') -Destination (Join-Path $capsuleRoot 'config/capsulenv.psd1')
+        [void](New-Item -ItemType Directory -Path $providerRoot -Force)
+        'provider-demo' | Set-Content -LiteralPath (Join-Path $providerRoot 'demo.exe') -NoNewline -Encoding UTF8
+        'provider-helper' | Set-Content -LiteralPath (Join-Path $providerRoot 'helper.dll') -NoNewline -Encoding UTF8
+        Compress-Archive -Path (Join-Path $providerRoot '*') -DestinationPath $archive
+        $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        $global:CapsulenvProviderZipPreflightCalls = 0
+        $global:CapsulenvProviderZipTestModule = $script:Module
+        try {
+            Mock Initialize-CapsulenvScoopBootstrap { [pscustomobject]@{ Enabled = $true } } -ModuleName Capsulenv
+            Mock Initialize-CapsulenvPortablePackageWorkerRuntime {
+                $global:CapsulenvProviderZipPreflightCalls++
+                & $global:CapsulenvProviderZipTestModule {
+                    [void](Get-CapsulenvIdentity)
+                    Initialize-CapsulenvFileIdentityRuntime
+                    if (-not ('System.IO.Compression.ZipArchive' -as [type])) {
+                        Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+                    }
+                }
+            } -ModuleName Capsulenv
+
+            $result = & $script:Module {
+                param($CapsuleRoot, $Archive, $Hash)
+                Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+                $bucketRoot = Join-Path (Join-Path (Join-Path (Get-CapsulenvScoopRoot) 'buckets') 'main') 'bucket'
+                [void](New-Item -ItemType Directory -Path $bucketRoot -Force)
+                $manifest = [ordered]@{
+                    version = '1.2.3'
+                    url = ([Uri]::new([System.IO.Path]::GetFullPath($Archive), [UriKind]::Absolute).AbsoluteUri)
+                    hash = $Hash
+                    bin = 'demo.exe'
+                }
+                $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $bucketRoot 'demo.json') -Encoding UTF8
+                $requirement = New-CapsulenvProgramRequirement -Name demo -ExactVersion 1.2.3
+                $candidate = @(Get-CapsulenvProgramProviderCandidates -Requirement $requirement)[0]
+                try {
+                    [pscustomobject]@{
+                        Provider = [string]$candidate.Provider
+                        ExecutableExists = Test-Path -LiteralPath $candidate.Executable -PathType Leaf
+                        SidecarExists = Test-Path -LiteralPath (Join-Path $candidate.Root 'helper.dll') -PathType Leaf
+                    }
+                } finally {
+                    if (Test-Path -LiteralPath $candidate.AcquisitionCleanupRoot) {
+                        Remove-Item -LiteralPath $candidate.AcquisitionCleanupRoot -Recurse -Force
+                    }
+                }
+            } $capsuleRoot $archive $hash
+
+            $result.Provider | Should -Be 'provider'
+            $result.ExecutableExists | Should -BeTrue
+            $result.SidecarExists | Should -BeTrue
+            $global:CapsulenvProviderZipPreflightCalls | Should -Be 1
+        } finally {
+            Remove-Variable -Name CapsulenvProviderZipPreflightCalls -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name CapsulenvProviderZipTestModule -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
     It 'uses the narrow bootstrap network invoker only after direct provider transport fails' {
         $temporaryRoot = Join-Path $TestDrive ('capsulenv-provider-bootstrap-' + [Guid]::NewGuid().ToString('N'))
         $capsuleRoot = Join-Path $temporaryRoot 'capsule'

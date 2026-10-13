@@ -602,6 +602,9 @@ function Get-CapsulenvProgramProviderCandidates {
     }
     $relativeExecutable = Get-CapsulenvProgramProviderExecutableRelativePath -Requirement $Requirement -Plan $plan
 
+    # Provider acquisition bypasses the PortableSafe execution graph, so its
+    # ZIP extraction must initialize the same runtime before materialization.
+    Initialize-CapsulenvPortablePackageWorkerRuntime
     $placement = Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
     $providerRoot = Join-Path $placement.ScratchRoot 'provider-acquisition'
     [void](New-Item -ItemType Directory -Path $providerRoot -Force)
