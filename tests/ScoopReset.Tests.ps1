@@ -236,6 +236,7 @@ Describe 'Capsulenv package projection repair boundary' {
     }
 
     It 'bypasses the relocation graph entirely when relocation rehydration is disabled' {
+        Mock Sync-CapsulenvLegacyScoopShimsAfterRelocation {} -ModuleName Capsulenv
         Mock Initialize-CapsulenvHostPlacement {} -ModuleName Capsulenv
         Mock Get-CapsulenvIdentity { 'scoop-reset-test' } -ModuleName Capsulenv
         Mock Get-CapsulenvContext { [pscustomobject]@{ Root = 'C:\capsulenv-test' } } -ModuleName Capsulenv

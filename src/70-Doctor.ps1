@@ -325,7 +325,7 @@ function Invoke-CapsulenvDoctor {
             -Name 'Offline run readiness' `
             -Passed ([bool]$offline.RunReady) `
             -Importance Optional `
-            -Detail ("InstalledApps={0}; MissingManifests={1}; CacheFiles={2}; CacheBytes={3}" -f $offline.InstalledApps, $offline.MissingInstalledManifests, $offline.CacheFiles, $offline.CacheBytes)))
+            -Detail ("InstalledApps={0}; MissingManifests={1}; StaleShimTargets={4}; CacheFiles={2}; CacheBytes={3}" -f $offline.InstalledApps, $offline.MissingInstalledManifests, $offline.CacheFiles, $offline.CacheBytes, $offline.StaleShimTargets)))
     } catch {
         $results.Add((New-CapsulenvCheckResult -Name 'Offline run readiness' -Passed $false -Importance Optional -Detail $_.Exception.Message))
     }
@@ -362,6 +362,7 @@ function Initialize-CapsulenvIntegrations {
         $ActivationSnapshot
     )
 
+    [void](Sync-CapsulenvLegacyScoopShimsAfterRelocation)
     [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
     [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
     if (-not $PSBoundParameters.ContainsKey('ActivationSnapshot')) {
@@ -453,3 +454,18 @@ function Initialize-Capsulenv {
 }
 
 ##MOD_EXEC## Export-ModuleMember -Function Initialize-Capsulenv, Invoke-CapsulenvDoctor
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.ShimTargets' -Area 'Scoop' -Name 'Portable Scoop shim targets' -Importance Optional -Handler {
+    $plan = @(Get-CapsulenvLegacyScoopShimRepairPlan)
+    $count = $plan.Count
+    $parameters = @{
+        Id='Capsulenv.Doctor.Scoop.ShimTargets'
+        Name='Portable Scoop shim targets'
+        Area='Scoop'
+        Importance='Optional'
+        Status=if($count -eq 0){'Healthy'}else{'Advisory'}
+        Summary=if($count -eq 0){'Installed shim paths match the current capsule.'}else{"$count installed shim target(s) require attention."}
+        Detail=(@($plan | ForEach-Object { '{0}: {1} ({2})' -f $_.App, $_.Path, $_.Status }) -join [Environment]::NewLine)
+        Remediation=if($count -gt 0){@('Run capsulenv rehydrate or start a capsule session to repair verified portable shim paths; resolve unknown ownership manually.')}else{@()}
+    }
+    New-CapsulenvDoctorResult @parameters
+}

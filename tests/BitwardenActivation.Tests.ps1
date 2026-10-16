@@ -30,6 +30,7 @@ Describe 'Capsulenv Bitwarden activation contracts' {
         } ([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
         $snapshot = [pscustomobject]@{ GenerationId = 'bitwarden-generation'; Programs = [ordered]@{ bitwarden = $program } }
 
+        Mock Sync-CapsulenvLegacyScoopShimsAfterRelocation {} -ModuleName Capsulenv
         Mock Set-CapsulenvSessionEnvironment {} -ModuleName Capsulenv
         Mock Get-CapsulenvIdentity { '11111111-2222-3333-4444-555555555555' } -ModuleName Capsulenv
         Mock Get-CapsulenvContext { [pscustomobject]@{ Root = [System.IO.Path]::GetTempPath() } } -ModuleName Capsulenv

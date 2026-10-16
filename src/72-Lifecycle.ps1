@@ -260,6 +260,7 @@ function Get-CapsulenvInstalledAppInventory {
             Ready = $true
         })
     }
+    $staleScoopShims = @(Get-CapsulenvLegacyScoopShimRepairPlan | ForEach-Object { [string]$_.App })
     foreach ($app in @(Get-CapsulenvInstalledScoopApps)) {
         $results.Add([pscustomobject]@{
             Provider = 'Scoop'
@@ -268,7 +269,7 @@ function Get-CapsulenvInstalledAppInventory {
             Selector = [string]$app.Selector
             Version = [string]$app.Version
             Bucket = [string]$app.Bucket
-            Ready = [bool]$app.Ready
+            Ready = ([bool]$app.Ready -and $staleScoopShims -notcontains [string]$app.Name)
         })
     }
     return @($results.ToArray() | Sort-Object App, Provider, ScoopScope)
@@ -421,6 +422,7 @@ function Get-CapsulenvOfflineReadiness {
     $cacheRoot = Resolve-CapsulenvPath -Path ([string]$configuration.Scoop.Cache) -AllowMissing
     $apps = @(Get-CapsulenvInstalledScoopApps)
     $missingManifests = @($apps | Where-Object { -not $_.Ready })
+    $staleShimTargets = @(Get-CapsulenvLegacyScoopShimRepairPlan)
     $cacheFiles = @()
     if (Test-Path -LiteralPath $cacheRoot -PathType Container) {
         $cacheFiles = @(Get-ChildItem -LiteralPath $cacheRoot -File -Recurse -ErrorAction SilentlyContinue)
@@ -433,12 +435,14 @@ function Get-CapsulenvOfflineReadiness {
         RunReady = (
             (Test-Path -LiteralPath (Join-Path $scoopRoot 'apps/scoop/current/bin/scoop.ps1') -PathType Leaf) -and
             (Test-Path -LiteralPath (Join-Path $scoopRoot 'buckets/main') -PathType Container) -and
-            $missingManifests.Count -eq 0
+            $missingManifests.Count -eq 0 -and
+            $staleShimTargets.Count -eq 0
         )
         ScoopCore = Test-Path -LiteralPath (Join-Path $scoopRoot 'apps/scoop/current/bin/scoop.ps1') -PathType Leaf
         MainBucket = Test-Path -LiteralPath (Join-Path $scoopRoot 'buckets/main') -PathType Container
         InstalledApps = $apps.Count
         MissingInstalledManifests = $missingManifests.Count
+        StaleShimTargets = $staleShimTargets.Count
         CacheRoot = $cacheRoot
         CacheFiles = $cacheFiles.Count
         CacheBytes = $cacheBytes

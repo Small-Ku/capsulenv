@@ -39,7 +39,7 @@
 - User HostIntegration is explicit and host-scoped. It must be reversible where Capsulenv claims ownership.
 - PortableSafe Start Menu shortcuts must use `Programs\Capsulenv Apps\<capsule-id>\PortableSafe` and target the Capsulenv launcher.
 - Do not target or override upstream Scoop's `Programs\Scoop Apps` / `shortcut_folder`.
-- Legacy Scoop relocation compatibility may repair only `current`/`persist` projections whose active version and ownership can be proven from installed state.
+- Legacy Scoop relocation compatibility may repair `current`/`persist` projections and capsule-local Scoop `*.shim` targets whose installed version, manifest bin declaration, previous capsule location, and destination all match. Never alter host Scoop shims or replay upstream reset lifecycle.
 - Do not load Scoop implementation `lib/*.ps1`.
 - Ambiguous versions, normal directories, and diverged files fail closed and require explicit upstream Scoop repair.
 - File projection repair may replace a copied normal file only when identity/content evidence proves it is the same projection; diverged data must not be overwritten.

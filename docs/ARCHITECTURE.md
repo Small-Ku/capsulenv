@@ -372,6 +372,8 @@ generation, session, and host-ledger model above.
 
 Persisted files bearing reparse or hardlink identities verify as projections. Normal files created during drive copies replace targets only when source and destination SHA-256 hashes match. Diverged data halts repair and preserves files.
 
+Capsule-local Scoop shim relocation is separate from the broad legacy projection DAG. On the first activation after a root change it verifies each `*.shim` executable path against the installed bin declaration and a recorded previous Scoop root, backs up and atomically replaces only exact matches, and records the completed capsule location. An unchanged location performs only a constant-size stamp check. Host Scoop shims and unknown or diverged targets are never rewritten. `doctor` and `app list` report unresolved capsule shim paths.
+
 The legacy Scoop adapter reads installed metadata only. It never loads Scoop implementation files under `lib/*.ps1` or invokes private Scoop helpers.
 
 | Legacy state condition | Action taken |

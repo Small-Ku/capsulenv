@@ -582,6 +582,7 @@ function Invoke-CapsulenvScoopRehydrate {
     $rehydrate = Get-CapsulenvScoopRehydratePlan -SkipPersistRepairs:$SkipPersistRepairs -SkipToolRepairs:$SkipToolRepairs -StrictToolRepairs:$StrictToolRepairs -IntegrationMode $IntegrationMode -IncludeDiagnostics:$false
     if (-not $SkipHooks) { Write-CapsulenvMessage -Level Detail -Message 'Automatic Scoop lifecycle replay has been removed; arbitrary manifest code is available only through explicit upstream Scoop execution.' }
     $results = @(Invoke-CapsulenvDesiredStatePlan -Plan $rehydrate.Plan -Context $rehydrate.Context)
+    [void](Sync-CapsulenvLegacyScoopShimsAfterRelocation)
     Write-CapsulenvRehydrationResult -Results $results -IntegrationMode $IntegrationMode
     return $results
 }

@@ -303,6 +303,7 @@ Describe 'Capsulenv SessionService lifecycle' {
             )
         } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $config -Encoding UTF8
 
+        Mock Sync-CapsulenvLegacyScoopShimsAfterRelocation {} -ModuleName Capsulenv
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{ IntegrationMode = 'ShellOnly' } } -ModuleName Capsulenv
         Mock Initialize-CapsulenvHostPlacement {} -ModuleName Capsulenv
         Mock Get-CapsulenvIdentity { 'session-service-integration-test' } -ModuleName Capsulenv

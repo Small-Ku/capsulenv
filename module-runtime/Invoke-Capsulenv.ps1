@@ -121,10 +121,10 @@ try {
     exit 1
 }
 
-if ($isPackageExec) {
-    $lastExitCode = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
-    if ($null -ne $lastExitCode -and $null -ne $lastExitCode.Value) {
-        exit [int]$lastExitCode.Value
+if ($isPackageExec -or ($CapsulenvArguments.Count -gt 0 -and [string]$CapsulenvArguments[0] -eq 'run')) {
+    $exitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+    if ($null -ne $exitCodeVariable -and $null -ne $exitCodeVariable.Value) {
+        exit ([int]$exitCodeVariable.Value)
     }
     if ($invokeSucceeded) {
         exit 0

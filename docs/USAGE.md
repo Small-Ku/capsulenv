@@ -303,6 +303,8 @@ capsulenv status
 capsulenv doctor
 ```
 
+Capsulenv also validates and repairs verified shim paths inside its own portable Scoop roots on the first session after a location change. It leaves host Scoop untouched. Use `capsulenv doctor` or `capsulenv app list` to find shim paths that lack sufficient ownership evidence.
+
 To rerun full relocation repair explicitly, run `capsulenv rehydrate`.
 
 | Symptom | Next step |

@@ -315,6 +315,13 @@ Describe 'Capsulenv build and install' {
                 $env:PSModulePath = $previousModulePath
             }
 
+            if ($env:OS -eq 'Windows_NT') {
+                $installedLauncher = Join-Path $installRoot 'capsulenv.cmd'
+                & $installedLauncher run cmd.exe /c exit 7 | Out-Null
+                Assert-CapsulenvBuildInstallTest -Condition ($LASTEXITCODE -eq 7) -Message 'Installed run did not preserve a nonzero native command exit code.'
+                & $installedLauncher run cmd.exe /c exit 0 | Out-Null
+                Assert-CapsulenvBuildInstallTest -Condition ($LASTEXITCODE -eq 0) -Message 'Installed run did not preserve a successful native command exit code.'
+            }
             & (Join-Path $installRoot 'modules/Capsulenv/runtime/Invoke-Capsulenv.ps1') help
             Write-Host 'capsulenv build/install Pester checks passed.' -ForegroundColor Green
         } finally {

@@ -115,6 +115,7 @@ Describe 'Capsulenv lifecycle routine contracts' {
     }
 
     It 'does not run a broad rehydrate lifecycle trigger after projection reconciliation' {
+        Mock Sync-CapsulenvLegacyScoopShimsAfterRelocation {} -ModuleName Capsulenv
         Mock Get-CapsulenvScoopRehydratePlan {
             [pscustomobject]@{ Context=@{}; Plan=[pscustomobject]@{} }
         } -ModuleName Capsulenv
