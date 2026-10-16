@@ -126,7 +126,9 @@ Describe 'Capsulenv Scoop bootstrap and isolation' {
             $env:GIT_CONFIG_VALUE_0 = 'false'
             $env:GIT_CONFIG_KEY_1 = 'core.longpaths'
             $env:GIT_CONFIG_VALUE_1 = 'true'
-            $env:GIT_CONFIG_GLOBAL = 'NUL'
+            $emptyGitConfig = Join-Path $temporaryRoot 'empty-global-gitconfig'
+            [System.IO.File]::WriteAllText($emptyGitConfig, '')
+            $env:GIT_CONFIG_GLOBAL = $emptyGitConfig
             $env:GIT_CONFIG_NOSYSTEM = '1'
             $scoopSource = Join-Path $temporaryRoot 'scoop-source'
             $mainSource = Join-Path $temporaryRoot 'main-source'
