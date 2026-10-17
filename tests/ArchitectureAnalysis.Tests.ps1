@@ -985,9 +985,11 @@ function Initialize-CapsulenvIntegrations {
         $source = Get-Content -LiteralPath (Join-Path (Join-Path $script:Root 'src') '30-50-SessionShell.ps1') -Raw
         $childShell = [regex]::Match($source, '(?s)function Invoke-CapsulenvChildShell.*?(?=function Invoke-CapsulenvExternalCommand)').Value
         $childShell | Should -Not -BeNullOrEmpty
+        $childShell | Should -Match 'Get-CapsulenvActiveGeneration'
         $childShell | Should -Match 'Ensure-CapsulenvProgramGeneration'
-        $childShell | Should -Match '\$ensure\s*=\s*Ensure-CapsulenvProgramGeneration'
-        $childShell | Should -Match '\$activationSnapshot\s*=\s*\$ensure\.ActivationSnapshot'
+        $childShell | Should -Match 'ProviderCandidates\s+@\(\)'
+        $childShell | Should -Match 'Start-CapsulenvShellPreparationWorker'
+        $childShell | Should -Match 'CAPSULENV_SHELL_STATUS'
         $childShell | Should -Match 'Resolve-CapsulenvPowerShellBinding'
         $childShell | Should -Not -Match 'Get-CapsulenvInteractivePowerShellExecutable|Get-CapsulenvPowerShellChildLaunchPlan|Invoke-CapsulenvProcessPlan\s+-Plan'
     }

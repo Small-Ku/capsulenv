@@ -67,12 +67,11 @@ Describe 'Capsulenv lifecycle routine contracts' {
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
         Mock Get-CapsulenvConfiguration { @{ Bitwarden = @{ Enabled = $false } } } -ModuleName Capsulenv
         Mock Get-CapsulenvContext { [pscustomobject]@{ Root = [IO.Path]::GetTempPath() } } -ModuleName Capsulenv
-        Mock Ensure-CapsulenvProgramGeneration {
-            [pscustomobject]@{
-                Succeeded = $true
-                ActivationSnapshot = [pscustomobject]@{ GenerationId = 'routine-generation'; Programs = [ordered]@{} }
-            }
+        Mock Get-CapsulenvActiveGeneration { [pscustomobject]@{} } -ModuleName Capsulenv
+        Mock New-CapsulenvActivationSnapshot {
+            [pscustomobject]@{ GenerationId = 'routine-generation'; Programs = [ordered]@{} }
         } -ModuleName Capsulenv
+        Mock Get-CapsulenvShellPreparationPending { @() } -ModuleName Capsulenv
         Mock Get-CapsulenvActiveGenerationProgram {
             [pscustomobject]@{ Name = 'pwsh'; Executable = 'pwsh.exe'; Provider = 'capsulenv-local'; Trusted = $true; Capabilities = @('interactive') }
         } -ModuleName Capsulenv

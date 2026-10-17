@@ -30,6 +30,30 @@ Describe 'Capsulenv CLI UX' {
         (@($model.AppActions | Where-Object Name -eq review)[0]).Usage | Should -Be 'capsulenv app review <app|bucket/app|scoop/app|scoop:user/app|scoop:global/app> [--raw|--json]'
     }
 
+    It 'shows six everyday workflows and keeps the other commands discoverable under advanced help' {
+        $overview = & $script:Module {
+            Invoke-Capsulenv -Arguments @('help') 6>&1 | Out-String
+        }
+        $advanced = & $script:Module {
+            Invoke-Capsulenv -Arguments @('help', 'advanced') 6>&1 | Out-String
+        }
+        $focused = & $script:Module {
+            Invoke-Capsulenv -Arguments @('help', 'prepare') 6>&1 | Out-String
+        }
+        $overview | Should -Match 'capsulenv app'
+        $overview | Should -Match 'capsulenv status'
+        $overview | Should -Match 'capsulenv doctor'
+        $overview | Should -Match 'capsulenv user-shell'
+        $overview | Should -Match 'capsulenv eject'
+        $overview | Should -Not -Match 'capsulenv prepare shell'
+        $overview | Should -Not -Match 'capsulenv browser'
+        $overview | Should -Match 'help advanced'
+        $advanced | Should -Match 'capsulenv prepare shell'
+        $advanced | Should -Match 'browser'
+        $focused | Should -Match 'Usage: capsulenv prepare'
+        $visible = & $script:Module { @(Get-CapsulenvCliCommandCatalog | Where-Object { -not $_.Hidden }).Name }
+        $visible | Should -HaveCount 6
+    }
     It 'suggests the nearest top-level command for a typo' {
         $record = & $script:Module {
             try { Invoke-Capsulenv buckte } catch { $_ }

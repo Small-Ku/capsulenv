@@ -231,8 +231,9 @@ Describe 'Capsulenv portable workflow contracts' {
         Mock Set-CapsulenvSessionEnvironment { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock Initialize-CapsulenvIntegrations {} -ModuleName Capsulenv
         Mock Get-CapsulenvInstallMode { 'User' } -ModuleName Capsulenv
-        Mock Ensure-CapsulenvProgramGeneration { [pscustomobject]@{ Succeeded = $true; ActivationSnapshot = [pscustomobject]@{} } } -ModuleName Capsulenv
+        Mock Get-CapsulenvActiveGeneration { [pscustomobject]@{} } -ModuleName Capsulenv
         Mock New-CapsulenvActivationSnapshot { [pscustomobject]@{} } -ModuleName Capsulenv
+        Mock Get-CapsulenvShellPreparationPending { @() } -ModuleName Capsulenv
         Mock Get-CapsulenvActiveGenerationProgram {
             New-CapsulenvProgramCandidate -Name pwsh -Executable (Join-Path $PSHOME 'pwsh') -Provider capsulenv-local -Version 7.6.5 -Capabilities @('interactive')
         } -ModuleName Capsulenv

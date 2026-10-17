@@ -410,24 +410,45 @@ function Copy-CapsulenvProgramProviderDownload {
 
     [void](New-Item -ItemType Directory -Path $Destination -Force)
     $artifact = Join-Path $Destination ('{0:D3}-{1}' -f [int]$Download.Index, [string]$Download.FileName)
-    $uri = [Uri]([string]$Download.Url)
-    if ($uri.Scheme -eq 'file') {
-        Copy-Item -LiteralPath $uri.LocalPath -Destination $artifact -Force
-    } else {
-        $parameters = @{
-            Uri = [string]$Download.Url
-            OutFile = $artifact
-            ErrorAction = 'Stop'
+    $placement = Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
+    $cacheDirectory = Join-Path (Join-Path $placement.CacheRoot 'provider-artifacts') ([string]$Download.Hash)
+    [void](New-Item -ItemType Directory -Path $cacheDirectory -Force)
+    $cacheArtifact = Join-Path $cacheDirectory ([string]$Download.FileName)
+    $validCache = (Test-Path -LiteralPath $cacheArtifact -PathType Leaf) -and
+        [System.StringComparer]::OrdinalIgnoreCase.Equals(
+            (Get-CapsulenvFileSha256 -Path $cacheArtifact), [string]$Download.Hash
+        )
+    if (-not $validCache) {
+        $temporary = Join-Path $cacheDirectory ('.download-' + [Guid]::NewGuid().ToString('N'))
+        try {
+            $uri = [Uri]([string]$Download.Url)
+            if ($uri.Scheme -eq 'file') {
+                Copy-Item -LiteralPath $uri.LocalPath -Destination $temporary -Force
+            } else {
+                $parameters = @{
+                    Uri = [string]$Download.Url
+                    OutFile = $temporary
+                    TimeoutSec = 45
+                    ErrorAction = 'Stop'
+                }
+                if ($PSVersionTable.PSVersion.Major -le 5) { $parameters.UseBasicParsing = $true }
+                Invoke-WebRequest @parameters
+            }
+            $actual = Get-CapsulenvFileSha256 -Path $temporary
+            if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($actual, [string]$Download.Hash)) {
+                throw "Program provider hash mismatch for $($Download.OriginalUrl): expected $($Download.Hash), got $actual"
+            }
+            if (Test-Path -LiteralPath $cacheArtifact -PathType Leaf) {
+                Remove-Item -LiteralPath $cacheArtifact -Force
+            }
+            Move-Item -LiteralPath $temporary -Destination $cacheArtifact
+        } finally {
+            if (Test-Path -LiteralPath $temporary -PathType Leaf) {
+                Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+            }
         }
-        if ($PSVersionTable.PSVersion.Major -le 5) {
-            $parameters['UseBasicParsing'] = $true
-        }
-        Invoke-WebRequest @parameters
     }
-    $actual = Get-CapsulenvFileSha256 -Path $artifact
-    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($actual, [string]$Download.Hash)) {
-        throw "Program provider hash mismatch for $($Download.OriginalUrl): expected $($Download.Hash), got $actual"
-    }
+    Copy-Item -LiteralPath $cacheArtifact -Destination $artifact -Force
     return $artifact
 }
 
@@ -606,7 +627,9 @@ function Get-CapsulenvProgramProviderCandidates {
     # ZIP extraction must initialize the same runtime before materialization.
     Initialize-CapsulenvPortablePackageWorkerRuntime
     $placement = Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
-    $providerRoot = Join-Path $placement.ScratchRoot 'provider-acquisition'
+    # Keep potentially deep upstream ZIP trees out of the epoch/capsule path.
+    # This directory contains no authority: failed/finished attempts are disposable.
+    $providerRoot = Join-Path (Get-CapsulenvHostLocalStateRoot) 'provider-staging'
     [void](New-Item -ItemType Directory -Path $providerRoot -Force)
     $stagingRoot = Join-Path $providerRoot ([Guid]::NewGuid().ToString('N'))
     try {
@@ -644,6 +667,23 @@ function Get-CapsulenvProgramProviderCandidates {
     }
 }
 
+function Test-CapsulenvProviderTransportFailure {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$ErrorRecord)
+
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        $name = $exception.GetType().FullName
+        if ($name -in @(
+            'System.Net.WebException', 'System.Net.Sockets.SocketException',
+            'System.Net.Http.HttpRequestException', 'Microsoft.PowerShell.Commands.HttpResponseException',
+            'System.TimeoutException'
+        )) { return $true }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
 function Get-CapsulenvProgramProviderCandidatesWithBootstrap {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Requirement)
@@ -652,7 +692,9 @@ function Get-CapsulenvProgramProviderCandidatesWithBootstrap {
         return @(Get-CapsulenvProgramProviderCandidates -Requirement $Requirement)
     } catch {
         $firstFailure = $_
-        if ($null -eq $script:CapsulenvBootstrapNetworkInvoker) {
+        # A filesystem, ZIP, trust or manifest error cannot be repaired by networking.
+        if (-not (Test-CapsulenvProviderTransportFailure -ErrorRecord $firstFailure) -or
+            $null -eq $script:CapsulenvBootstrapNetworkInvoker) {
             throw
         }
         $providerModule = $ExecutionContext.SessionState.Module

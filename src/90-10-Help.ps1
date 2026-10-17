@@ -14,6 +14,9 @@ function Show-CapsulenvHelp {
         '' {
             Write-CapsulenvCliOverview
         }
+        'advanced' {
+            Write-CapsulenvCliAdvancedOverview
+        }
         'app' {
 @'
 app commands
