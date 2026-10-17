@@ -362,7 +362,6 @@ function Initialize-CapsulenvIntegrations {
         $ActivationSnapshot
     )
 
-    [void](Sync-CapsulenvLegacyScoopShimsAfterRelocation)
     [void](Set-CapsulenvSessionEnvironment -IntegrationMode $IntegrationMode)
     [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))
     if (-not $PSBoundParameters.ContainsKey('ActivationSnapshot')) {

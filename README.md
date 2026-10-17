@@ -23,7 +23,7 @@ Requires Windows PowerShell 5.1.
    D:\Portable\capsulenv\capsulenv.cmd
    ```
 
-First launch bootstraps unmodified upstream Scoop and the Main bucket on demand. Once installed, launch directly without running `init`.
+First launch opens a shell without a network provisioning barrier. If PowerShell 7 is not trusted yet, Capsulenv clearly marks a limited Windows PowerShell 5.1 shell as degraded and starts a separate host-local preparation worker. Its PowerShell 7 profile and optional integrations are not active until a later activation. You can explicitly retry preparation with capsulenv prepare shell; use capsulenv prepare status to inspect the last background attempt. Neither operation changes an already-open shell.
 
 Inside the Capsulenv PowerShell session, use `capsulenv`. This command is bound to the current capsule:
 

@@ -11,6 +11,7 @@ function Get-CapsulenvCliCommandCatalog {
 
     $script:CapsulenvCliCommandCatalog = @(
         [pscustomobject][ordered]@{ Category='Start'; Name='shell'; Usage='capsulenv shell'; Summary='Open the default ShellOnly capsule shell.'; Topic=''; Hidden=$false },
+        [pscustomobject][ordered]@{ Category='Start'; Name='prepare'; Usage='capsulenv prepare <shell|status>'; Summary='Prepare missing shell programs or show host-local preparation status.'; Topic=''; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Start'; Name='user-shell'; Usage='capsulenv user-shell [--force]'; Summary='Synchronize explicit User integration and open a User-mode shell.'; Topic='user'; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Start'; Name='run'; Usage='capsulenv run <command> [arguments...]'; Summary='Run one command with the capsule process environment.'; Topic=''; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Packages'; Name='app'; Usage='capsulenv app <plan|review|install|update|list|run|exec> [...]'; Summary='Plan, install, update, inspect, or launch capsule applications.'; Topic='app'; Hidden=$false },

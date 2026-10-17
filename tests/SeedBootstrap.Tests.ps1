@@ -427,7 +427,7 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
             $selection = @($active.Generation.Selections | Where-Object Name -eq 'demo')[0]
             $payloadRoot = Join-Path ([string]$selection.RealizationRoot) 'payload'
             $placement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
-            $providerScratch = Join-Path $placement.ScratchRoot 'provider-acquisition'
+            $providerScratch = Join-Path (Get-CapsulenvHostLocalStateRoot) 'provider-staging'
             [pscustomobject]@{
                 Stage = $ensured.Stage
                 Provider = $ensured.Selected.Provider
@@ -436,6 +436,7 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
                 ActiveSelection = [string]$selection.Name
                 ExecutableExists = Test-Path -LiteralPath (Join-Path $payloadRoot 'demo.exe') -PathType Leaf
                 SidecarExists = Test-Path -LiteralPath (Join-Path $payloadRoot 'helper.dll') -PathType Leaf
+                StagingRoot = $providerScratch
                 StagingResidue = if (Test-Path -LiteralPath $providerScratch -PathType Container) {
                     @(Get-ChildItem -LiteralPath $providerScratch -Force -ErrorAction SilentlyContinue).Count
                 } else {
@@ -452,6 +453,7 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         $result.ExecutableExists | Should -BeTrue
         $result.SidecarExists | Should -BeTrue
         $result.StagingResidue | Should -Be 0
+        $result.StagingRoot | Should -Match 'provider-staging$'
     }
 
     It 'initializes the provider ZIP extraction runtime before materialization' {
@@ -542,7 +544,7 @@ Describe 'Capsulenv portable seed and bootstrap tier' {
         Mock Get-CapsulenvProgramProviderCandidates {
             $global:CapsulenvProviderRetryState.Attempts++
             if ($global:CapsulenvProviderRetryState.Attempts -eq 1) {
-                throw 'simulated provider transport failure'
+                throw ([System.Net.WebException]::new('simulated provider transport failure'))
             }
             $candidate = New-CapsulenvProgramCandidate -Name demo -Executable (Join-Path $global:CapsulenvProviderRetryState.Root 'demo.exe') -Root $global:CapsulenvProviderRetryState.Root -Provider provider -AcquisitionProvider provider -Scope acquisition -Version 1.2.3 -Trusted:$true -Provenance 'provider/test'
             return @($candidate)

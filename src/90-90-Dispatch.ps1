@@ -35,6 +35,7 @@ function Invoke-Capsulenv {
     try {
         switch ($command) {
         'shell' { Invoke-CapsulenvChildShell }
+        'prepare' { Invoke-CapsulenvPrepareCommand -Arguments $remaining }
         'user-shell' {
             $unknown = @($remaining | Where-Object { $_ -ne '--force' })
             if ($unknown.Count -gt 0 -or @($remaining | Where-Object { $_ -eq '--force' }).Count -gt 1) {
