@@ -10,33 +10,33 @@ function Get-CapsulenvCliCommandCatalog {
     }
 
     $script:CapsulenvCliCommandCatalog = @(
-        [pscustomobject][ordered]@{ Category='Start'; Name='shell'; Usage='capsulenv shell'; Summary='Open the default ShellOnly capsule shell.'; Topic=''; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Start'; Name='prepare'; Usage='capsulenv prepare <shell|status>'; Summary='Prepare missing shell programs or show host-local preparation status.'; Topic=''; Hidden=$false },
+        [pscustomobject][ordered]@{ Category='Start'; Name='shell'; Usage='capsulenv shell'; Summary='Open the default ShellOnly capsule shell.'; Topic=''; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Start'; Name='prepare'; Usage='capsulenv prepare <shell|status>'; Summary='Prepare missing shell programs or show host-local preparation status.'; Topic=''; Hidden=$true },
         [pscustomobject][ordered]@{ Category='Start'; Name='user-shell'; Usage='capsulenv user-shell [--force]'; Summary='Synchronize explicit User integration and open a User-mode shell.'; Topic='user'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Start'; Name='run'; Usage='capsulenv run <command> [arguments...]'; Summary='Run one command with the capsule process environment.'; Topic=''; Hidden=$false },
+        [pscustomobject][ordered]@{ Category='Start'; Name='run'; Usage='capsulenv run <command> [arguments...]'; Summary='Run one command with the capsule process environment.'; Topic=''; Hidden=$true },
         [pscustomobject][ordered]@{ Category='Packages'; Name='app'; Usage='capsulenv app <plan|review|install|update|list|run|exec> [...]'; Summary='Plan, install, update, inspect, or launch capsule applications.'; Topic='app'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Packages'; Name='bucket'; Usage='capsulenv bucket <list|known|add|remove|update> [...]'; Summary='Manage upstream Scoop bucket metadata without changing Scoop semantics.'; Topic='bucket'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Inspect'; Name='resolve'; Usage='capsulenv resolve <app> [--json]'; Summary='Resolve a trusted host-local or portable program realization without mutating it.'; Topic=''; Hidden=$false },
+        [pscustomobject][ordered]@{ Category='Packages'; Name='bucket'; Usage='capsulenv bucket <list|known|add|remove|update> [...]'; Summary='Manage upstream Scoop bucket metadata without changing Scoop semantics.'; Topic='bucket'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Inspect'; Name='resolve'; Usage='capsulenv resolve <app> [--json]'; Summary='Resolve a trusted host-local or portable program realization without mutating it.'; Topic=''; Hidden=$true },
         [pscustomobject][ordered]@{ Category='Inspect'; Name='status'; Usage='capsulenv status'; Summary='Show a compact capsule readiness and ownership summary.'; Topic=''; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Inspect'; Name='doctor'; Usage='capsulenv doctor'; Summary='Run health checks and show remediation for checks needing attention.'; Topic=''; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Inspect'; Name='context'; Usage='capsulenv context [--json]'; Summary='Show the resolved runtime context and active ownership mode.'; Topic=''; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Inspect'; Name='version'; Usage='capsulenv version'; Summary='Print the runtime version.'; Topic=''; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='bootstrap'; Usage='capsulenv bootstrap'; Summary='Bootstrap the capsule-owned upstream Scoop runtime.'; Topic=''; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='rehydrate'; Usage='capsulenv rehydrate [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]'; Summary='Repair relocation-sensitive capsule projections without replaying package scripts.'; Topic='repair'; Hidden=$false },
+        [pscustomobject][ordered]@{ Category='Inspect'; Name='context'; Usage='capsulenv context [--json]'; Summary='Show the resolved runtime context and active ownership mode.'; Topic=''; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Inspect'; Name='version'; Usage='capsulenv version'; Summary='Print the runtime version.'; Topic=''; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='bootstrap'; Usage='capsulenv bootstrap'; Summary='Bootstrap the capsule-owned upstream Scoop runtime.'; Topic=''; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='rehydrate'; Usage='capsulenv rehydrate [--skip-persist-repairs] [--skip-tool-repairs] [--strict-tool-repairs]'; Summary='Repair relocation-sensitive capsule projections without replaying package scripts.'; Topic='repair'; Hidden=$true },
         [pscustomobject][ordered]@{ Category='Lifecycle'; Name='eject'; Usage='capsulenv eject [--force]'; Summary='Check workspace/process state and prepare the capsule for removal.'; Topic='eject'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='routine'; Usage='capsulenv routine <list|run> [...]'; Summary='Inspect or invoke capsule-local lifecycle routines.'; Topic='routine'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='user-integration'; Usage='capsulenv user-integration isolated|leased|persistent'; Summary='Select host/user integration lifetime independently of placement.'; Topic='user'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='lease-user'; Usage='capsulenv lease-user'; Summary='Acquire reversible User integration and open a session shell.'; Topic='user'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='release-user'; Usage='capsulenv release-user'; Summary='Release or recover owned leased User integration.'; Topic='user'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='install-user'; Usage='capsulenv install-user [--force]'; Summary='Synchronize Capsulenv-owned current-user integration.'; Topic='user'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='restore-user'; Usage='capsulenv restore-user'; Summary='Restore Capsulenv-owned current-user integration state.'; Topic='user'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Workspace'; Name='seed'; Usage='capsulenv seed <powershell|git|scoop|weasel> [...]'; Summary='Import selected host configuration into portable capsule storage.'; Topic='seed'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Workspace'; Name='cache'; Usage='capsulenv cache <paths|init|status|link|unlink|repair> [...]'; Summary='Inspect and manage project cache links.'; Topic='cache'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Workspace'; Name='tools'; Usage='capsulenv tools <status|register|unregister|repair> [...]'; Summary='Inspect and repair uv/Pixi portable workspace relocation.'; Topic='tools'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Workspace'; Name='offline'; Usage='capsulenv offline <status|prefetch> [...]'; Summary='Inspect offline readiness or prefetch installed app artifacts.'; Topic='offline'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Workspace'; Name='drift'; Usage='capsulenv drift'; Summary='Compare installed app versions with local bucket manifests.'; Topic='offline'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Integrations'; Name='browser'; Usage='capsulenv browser <app> [--host] [browser arguments...]'; Summary='Launch a configured Gecko browser through the unified app selector.'; Topic='browser'; Hidden=$false },
-        [pscustomobject][ordered]@{ Category='Integrations'; Name='bitwarden'; Usage='capsulenv bitwarden <setup|status|restore|start|agent-test> [...]'; Summary='Manage bounded Bitwarden SSH Agent integration.'; Topic='bitwarden'; Hidden=$false },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='routine'; Usage='capsulenv routine <list|run> [...]'; Summary='Inspect or invoke capsule-local lifecycle routines.'; Topic='routine'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='user-integration'; Usage='capsulenv user-integration isolated|leased|persistent'; Summary='Select host/user integration lifetime independently of placement.'; Topic='user'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='lease-user'; Usage='capsulenv lease-user'; Summary='Acquire reversible User integration and open a session shell.'; Topic='user'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='release-user'; Usage='capsulenv release-user'; Summary='Release or recover owned leased User integration.'; Topic='user'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='install-user'; Usage='capsulenv install-user [--force]'; Summary='Synchronize Capsulenv-owned current-user integration.'; Topic='user'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Lifecycle'; Name='restore-user'; Usage='capsulenv restore-user'; Summary='Restore Capsulenv-owned current-user integration state.'; Topic='user'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Workspace'; Name='seed'; Usage='capsulenv seed <powershell|git|scoop|weasel> [...]'; Summary='Import selected host configuration into portable capsule storage.'; Topic='seed'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Workspace'; Name='cache'; Usage='capsulenv cache <paths|init|status|link|unlink|repair> [...]'; Summary='Inspect and manage project cache links.'; Topic='cache'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Workspace'; Name='tools'; Usage='capsulenv tools <status|register|unregister|repair> [...]'; Summary='Inspect and repair uv/Pixi portable workspace relocation.'; Topic='tools'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Workspace'; Name='offline'; Usage='capsulenv offline <status|prefetch> [...]'; Summary='Inspect offline readiness or prefetch installed app artifacts.'; Topic='offline'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Workspace'; Name='drift'; Usage='capsulenv drift'; Summary='Compare installed app versions with local bucket manifests.'; Topic='offline'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Integrations'; Name='browser'; Usage='capsulenv browser <app> [--host] [browser arguments...]'; Summary='Launch a configured Gecko browser through the unified app selector.'; Topic='browser'; Hidden=$true },
+        [pscustomobject][ordered]@{ Category='Integrations'; Name='bitwarden'; Usage='capsulenv bitwarden <setup|status|restore|start|agent-test> [...]'; Summary='Manage bounded Bitwarden SSH Agent integration.'; Topic='bitwarden'; Hidden=$true },
         [pscustomobject][ordered]@{ Category='Help'; Name='help'; Usage='capsulenv help [topic] [action]'; Summary='Show command discovery or focused help.'; Topic=''; Hidden=$false },
         [pscustomobject][ordered]@{ Category='Advanced'; Name='repair-persist'; Usage='capsulenv repair-persist [app...] [--dry-run] [--last]'; Summary='Explicitly repair configured persisted-file relocation targets.'; Topic='repair'; Hidden=$true },
         [pscustomobject][ordered]@{ Category='Advanced'; Name='reset'; Usage='capsulenv reset [app...]'; Summary='Reconcile package/runtime projections; this is not scoop reset.'; Topic='repair'; Hidden=$true },
@@ -161,7 +161,7 @@ function Find-CapsulenvCliSuggestion {
 function Get-CapsulenvCliCommandSuggestion {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Command)
-    $candidates = @((Get-CapsulenvCliCommandCatalog | Where-Object { -not $_.Hidden }).Name)
+    $candidates = @((Get-CapsulenvCliCommandCatalog).Name)
     return Find-CapsulenvCliSuggestion -InputText $Command -Candidates $candidates
 }
 
@@ -247,28 +247,39 @@ function Write-CapsulenvCliOverview {
     [CmdletBinding()]
     param()
 
-    Write-Host 'capsulenv — portable Windows development environment'
+    Write-Host 'capsulenv - portable Windows development environment'
     Write-Host ''
-    Write-Host 'Start'
-    Write-Host '  capsulenv                  Open the default ShellOnly shell; no separate init step is required.'
-    Write-Host '  capsulenv user-shell       Enter explicit persistent User integration.'
+    Write-Host '  capsulenv             Open a shell (PowerShell 7, or marked 5.1 fallback)'
+    foreach ($name in @('app', 'status', 'doctor', 'user-shell', 'eject')) {
+        $item = Get-CapsulenvCliCommandCatalog | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+        Write-Host ('  {0,-20} {1}' -f ('capsulenv ' + $name), ([string]$item.Summary))
+    }
     Write-Host ''
+    Write-Host '  capsulenv help <topic>      Focused usage for any command'
+    Write-Host '  capsulenv help advanced     Package, diagnostics, and maintenance commands'
+}
 
-    $catalog = @(Get-CapsulenvCliCommandCatalog | Where-Object { -not $_.Hidden -and $_.Category -notin @('Start', 'Help') })
-    foreach ($category in @('Packages', 'Inspect', 'Lifecycle', 'Workspace', 'Integrations')) {
+function Write-CapsulenvCliAdvancedOverview {
+    [CmdletBinding()]
+    param()
+
+    Write-Host 'Advanced commands (all existing commands remain available)'
+    Write-Host ''
+    $catalog = @(Get-CapsulenvCliCommandCatalog | Where-Object { $_.Hidden })
+    foreach ($category in @('Start', 'Packages', 'Inspect', 'Lifecycle', 'Workspace', 'Integrations', 'Advanced')) {
         $items = @($catalog | Where-Object { [string]$_.Category -eq $category })
         if ($items.Count -eq 0) { continue }
         Write-Host $category
         foreach ($item in $items) {
-            Write-Host ('  {0,-12} {1}' -f ([string]$item.Name), ([string]$item.Summary))
+            Write-Host ('  {0,-20} {1}' -f ([string]$item.Name), ([string]$item.Summary))
         }
         Write-Host ''
     }
-    Write-Host "Help"
-    Write-Host "  capsulenv help <topic> [action]"
-    Write-Host "  You can also use '<group> help' or '<group> <action> --help'."
+    Write-Host 'PowerShell 7 preparation normally runs in the background.'
+    Write-Host '  capsulenv prepare shell     Explicitly retry failed preparation'
+    Write-Host '  capsulenv prepare status    Inspect the last recorded attempt'
+    Write-Host 'Use capsulenv help <command> for details.'
 }
-
 function Write-CapsulenvCliCommandHelp {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Command)

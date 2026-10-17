@@ -62,7 +62,7 @@ function Invoke-CapsulenvChildShell {
         $preparationMessage = if ($workerStarted) {
             'PowerShell 7 background preparation was started.'
         } else {
-            'Background preparation was not started; use capsulenv prepare status or capsulenv prepare shell.'
+            'Background preparation was not started; use capsulenv status or capsulenv doctor to investigate.'
         }
         Write-CapsulenvMessage -Level Warning -Message (
             'DEGRADED shell: using Windows PowerShell 5.1. PowerShell 7 profile and optional integrations are not active. ' + $preparationMessage

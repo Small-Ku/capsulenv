@@ -49,6 +49,46 @@ function Get-CapsulenvShellPreparationStatus {
     try { return (Get-Content -LiteralPath $paths.Status -Raw | ConvertFrom-Json) } catch { return $null }
 }
 
+# Read only: report a held execution lock as running before the worker
+# publishes a terminal result. Do not create files or start preparation.
+function Get-CapsulenvShellPreparationSummary {
+    [CmdletBinding()]
+    param()
+    $paths = Get-CapsulenvShellPreparationPaths
+    $record = Get-CapsulenvShellPreparationStatus
+    $running = $false
+    if (Test-Path -LiteralPath $paths.Lock -PathType Leaf) {
+        try {
+            $lock = New-Object System.IO.FileStream(
+                $paths.Lock, [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None
+            )
+            $lock.Dispose()
+        } catch [System.IO.IOException] {
+            $running = $true
+        }
+    }
+    $state = if ($running) { 'running' } elseif ($null -eq $record) { 'not-started' } else { [string]$record.State }
+    return [pscustomobject]@{
+        State = $state
+        AttemptedAtUtc = if ($null -ne $record) { [string]$record.AttemptedAtUtc } else { $null }
+        FinishedAtUtc = if ($null -ne $record) { [string]$record.FinishedAtUtc } else { $null }
+        Prepared = if ($null -ne $record) { [string[]]@($record.Prepared) } else { [string[]]@() }
+        Errors = if ($null -ne $record) { [string[]]@($record.Errors) } else { [string[]]@() }
+    }
+}
+
+function Get-CapsulenvShellPreparationDoctorResult {
+    [CmdletBinding()]
+    param()
+    $status = Get-CapsulenvShellPreparationSummary
+    if ($status.State -ne 'failed') { return $null }
+    $errors = @($status.Errors | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    return New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.ShellPreparation' -Name 'PowerShell background preparation' -Area 'Shell' -Status Advisory -Importance Optional -Summary 'Background preparation failed; the current degraded shell is not automatically upgraded.' -Detail $(if ($errors.Count -gt 0) { $errors -join '; ' } else { 'Last preparation attempt failed.' }) -Remediation @(
+        'Check acquisition errors and connectivity; run capsulenv help advanced for explicit retry instructions.',
+        'Open a new Capsulenv shell after preparation succeeds to activate PowerShell 7.'
+    )
+}
 function Start-CapsulenvShellPreparationWorker {
     [CmdletBinding()]
     param([string[]]$Pending)
@@ -59,7 +99,7 @@ function Start-CapsulenvShellPreparationWorker {
     $systemPowerShell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
     if (-not (Test-Path -LiteralPath $entry -PathType Leaf) -or
         -not (Test-Path -LiteralPath $systemPowerShell -PathType Leaf)) {
-        Write-CapsulenvMessage -Level Warning -Message 'Shell preparation worker is unavailable; run prepare shell in an installed capsule.'
+        Write-CapsulenvMessage -Level Warning -Message 'Shell preparation worker is unavailable; check capsulenv doctor for troubleshooting.'
         return $false
     }
     [void](Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity))

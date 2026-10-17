@@ -342,6 +342,9 @@ function Invoke-CapsulenvDoctor {
         $results.Add((New-CapsulenvCheckResult -Name 'Scoop version drift' -Passed $false -Importance Optional -Detail $_.Exception.Message))
     }
 
+    $preparationDiagnosis = Get-CapsulenvShellPreparationDoctorResult
+    if ($null -ne $preparationDiagnosis) { $results.Add($preparationDiagnosis) }
+
     foreach ($registeredResult in @(Invoke-CapsulenvDoctorChecks)) {
         $results.Add($registeredResult)
     }

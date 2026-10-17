@@ -118,6 +118,68 @@ Describe 'Capsulenv shell startup hotpath and preparation' {
         Should -Invoke Ensure-CapsulenvProgramGeneration -ModuleName Capsulenv -Times 0 -Exactly
     }
 
+    It 'reads preparation state without starting acquisition or creating lock/status files' {
+        $directory = Join-Path $TestDrive 'read-only-state'
+        [void](New-Item -ItemType Directory -Path $directory -Force)
+        $lockPath = Join-Path $directory 'preparation.lock'
+        $statusPath = Join-Path $directory 'preparation.json'
+        Mock Get-CapsulenvShellPreparationPaths {
+            [pscustomobject]@{ Lock=$lockPath; Status=$statusPath }
+        } -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration { throw 'status must not acquire programs' } -ModuleName Capsulenv
+        Mock Initialize-CapsulenvHostPlacement { throw 'status must not mutate host placement' } -ModuleName Capsulenv
+
+        $initial = & $script:Module { Get-CapsulenvShellPreparationSummary }
+        $initial.State | Should -Be 'not-started'
+        (Test-Path -LiteralPath $lockPath) | Should -BeFalse
+        (Test-Path -LiteralPath $statusPath) | Should -BeFalse
+
+        $held = [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None')
+        try {
+            $running = & $script:Module { Get-CapsulenvShellPreparationSummary }
+            $running.State | Should -Be 'running'
+        } finally {
+            $held.Dispose()
+        }
+
+        @{
+            SchemaVersion = 1
+            State = 'failed'
+            AttemptedAtUtc = '2026-10-17T00:00:00Z'
+            FinishedAtUtc = '2026-10-17T00:01:00Z'
+            Prepared = @()
+            Errors = @('pwsh: network unavailable')
+        } | ConvertTo-Json | Set-Content -LiteralPath $statusPath -Encoding UTF8
+        $failed = & $script:Module { Get-CapsulenvShellPreparationSummary }
+        $failed.State | Should -Be 'failed'
+        $failed.Errors | Should -Contain 'pwsh: network unavailable'
+        $diagnosis = & $script:Module { Get-CapsulenvShellPreparationDoctorResult }
+        $diagnosis.Status | Should -Be 'Advisory'
+        $diagnosis.Detail | Should -Match 'network unavailable'
+        ($diagnosis.Remediation -join ' ') | Should -Match 'help advanced'
+        Should -Invoke Ensure-CapsulenvProgramGeneration -ModuleName Capsulenv -Times 0 -Exactly
+        Should -Invoke Initialize-CapsulenvHostPlacement -ModuleName Capsulenv -Times 0 -Exactly
+    }
+
+    It 'adds preparation state to the existing public status without starting acquisition' {
+        Mock Get-CapsulenvContext { [pscustomobject]@{ Root=$TestDrive } } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstalledScoopApps { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstalledPackageStates { @() } -ModuleName Capsulenv
+        Mock Read-CapsulenvProjectCacheRegistry { @() } -ModuleName Capsulenv
+        Mock Read-CapsulenvToolWorkspaceRegistry { @() } -ModuleName Capsulenv
+        Mock Get-CapsulenvOfflineReadiness { [pscustomobject]@{ RunReady=$false } } -ModuleName Capsulenv
+        Mock Test-CapsulenvScoopRehydrationRequired { $false } -ModuleName Capsulenv
+        Mock Get-CapsulenvUserIntegrationStatus { [pscustomobject]@{ PlacementRetention='ephemeral'; UserIntegration='isolated'; OwnedUserIntegration='none'; IntegrationLease='none'; IntegrationDiagnostic=''; DefaultBrowserUserConfirmationRequired=$false } } -ModuleName Capsulenv
+        Mock Get-CapsulenvShellPreparationSummary { [pscustomobject]@{ State='running' } } -ModuleName Capsulenv
+        Mock Get-CapsulenvRuntimeVersion { 'test' } -ModuleName Capsulenv
+        Mock Get-CapsulenvInstallMode { 'ShellOnly' } -ModuleName Capsulenv
+        Mock Ensure-CapsulenvProgramGeneration { throw 'status must not acquire programs' } -ModuleName Capsulenv
+
+        $summary = & $script:Module { Get-CapsulenvStatus }
+        $summary.ShellPreparation.State | Should -Be 'running'
+        $summary.Mode | Should -Be 'ShellOnly'
+        Should -Invoke Ensure-CapsulenvProgramGeneration -ModuleName Capsulenv -Times 0 -Exactly
+    }
     It 'rejects overlapping worker execution while another instance holds its lock' {
         $directory = Join-Path $TestDrive 'worker-lock'
         [void](New-Item -ItemType Directory -Path $directory -Force)
