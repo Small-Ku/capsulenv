@@ -162,11 +162,14 @@ function Invoke-Capsulenv {
         'resolve' { Invoke-CapsulenvResolveCommand -Arguments $remaining }
         'status' {
             if ($remaining.Count -gt 0) { throw 'Usage: status' }
-            $status = Get-CapsulenvStatus
-            # Keep the structured API but render a readable state in the CLI.
-            $properties = @($status.PSObject.Properties.Name | Where-Object { $_ -ne 'ShellPreparation' })
-            $preparationProperty = @{ Name='ShellPreparation'; Expression={ [string]$_.ShellPreparation.State } }
-            $status | Format-List -Property @($properties + $preparationProperty)
+            $status = Get-CapsulenvStatus -Quick
+            if ($null -ne $status.PSObject.Properties['ShellPreparation']) {
+                $names = @($status.PSObject.Properties.Name | Where-Object { $_ -ne 'ShellPreparation' })
+                $preparation = @{ Name='ShellPreparation'; Expression={ [string]$_.ShellPreparation.State } }
+                $status | Format-List -Property @($names + $preparation)
+            } else {
+                $status | Format-List
+            }
         }
         'version' {
             if ($remaining.Count -gt 0) { throw 'Usage: version' }

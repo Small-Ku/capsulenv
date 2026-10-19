@@ -32,6 +32,8 @@ capsulenv status
 capsulenv help
 ```
 
+The ordinary status command is a quick, read-only overview of session ownership and Scoop initialization. Use `capsulenv doctor` for deeper checks; a fresh capsule need not initialize Scoop just to inspect its state.
+
 To install from a source checkout, run `scripts\install.cmd <destination>`. For developer entrypoints, see [Development guide](docs/DEVELOPMENT.md#local-development-entrypoint).
 
 ## Select a session mode

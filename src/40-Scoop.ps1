@@ -587,10 +587,36 @@ function Invoke-CapsulenvScoopRehydrate {
     return $results
 }
 
-Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Root' -Area 'Scoop' -Name 'Portable Scoop root' -Handler {
+# Read-only evidence: root absence is not a failed default ShellOnly startup.
+function Get-CapsulenvScoopProvisioningState {
+    [CmdletBinding()]
+    param()
     $root = Get-CapsulenvScoopRoot
-    $exists = Test-Path -LiteralPath $root -PathType Container
-    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.Root' -Name 'Portable Scoop root' -Area 'Scoop' -Status $(if($exists){'Healthy'}else{'Failed'}) -Summary $root -Detail $root -Data ([ordered]@{ Path=$root; Exists=$exists }) -Remediation $(if($exists){@()}else{@('Bootstrap the capsule to create the configured portable Scoop root.')})
+    if (-not (Test-Path -LiteralPath $root)) {
+        return [pscustomobject]@{ Root=$root; State='not-started'; Command=$null }
+    }
+    $command = Get-CapsulenvScoopExecutable
+    return [pscustomobject]@{
+        Root = $root
+        State = if ($null -eq $command) { 'incomplete' } else { 'ready' }
+        Command = $command
+    }
+}
+Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Root' -Area 'Scoop' -Name 'Portable Scoop root' -Handler {
+    $provisioning = Get-CapsulenvScoopProvisioningState
+    $notStarted = $provisioning.State -eq 'not-started'
+    $result = @{
+        Id = 'Capsulenv.Doctor.Scoop.Root'
+        Name = 'Portable Scoop root'
+        Area = 'Scoop'
+        Status = if ($notStarted) { 'Advisory' } else { 'Healthy' }
+        Importance = if ($notStarted) { 'Optional' } else { 'Required' }
+        Summary = if ($notStarted) { 'Scoop is not initialized; default ShellOnly startup does not require it.' } else { [string]$provisioning.Root }
+        Detail = [string]$provisioning.Root
+        Data = [ordered]@{ Path=$provisioning.Root; Exists=(-not $notStarted); State=$provisioning.State }
+        Remediation = if ($notStarted) { @('Run capsulenv bootstrap only when explicit Scoop operations are needed.') } else { @() }
+    }
+    New-CapsulenvDoctorResult @result
 }
 Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' -Area 'Scoop' -Name 'Scoop -g compatibility root' -Importance Optional -Handler {
     $root = Get-CapsulenvScoopGlobalRoot
@@ -615,9 +641,31 @@ Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.GlobalRoot' -Area 'Sco
         -Remediation $(if($valid){@()}else{@('Configure Scoop.GlobalRoot only when upstream Scoop compatibility is required.')})
 }
 Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.Command' -Area 'Scoop' -Name 'Scoop command' -Handler {
-    $executable = Get-CapsulenvScoopExecutable
-    $available = $null -ne $executable
-    New-CapsulenvDoctorResult -Id 'Capsulenv.Doctor.Scoop.Command' -Name 'Scoop command' -Area 'Scoop' -Status $(if($available){'Healthy'}else{'Unavailable'}) -Summary $(if($available){[string]$executable}else{'Not found; bootstrap will install it on first session'}) -Detail $(if($available){[string]$executable}else{'Not found; bootstrap will install it on first session'}) -Data ([ordered]@{ Executable=$executable }) -Remediation $(if($available){@()}else{@('Bootstrap the capsule before running explicit TrustedExecution Scoop commands.')})
+    $provisioning = Get-CapsulenvScoopProvisioningState
+    $available = $provisioning.State -eq 'ready'
+    $notStarted = $provisioning.State -eq 'not-started'
+    $summary = if ($available) { [string]$provisioning.Command } elseif ($notStarted) {
+        'Deferred until an explicit Scoop operation needs the upstream runtime.'
+    } else {
+        'Scoop root exists but its upstream command is missing.'
+    }
+    $remediation = if ($available) { @() } elseif ($notStarted) {
+        @('Run capsulenv bootstrap before explicit TrustedExecution Scoop commands.')
+    } else {
+        @('Inspect the existing Scoop root and repair it using capsulenv bootstrap or the upstream Scoop installer; do not delete existing user data.')
+    }
+    $result = @{
+        Id = 'Capsulenv.Doctor.Scoop.Command'
+        Name = 'Scoop command'
+        Area = 'Scoop'
+        Status = if ($available) { 'Healthy' } else { 'Unavailable' }
+        Importance = if ($notStarted) { 'Optional' } else { 'Required' }
+        Summary = $summary
+        Detail = $summary
+        Data = [ordered]@{ Executable=$provisioning.Command; State=$provisioning.State }
+        Remediation = $remediation
+    }
+    New-CapsulenvDoctorResult @result
 }
 Register-CapsulenvDoctorCheck -Id 'Capsulenv.Doctor.Scoop.ProjectionRepairState' -Area 'Scoop' -Name 'Package projection repair state' -Importance Optional -Handler {
     $statePath = Get-CapsulenvRehydrationStatePath

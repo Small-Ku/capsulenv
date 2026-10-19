@@ -341,6 +341,25 @@ release instead of overwriting the user's edits.
 owned persistent/leased integration, lease health and blocked diagnostics, and
 browser user-confirmation requirements independently.
 
+The ordinary `capsulenv status` CLI uses the read-only
+`Get-CapsulenvStatus -Quick` projection: it reads session/User-integration
+metadata and Scoop root/dispatcher presence without enumerating installed
+apps, cache files, package manifests, project/workspace registries, or
+legacy shim repair plans. The detailed `Get-CapsulenvStatus` object and
+`offline status` retain their existing inventory semantics;
+`doctor` performs deeper checks. When the independent
+shell-preparation worker is installed, quick status also includes its
+read-only preparation state.
+
+Scoop provisioning has three inspection states: `not-started` when
+the capsule-owned root is absent, `incomplete` when the root (or a
+blocking file) exists but the upstream Scoop dispatcher is missing, and
+`ready` when that dispatcher exists. Doctor treats `not-started`
+as optional/deferred because ShellOnly does not require Scoop. On
+`incomplete`, the missing dispatcher remains a required failure.
+Inspection neither bootstraps Scoop nor changes User/host ownership; doctor
+retains a nonzero exit code when required checks fail.
+
 ## Start Menu HostIntegration
 
 Capsulenv-owned shortcuts reside under:

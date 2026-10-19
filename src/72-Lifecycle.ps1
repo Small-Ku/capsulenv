@@ -382,9 +382,32 @@ function Get-CapsulenvRuntimeVersion {
 
 function Get-CapsulenvStatus {
     [CmdletBinding()]
-    param()
+    param([switch]$Quick)
 
     $context = Get-CapsulenvContext
+    if ($Quick) {
+        # No inventory, recursive cache scans, or rehydration repair plans
+        # on the ordinary CLI status path. Detailed callers retain the old API.
+        $integration = Get-CapsulenvUserIntegrationStatus
+        $summary = [ordered]@{
+            Version = Get-CapsulenvRuntimeVersion
+            Root = $context.Root
+            Mode = Get-CapsulenvInstallMode
+            PlacementRetention = $integration.PlacementRetention
+            UserIntegration = $integration.UserIntegration
+            OwnedUserIntegration = $integration.OwnedUserIntegration
+            IntegrationLease = $integration.IntegrationLease
+            IntegrationDiagnostic = $integration.IntegrationDiagnostic
+            DefaultBrowserUserConfirmationRequired = $integration.DefaultBrowserUserConfirmationRequired
+            ScoopProvisioning = (Get-CapsulenvScoopProvisioningState).State
+        }
+        # Optional cross-slice integration: the background preparation worker
+        # is shipped by PR #44, independently of this slice.
+        if ($null -ne (Get-Command Get-CapsulenvShellPreparationSummary -CommandType Function -ErrorAction SilentlyContinue)) {
+            $summary.ShellPreparation = Get-CapsulenvShellPreparationSummary
+        }
+        return [pscustomobject]$summary
+    }
     $installedApps = @(Get-CapsulenvInstalledScoopApps)
     $portableSafePackages = @(Get-CapsulenvInstalledPackageStates)
     $projectLinks = @(Read-CapsulenvProjectCacheRegistry)
