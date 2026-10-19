@@ -543,6 +543,15 @@ parsers. Trust still requires an explicit Scoop selector, a live executable,
 and executable containment within the installed app root. Discovery does not
 execute Scoop or its manifests.
 
+On Windows, provider acquisition computes the projected final executable path
+using the chosen host placement, package name/version, fixed 64-character
+content digest and manifest-relative executable path. A path of 260 or more
+UTF-16 characters is rejected before provider payload download, because the
+regular Windows process launcher is not guaranteed to execute it. This check
+does not change host placement identity, introduce global short-path aliases,
+enable Windows LongPaths, or restrict the general realization API. The caller
+may configure a shorter host-local state root or enrolled placement and retry.
+An already-published realization is never relocated by this preflight check.
 The selected record carries the concrete executable, root, provider, scope,
 version, provenance, trust, and lifecycle ownership. Reusing a trusted host
 Scoop app does not upgrade, rewrite, or take ownership of the host

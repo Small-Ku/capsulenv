@@ -5,6 +5,24 @@ function Test-CapsulenvSafeRealizationComponent {
     return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -match '^[A-Za-z0-9][A-Za-z0-9._-]*$'
 }
 
+# A candidate's final hash directory is 64 hexadecimal characters. Reject an
+# unlaunchable Windows path before materializing the owned host placement.
+function Assert-CapsulenvRealizationExecutablePathBudget {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$ExecutableRelativePath
+    )
+
+    if (-not (Test-CapsulenvWindows)) { return }
+    $placement = Get-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
+    $finalRoot = Join-Path (Join-Path (Join-Path $placement.PackagesRoot $Name) $Version) ('0' * 64)
+    $executable = Resolve-CapsulenvRealizationPayloadPath -PayloadRoot (Join-Path $finalRoot 'payload') -ExecutableRelativePath $ExecutableRelativePath
+    if ($executable.Length -ge 260) {
+        throw ('Capsulenv host-local executable path is {0} characters long and may not launch on Windows. Configure a shorter CAPSULENV_HOST_STATE_ROOT or enrolled host placement root before acquisition. No realization was published.' -f $executable.Length)
+    }
+}
 function Get-CapsulenvRealizationSourceHash {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$SourcePath)

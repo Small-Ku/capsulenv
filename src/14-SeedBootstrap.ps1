@@ -622,6 +622,7 @@ function Get-CapsulenvProgramProviderCandidates {
         throw "Program provider '$($plan.Reference)' has no safe payload-only acquisition path: $($payloadCompatibility.Reasons -join ', ')"
     }
     $relativeExecutable = Get-CapsulenvProgramProviderExecutableRelativePath -Requirement $Requirement -Plan $plan
+    Assert-CapsulenvRealizationExecutablePathBudget -Name ([string]$Requirement.Name) -Version ([string]$plan.Version) -ExecutableRelativePath $relativeExecutable
 
     # Provider acquisition bypasses the PortableSafe execution graph, so its
     # ZIP extraction must initialize the same runtime before materialization.
