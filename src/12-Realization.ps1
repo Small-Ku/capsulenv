@@ -25,7 +25,11 @@ function Assert-CapsulenvRealizationExecutablePathBudget {
 }
 function Get-CapsulenvRealizationSourceHash {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$SourcePath)
+    param(
+        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [ValidateSet('ordinal-v1', 'legacy-runtime', 'legacy-windows-nls')]
+        [string]$Algorithm = 'ordinal-v1'
+    )
 
     $fullSource = [System.IO.Path]::GetFullPath($SourcePath)
     if (Test-Path -LiteralPath $fullSource -PathType Leaf) {
@@ -35,21 +39,67 @@ function Get-CapsulenvRealizationSourceHash {
         throw "Realization source does not exist: $SourcePath"
     }
 
+    $files = @(Get-ChildItem -LiteralPath $fullSource -File -Recurse)
+    if ($Algorithm -eq 'legacy-runtime') {
+        $paths = [string[]]@($files | Sort-Object FullName | ForEach-Object { $_.FullName })
+    } else {
+        $paths = [string[]]@($files | ForEach-Object { $_.FullName })
+        if ($Algorithm -eq 'legacy-windows-nls') {
+            if (-not (Test-CapsulenvWindows)) { throw 'NLS legacy hashing is Windows-only.' }
+            if (-not ('CapsulenvLegacyNlsFilePathComparer' -as [type])) {
+                Add-Type -TypeDefinition @"
+using System;
+using System.Collections;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public sealed class CapsulenvLegacyNlsFilePathComparer : IComparer {
+    private readonly string locale;
+    public CapsulenvLegacyNlsFilePathComparer(string localeName) { locale = localeName; }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int CompareStringEx(
+        string localeName, uint flags, string left, int leftLength,
+        string right, int rightLength, IntPtr version, IntPtr reserved, IntPtr parameter);
+    public int Compare(object left, object right) {
+        const uint NORM_IGNORECASE = 1;
+        int result = CompareStringEx(locale, NORM_IGNORECASE,
+            (string)left, -1, (string)right, -1,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (result == 0) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+        return result - 2;
+    }
+}
+"@ -ErrorAction Stop
+            }
+            $comparer = New-Object CapsulenvLegacyNlsFilePathComparer ([System.Globalization.CultureInfo]::CurrentCulture.Name)
+            [System.Array]::Sort($paths, [System.Collections.IComparer]$comparer)
+        } else {
+            $prefixLength = $fullSource.TrimEnd([char[]]'\/').Length
+            $relativePaths = [string[]]@($paths | ForEach-Object {
+                $_.Substring($prefixLength).TrimStart([char[]]'\/').Replace('\', '/')
+            })
+            [System.Array]::Sort($relativePaths, [System.StringComparer]::Ordinal)
+            $paths = [string[]]@($relativePaths | ForEach-Object {
+                Join-Path $fullSource ($_.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            })
+        }
+    }
+
     $entries = New-Object System.Collections.Generic.List[string]
-    foreach ($file in @(Get-ChildItem -LiteralPath $fullSource -File -Recurse | Sort-Object FullName)) {
-        $relative = $file.FullName.Substring($fullSource.TrimEnd([char[]]'\/').Length).TrimStart([char[]]'\/').Replace('\', '/')
-        $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    $prefixLength = $fullSource.TrimEnd([char[]]'\/').Length
+    foreach ($path in $paths) {
+        $relative = $path.Substring($prefixLength).TrimStart([char[]]'\/').Replace('\', '/')
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
         $entries.Add(('{0}|{1}' -f $relative, $hash))
     }
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($entries -join [Environment]::NewLine))
+        $separator = if ($Algorithm -eq 'ordinal-v1') { [string][char]10 } else { [Environment]::NewLine }
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($entries -join $separator))
         return (($sha256.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
     } finally {
         $sha256.Dispose()
     }
 }
-
 function Get-CapsulenvRealizationManifestPath {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$RealizationRoot)
@@ -90,7 +140,8 @@ function Get-CapsulenvRealizationPayloadHash {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$RealizationRoot,
-        [Parameter(Mandatory = $true)]$Manifest
+        [Parameter(Mandatory = $true)]$Manifest,
+        [ValidateSet('ordinal-v1','legacy-runtime','legacy-windows-nls')][string]$DirectoryHashAlgorithm = 'ordinal-v1'
     )
 
     $payloadRoot = Join-Path $RealizationRoot 'payload'
@@ -101,7 +152,7 @@ function Get-CapsulenvRealizationPayloadHash {
         }
         return (Get-FileHash -LiteralPath $publishedFile -Algorithm SHA256).Hash.ToLowerInvariant()
     }
-    return Get-CapsulenvRealizationSourceHash -SourcePath $payloadRoot
+    return Get-CapsulenvRealizationSourceHash -SourcePath $payloadRoot -Algorithm $DirectoryHashAlgorithm
 }
 
 function Test-CapsulenvHostProgramSelection {
@@ -183,6 +234,15 @@ function Test-CapsulenvProgramRealization {
             return $false
         }
     }
+    $schema = 0
+    if (-not [int]::TryParse([string]$manifest.SchemaVersion, [ref]$schema)) { return $false }
+    if ($schema -eq 3) {
+        if ([string]$manifest.DirectoryHashAlgorithm -ne 'ordinal-v1') { return $false }
+    } elseif ($schema -ne 2 -or $null -ne $manifest.PSObject.Properties['DirectoryHashAlgorithm']) {
+        return $false
+    }
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals(
+        [string]$manifest.SourceHash, [string]$manifest.PayloadHash)) { return $false }
     $payloadRoot = Join-Path $RealizationRoot 'payload'
     if (-not (Test-Path -LiteralPath $payloadRoot -PathType Container)) {
         return $false
@@ -196,9 +256,16 @@ function Test-CapsulenvProgramRealization {
         return $false
     }
     try {
-        $payloadHash = Get-CapsulenvRealizationPayloadHash -RealizationRoot $RealizationRoot -Manifest $manifest
-        return [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$manifest.PayloadHash, $payloadHash) -and
-            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$manifest.SourceHash, $payloadHash)
+        $algorithm = if ($schema -eq 2) { 'legacy-runtime' } else { 'ordinal-v1' }
+        $payloadHash = Get-CapsulenvRealizationPayloadHash -RealizationRoot $RealizationRoot -Manifest $manifest -DirectoryHashAlgorithm $algorithm
+        if ([System.StringComparer]::OrdinalIgnoreCase.Equals([string]$manifest.PayloadHash, $payloadHash)) { return $true }
+        if ($schema -eq 2 -and [string]$manifest.SourceKind -eq 'directory' -and (Test-CapsulenvWindows)) {
+            # Schema-v2 WinPS5 generations were hashed with Windows NLS; pwsh
+            # uses ICU. Only a full directory digest match confers authority.
+            $legacyHash = Get-CapsulenvRealizationPayloadHash -RealizationRoot $RealizationRoot -Manifest $manifest -DirectoryHashAlgorithm 'legacy-windows-nls'
+            return [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$manifest.PayloadHash, $legacyHash)
+        }
+        return $false
     } catch {
         return $false
     }
@@ -255,7 +322,15 @@ function Acquire-CapsulenvProgramRealization {
     $normalizedCapabilities = @($Capabilities | ForEach-Object { ([string]$_).ToLowerInvariant() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
     if (-not [string]::IsNullOrWhiteSpace($ExpectedHash) -and
         -not [System.StringComparer]::OrdinalIgnoreCase.Equals($sourceHash, $ExpectedHash)) {
-        throw "Realization source hash mismatch for '$Name': expected $ExpectedHash, got $sourceHash."
+        # Portable seed schema-v1 records a legacy tree digest. Verify those
+        # original bytes under the seed contract, then publish a distinct
+        # ordinal-v1 realization digest. Do not reinterpret other providers.
+        $legacySeedHash = if ($sourceIsDirectory -and $AcquisitionProvider -eq 'seed') {
+            Get-CapsulenvSeedSourceHash -SourcePath $sourceFull
+        } else { $null }
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$legacySeedHash, $ExpectedHash)) {
+            throw "Realization source hash mismatch for '$Name': expected $ExpectedHash, got $sourceHash."
+        }
     }
 
     $placement = Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
@@ -289,7 +364,8 @@ function Acquire-CapsulenvProgramRealization {
             throw "An immutable realization with the same bytes has incompatible semantic identity: $finalRoot"
         }
         $manifest = [pscustomobject][ordered]@{
-            SchemaVersion = 2
+            SchemaVersion = 3
+            DirectoryHashAlgorithm = 'ordinal-v1'
             Complete = $true
             Immutable = $true
             Name = $Name

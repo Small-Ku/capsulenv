@@ -512,6 +512,25 @@ derived results. Legacy `capsule/<app>` package roots remain portable storage
 and are not relabeled as `capsulenv-local` until #12 publishes a validated host
 realization/generation source.
 
+Realization directory hashes bind each relative filename and its SHA-256
+content hash to the generation. New schema-v3 realization manifests declare
+`DirectoryHashAlgorithm = ordinal-v1`: filenames use normalized
+forward slashes, ordinal case-sensitive sorting, and UTF-8 records joined
+with a single LF byte across operating systems and PowerShell versions.
+File-backed realizations still hash the individual file bytes.
+Directory portable seed schema-v1 ExpectedHash values remain verified against
+their existing legacy seed digest; a validated seed is materialized using
+the distinct new realization digest without rewriting the portable record.
+
+Existing immutable schema-v2 manifests are not rewritten in place. Their
+recorded digests used the prior `Sort-Object FullName` ordering.
+Validation first verifies the complete legacy directory digest using the
+current runtime. On Windows, a mismatched schema-v2 directory can also be
+checked using Windows NLS legacy ordering for earlier WinPS 5.1 publications.
+Only matching the persisted digest is sufficient to accept the realization;
+unknown schema/algorithm values, altered files, or an unresolvable historical
+collation still fail closed. No automatic migration of active generations
+or changes to their existing IDs are implied by schema-v3 publication.
 Exact versions compare the normalized package-version identity, including
 prerelease/build suffixes. Range checks use the numeric base only when the
 version grammar is valid; version-policy candidates with invalid versions are
