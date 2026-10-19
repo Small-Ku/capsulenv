@@ -1,4 +1,5 @@
 $script:CapsulenvUnavailableBootEpoch = $null
+$script:CapsulenvHostBootEpochCached = $null
 
 function Get-CapsulenvHostIdentityEvidence {
     [CmdletBinding()]
@@ -127,6 +128,9 @@ function Get-CapsulenvHostBootEpoch {
         return $epoch
     }
 
+    if ($null -ne $script:CapsulenvHostBootEpochCached) {
+        return $script:CapsulenvHostBootEpochCached
+    }
     if ($null -ne $script:CapsulenvUnavailableBootEpoch) {
         return $script:CapsulenvUnavailableBootEpoch
     }
@@ -137,6 +141,7 @@ function Get-CapsulenvHostBootEpoch {
             try {
                 $bootId = [System.IO.File]::ReadAllText($bootIdPath).Trim()
                 if (-not [string]::IsNullOrWhiteSpace($bootId)) {
+                    $script:CapsulenvHostBootEpochCached = $bootId
                     return $bootId
                 }
             } catch {}
@@ -152,10 +157,11 @@ function Get-CapsulenvHostBootEpoch {
             } else {
                 $lastBoot = [System.Management.ManagementDateTimeConverter]::ToDateTime([string]$rawLastBoot)
             }
-            return $lastBoot.ToUniversalTime().ToString(
+            $script:CapsulenvHostBootEpochCached = $lastBoot.ToUniversalTime().ToString(
                 'yyyyMMddTHHmmssfffffffZ',
                 [Globalization.CultureInfo]::InvariantCulture
             )
+            return $script:CapsulenvHostBootEpochCached
         } catch {}
     }
 
@@ -579,7 +585,9 @@ function Initialize-CapsulenvHostPlacement {
         BootEpoch = $placement.BootEpoch
         CreatedAtUtc = [DateTime]::UtcNow.ToString('o')
     }
-    Write-CapsulenvHostJsonAtomically -Path $placement.MarkerPath -Value $marker
+    if (-not $placement.Valid) {
+        Write-CapsulenvHostJsonAtomically -Path $placement.MarkerPath -Value $marker
+    }
     return Get-CapsulenvHostPlacement -CapsuleId $placement.CapsuleId
 }
 

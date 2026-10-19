@@ -410,6 +410,7 @@ function Get-CapsulenvStatus {
         ProjectLinks = $projectLinks.Count
         ToolWorkspaces = $toolWorkspaces.Count
         OfflineRunReady = [bool]$offline.RunReady
+        ShellPreparation = Get-CapsulenvShellPreparationSummary
     }
 }
 

@@ -82,6 +82,7 @@ function Copy-CapsulenvArchiveSource {
             $webRequestParameters = @{
                 Uri = $Archive
                 OutFile = $archivePath
+                TimeoutSec = 45
                 ErrorAction = 'Stop'
             }
             if ($PSVersionTable.PSVersion.Major -le 5) {
