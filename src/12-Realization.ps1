@@ -334,7 +334,9 @@ function Acquire-CapsulenvProgramRealization {
     }
 
     $placement = Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
-    $stagingRoot = Join-Path (Join-Path $placement.ScratchRoot 'realization-staging') ([Guid]::NewGuid().ToString('N'))
+    # Staging has no durable authority; keep its path shallow for WinPS 5.1 deep trees.
+    $stagingBase = Join-Path (Get-CapsulenvHostLocalStateRoot) 'realization-staging'
+    $stagingRoot = Join-Path $stagingBase ([Guid]::NewGuid().ToString('N'))
     $payloadRoot = Join-Path $stagingRoot 'payload'
     try {
         [void](New-Item -ItemType Directory -Path $payloadRoot -Force)

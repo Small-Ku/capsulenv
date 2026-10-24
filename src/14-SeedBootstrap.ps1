@@ -638,6 +638,21 @@ function Get-CapsulenvProgramProviderCandidates {
     try {
         $payloadRoot = Expand-CapsulenvProgramProviderPlan -Plan $plan -StagingRoot $stagingRoot
         $executable = Resolve-CapsulenvScoopAppRelativePath -Root $payloadRoot -RelativePath $relativeExecutable
+        if (-not (Test-Path -LiteralPath $executable -PathType Leaf) -and
+            @($plan.Downloads).Count -eq 1 -and
+            [string]$plan.Downloads[0].ArchiveKind -eq 'File' -and
+            [string]::IsNullOrWhiteSpace([string](Get-CapsulenvPackageIndexedValue -Values @($plan.ExtractTo) -Index 0)) -and
+            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$relativeExecutable, [IO.Path]::GetFileName([string]$relativeExecutable)) -and
+            $relativeExecutable.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase) -and
+            ([string]$plan.Downloads[0].FileName).EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) {
+            # A verified standalone EXE may have a release filename different
+            # from the manifest's bin. Materialize that alias without running
+            # Scoop's pre_install or any other lifecycle script.
+            $downloadedExecutable = Join-Path $payloadRoot ([string]$plan.Downloads[0].FileName)
+            if (Test-Path -LiteralPath $downloadedExecutable -PathType Leaf) {
+                Move-Item -LiteralPath $downloadedExecutable -Destination $executable
+            }
+        }
         if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
             throw "Program provider executable was not materialized: $relativeExecutable"
         }
