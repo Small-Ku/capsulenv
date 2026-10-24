@@ -419,7 +419,9 @@ function Copy-CapsulenvProgramProviderDownload {
             (Get-CapsulenvFileSha256 -Path $cacheArtifact), [string]$Download.Hash
         )
     if (-not $validCache) {
-        $temporary = Join-Path $cacheDirectory ('.download-' + [Guid]::NewGuid().ToString('N'))
+        # Stage outside the hash directory to keep Windows PowerShell 5.1 download paths short.
+        # Both paths remain under CacheRoot for same-volume publication.
+        $temporary = Join-Path $placement.CacheRoot ('.download-' + [Guid]::NewGuid().ToString('N'))
         try {
             $uri = [Uri]([string]$Download.Url)
             if ($uri.Scheme -eq 'file') {
