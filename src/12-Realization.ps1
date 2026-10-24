@@ -478,7 +478,29 @@ function Publish-CapsulenvGeneration {
         if ($kind -eq 'realization') {
             $root = [string]$realization.RealizationRoot
             if (-not (Test-CapsulenvProgramRealization -RealizationRoot $root)) {
-                throw "Cannot publish a generation with an incomplete realization: $root"
+                # Publish only complete, hash-verified trees. Explain verification
+                # failures without modifying a previously published realization.
+                $detail = 'manifest or executable validation failed'
+                $invalidManifest = Read-CapsulenvRealizationManifest -RealizationRoot $root
+                if ($null -eq $invalidManifest) {
+                    $detail = 'realization manifest is missing or unreadable'
+                } else {
+                    $payloadRoot = Join-Path $root 'payload'
+                    if (-not (Test-Path -LiteralPath $payloadRoot -PathType Container)) {
+                        $detail = 'realization payload directory is missing'
+                    } else {
+                        try {
+                            $actualHash = Get-CapsulenvRealizationPayloadHash -RealizationRoot $root -Manifest $invalidManifest
+                            if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals(
+                                [string]$invalidManifest.PayloadHash, $actualHash)) {
+                                $detail = "payload hash mismatch: expected $($invalidManifest.PayloadHash), actual $actualHash"
+                            }
+                        } catch {
+                            $detail = "payload verification failed: $($_.Exception.Message)"
+                        }
+                    }
+                }
+                throw "Cannot publish a generation with an incomplete realization: $root. $detail"
             }
             $manifest = Read-CapsulenvRealizationManifest -RealizationRoot $root
             $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest

@@ -428,4 +428,28 @@ Describe 'Capsulenv host-local realization and generation authority' {
         }
     }
 
+
+    It 'explains invalid published payloads without replacing their content' {
+        $source = Join-Path $TestDrive 'tampered-program.exe'
+        [IO.File]::WriteAllText($source, 'original')
+        $result = & $script:Module {
+            param($Source, $CapsuleRoot)
+            Initialize-CapsulenvContext -Root $CapsuleRoot | Out-Null
+            $manifest = Acquire-CapsulenvProgramRealization -Name demo -Version 1.0.0 -SourcePath $Source
+            $published = Join-Path $manifest.RealizationRoot 'payload/tampered-program.exe'
+            [IO.File]::WriteAllText($published, 'tampered')
+            $message = try {
+                [void](Publish-CapsulenvGeneration -Realizations @($manifest))
+                ''
+            } catch {
+                $_.Exception.Message
+            }
+            [pscustomobject]@{
+                Message = $message
+                Unchanged = ([IO.File]::ReadAllText($published) -eq 'tampered')
+            }
+        } $source (Join-Path $TestDrive 'diagnostic-capsule')
+        $result.Message | Should -Match 'payload hash mismatch'
+        $result.Unchanged | Should -BeTrue
+    }
 }
