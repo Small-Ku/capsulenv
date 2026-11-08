@@ -23,6 +23,26 @@ function Assert-CapsulenvRealizationExecutablePathBudget {
         throw ('Capsulenv host-local executable path is {0} characters long and may not launch on Windows. Configure a shorter CAPSULENV_HOST_STATE_ROOT or enrolled host placement root before acquisition. No realization was published.' -f $executable.Length)
     }
 }
+# FileSystem provider recursion in Windows PowerShell 5.1 can silently omit
+# descendants beyond MAX_PATH. Use extended-length paths for both listing and
+# hashing; these are access paths, not persisted realization identities.
+function Get-CapsulenvRealizationAccessPath {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-CapsulenvWindows) -or
+        $fullPath.StartsWith('\\?\', [System.StringComparison]::Ordinal)) {
+        return $fullPath
+    }
+    if ($fullPath.StartsWith('\\', [System.StringComparison]::Ordinal)) {
+        return ('\\?\UNC\' + $fullPath.Substring(2))
+    }
+    if ($fullPath -match '^[A-Za-z]:\\') {
+        return ('\\?\' + $fullPath)
+    }
+    return $fullPath
+}
 function Get-CapsulenvRealizationSourceHash {
     [CmdletBinding()]
     param(
@@ -32,14 +52,15 @@ function Get-CapsulenvRealizationSourceHash {
     )
 
     $fullSource = [System.IO.Path]::GetFullPath($SourcePath)
-    if (Test-Path -LiteralPath $fullSource -PathType Leaf) {
-        return (Get-FileHash -LiteralPath $fullSource -Algorithm SHA256).Hash.ToLowerInvariant()
+    $accessSource = Get-CapsulenvRealizationAccessPath -Path $fullSource
+    if (Test-Path -LiteralPath $accessSource -PathType Leaf) {
+        return (Get-FileHash -LiteralPath $accessSource -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
     }
-    if (-not (Test-Path -LiteralPath $fullSource -PathType Container)) {
+    if (-not (Test-Path -LiteralPath $accessSource -PathType Container)) {
         throw "Realization source does not exist: $SourcePath"
     }
 
-    $files = @(Get-ChildItem -LiteralPath $fullSource -File -Recurse)
+    $files = @(Get-ChildItem -LiteralPath $accessSource -File -Recurse -ErrorAction Stop)
     if ($Algorithm -eq 'legacy-runtime') {
         $paths = [string[]]@($files | Sort-Object FullName | ForEach-Object { $_.FullName })
     } else {
@@ -73,22 +94,22 @@ public sealed class CapsulenvLegacyNlsFilePathComparer : IComparer {
             $comparer = New-Object CapsulenvLegacyNlsFilePathComparer ([System.Globalization.CultureInfo]::CurrentCulture.Name)
             [System.Array]::Sort($paths, [System.Collections.IComparer]$comparer)
         } else {
-            $prefixLength = $fullSource.TrimEnd([char[]]'\/').Length
+            $prefixLength = $accessSource.TrimEnd([char[]]'\/').Length
             $relativePaths = [string[]]@($paths | ForEach-Object {
                 $_.Substring($prefixLength).TrimStart([char[]]'\/').Replace('\', '/')
             })
             [System.Array]::Sort($relativePaths, [System.StringComparer]::Ordinal)
             $paths = [string[]]@($relativePaths | ForEach-Object {
-                Join-Path $fullSource ($_.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+                [System.IO.Path]::Combine($accessSource, ($_.Replace('/', [System.IO.Path]::DirectorySeparatorChar)))
             })
         }
     }
 
     $entries = New-Object System.Collections.Generic.List[string]
-    $prefixLength = $fullSource.TrimEnd([char[]]'\/').Length
+    $prefixLength = $accessSource.TrimEnd([char[]]'\/').Length
     foreach ($path in $paths) {
         $relative = $path.Substring($prefixLength).TrimStart([char[]]'\/').Replace('\', '/')
-        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
         $entries.Add(('{0}|{1}' -f $relative, $hash))
     }
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
@@ -334,7 +355,9 @@ function Acquire-CapsulenvProgramRealization {
     }
 
     $placement = Initialize-CapsulenvHostPlacement -CapsuleId (Get-CapsulenvIdentity)
-    $stagingRoot = Join-Path (Join-Path $placement.ScratchRoot 'realization-staging') ([Guid]::NewGuid().ToString('N'))
+    # Staging has no durable authority; keep its path shallow for WinPS 5.1 deep trees.
+    $stagingBase = Join-Path (Get-CapsulenvHostLocalStateRoot) 'realization-staging'
+    $stagingRoot = Join-Path $stagingBase ([Guid]::NewGuid().ToString('N'))
     $payloadRoot = Join-Path $stagingRoot 'payload'
     try {
         [void](New-Item -ItemType Directory -Path $payloadRoot -Force)
@@ -476,7 +499,29 @@ function Publish-CapsulenvGeneration {
         if ($kind -eq 'realization') {
             $root = [string]$realization.RealizationRoot
             if (-not (Test-CapsulenvProgramRealization -RealizationRoot $root)) {
-                throw "Cannot publish a generation with an incomplete realization: $root"
+                # Publish only complete, hash-verified trees. Explain verification
+                # failures without modifying a previously published realization.
+                $detail = 'manifest or executable validation failed'
+                $invalidManifest = Read-CapsulenvRealizationManifest -RealizationRoot $root
+                if ($null -eq $invalidManifest) {
+                    $detail = 'realization manifest is missing or unreadable'
+                } else {
+                    $payloadRoot = Join-Path $root 'payload'
+                    if (-not (Test-Path -LiteralPath $payloadRoot -PathType Container)) {
+                        $detail = 'realization payload directory is missing'
+                    } else {
+                        try {
+                            $actualHash = Get-CapsulenvRealizationPayloadHash -RealizationRoot $root -Manifest $invalidManifest
+                            if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals(
+                                [string]$invalidManifest.PayloadHash, $actualHash)) {
+                                $detail = "payload hash mismatch: expected $($invalidManifest.PayloadHash), actual $actualHash"
+                            }
+                        } catch {
+                            $detail = "payload verification failed: $($_.Exception.Message)"
+                        }
+                    }
+                }
+                throw "Cannot publish a generation with an incomplete realization: $root. $detail"
             }
             $manifest = Read-CapsulenvRealizationManifest -RealizationRoot $root
             $authority = Get-CapsulenvRealizationAuthority -Manifest $manifest
@@ -563,22 +608,7 @@ function Set-CapsulenvActiveGenerationAuthority {
         GenerationId = $GenerationId
         ActivatedAtUtc = [DateTime]::UtcNow.ToString('o')
     }
-    $parent = Split-Path -Parent $authorityPath
-    [void](New-Item -ItemType Directory -Path $parent -Force)
-    $temporary = Join-Path $parent ('.active-generation.{0}.tmp' -f [Guid]::NewGuid().ToString('N'))
-    try {
-        $encoding = New-Object System.Text.UTF8Encoding($true)
-        [System.IO.File]::WriteAllText($temporary, ($authority | ConvertTo-Json -Depth 5), $encoding)
-        if (Test-Path -LiteralPath $authorityPath -PathType Leaf) {
-            [System.IO.File]::Replace($temporary, $authorityPath, $null, $true)
-        } else {
-            Move-Item -LiteralPath $temporary -Destination $authorityPath
-        }
-    } finally {
-        if (Test-Path -LiteralPath $temporary -PathType Leaf) {
-            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
-        }
-    }
+    Publish-CapsulenvFileAuthorityAtomically -Path $authorityPath -Value $authority
     return $generation
 }
 
